@@ -16,16 +16,22 @@
         }
     },
     "require": {
-        "php": "^8.1"
+        "php": "^8.1",
+        "psr/http-client": "^1.0",
+        "psr/http-factory": "^1.0",
+        "psr/http-message": "^1.1 || ^2.0"
     },
     "require-dev": {
         "pestphp/pest": "^2.14",
         "phpstan/phpstan": "^2.1",
         "laravel/pint": "^1.0",
-        "mockery/mockery": "^1.6"
+        "mockery/mockery": "^1.6",
+        "guzzlehttp/guzzle": "^7.0",
+        "guzzlehttp/psr7": "^2.0"
     },
     "suggest": {
-        "guzzlehttp/guzzle": "Required if you use the default HTTP document loader for resolving remote @context URLs."
+        "psr/http-client-implementation": "A PSR-18 client (e.g. guzzlehttp/guzzle) is required if you use HttpDocumentLoader for resolving remote @context URLs.",
+        "psr/http-factory-implementation": "A PSR-17 request factory (e.g. guzzlehttp/psr7) is required if you use HttpDocumentLoader."
     },
     "config": {
         "allow-plugins": {

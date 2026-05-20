@@ -10,3 +10,9 @@ parameters:
         # runtime, which PHPStan can't statically follow. The supporting
         # classes (Harness, TestCase, Processor) are still analysed.
         - tests/W3c/Algorithms/*
+        # Mockery's fluent shouldReceive() chain returns ExpectationInterface
+        # | HigherOrderMessage, which loses type information PHPStan needs.
+        # Add new Mockery-using test files here. Behaviour is verified via
+        # the actual test runs in CI; static analysis adds no value.
+        - tests/Loaders/HttpDocumentLoaderTest.php
+        - tests/Loaders/CachingDocumentLoaderTest.php
