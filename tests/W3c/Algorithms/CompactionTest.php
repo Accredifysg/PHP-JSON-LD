@@ -1,0 +1,47 @@
+<?php
+
+declare(strict_types=1);
+
+use Accredify\JsonLd\Tests\W3c\Harness;
+use Accredify\JsonLd\Tests\W3c\NotImplementedException;
+use Accredify\JsonLd\Tests\W3c\NullProcessor;
+use Accredify\JsonLd\Tests\W3c\TestCase;
+
+/*
+|--------------------------------------------------------------------------
+| W3C JSON-LD Compaction conformance
+|--------------------------------------------------------------------------
+| Same shape as ExpansionTest. Compaction tests have an additional
+| `context` file that must be loaded and passed to the algorithm.
+*/
+
+dataset('compaction-tests', function () {
+    $manifestPath = __DIR__.'/../../w3c/tests/compact-manifest.jsonld';
+    if (! is_file($manifestPath)) {
+        return;
+    }
+
+    foreach (Harness::fromDefaultLocation()->manifest('compact-manifest.jsonld') as $test) {
+        yield $test->id => [$test];
+    }
+});
+
+it('compacts per W3C manifest', function (TestCase $test) {
+    $processor = new NullProcessor;
+
+    try {
+        $actual = $processor->compact(
+            $test->loadInput(),
+            $test->contextPath !== null ? $test->loadContext() : [],
+            $test->options,
+        );
+    } catch (NotImplementedException) {
+        $this->markTestSkipped('Compaction not yet implemented');
+    }
+
+    if ($test->isPositive) {
+        expect($actual)->toEqualCanonicalizing($test->loadExpected());
+    } else {
+        $this->fail('Negative tests should throw, but the processor returned a result');
+    }
+})->with('compaction-tests');

@@ -1,0 +1,59 @@
+{
+    "name": "accredifysg/php-json-ld",
+    "description": "A PHP implementation of the JSON-LD 1.1 specification.",
+    "type": "library",
+    "license": "MIT",
+    "homepage": "https://github.com/accredifysg/php-json-ld",
+    "keywords": ["json-ld", "jsonld", "rdf", "linked-data", "semantic-web", "w3c"],
+    "autoload": {
+        "psr-4": {
+            "Accredify\\JsonLd\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Accredify\\JsonLd\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "php": "^8.1"
+    },
+    "require-dev": {
+        "pestphp/pest": "^2.14",
+        "phpstan/phpstan": "^2.1",
+        "laravel/pint": "^1.0",
+        "mockery/mockery": "^1.6"
+    },
+    "suggest": {
+        "guzzlehttp/guzzle": "Required if you use the default HTTP document loader for resolving remote @context URLs."
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "scripts": {
+        "lint": [
+            "@php vendor/bin/pint",
+            "@php vendor/bin/phpstan analyse --no-progress"
+        ],
+        "lint:check": [
+            "@php vendor/bin/pint --test",
+            "@php vendor/bin/phpstan analyse --no-progress"
+        ],
+        "test": [
+            "@php vendor/bin/pest --testsuite=Unit"
+        ],
+        "test:coverage": [
+            "@php vendor/bin/pest --testsuite=Unit --coverage"
+        ],
+        "test:w3c": [
+            "@php vendor/bin/pest --testsuite=W3C"
+        ],
+        "test:all": [
+            "@php vendor/bin/pest"
+        ]
+    }
+}

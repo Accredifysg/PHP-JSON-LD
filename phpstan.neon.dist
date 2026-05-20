@@ -1,0 +1,12 @@
+parameters:
+    level: max
+    paths:
+        - src
+        - tests
+    excludePaths:
+        # Submodule (w3c/json-ld-api) — third-party fixtures, not our code.
+        - tests/w3c/*
+        # Pest harness test files use $this binding to PHPUnit's TestCase at
+        # runtime, which PHPStan can't statically follow. The supporting
+        # classes (Harness, TestCase, Processor) are still analysed.
+        - tests/W3c/Algorithms/*
