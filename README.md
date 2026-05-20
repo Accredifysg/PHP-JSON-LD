@@ -64,6 +64,20 @@ composer test:w3c
 A per-algorithm PASS/FAIL matrix will appear in this section once Phase 4 is
 in progress (see [the plan](docs/plan.md)).
 
+### Characterization fixtures
+
+`tests/Algorithms/Characterization/` holds JSON snapshots of the expander's
+output, generated from running the original
+`accredifysg/verifiable-credentials-php` JsonLdProcessor over a set of
+sample documents. They are NOT a spec-conformance reference — they pin
+the package's current quirky behaviour so that spec-correctness work in
+later phases can land each behaviour change in a reviewable diff.
+
+When a Phase 4 PR changes expansion in a way that updates these fixtures,
+the update should be reviewed for correctness and paired with any
+matching change in downstream consumers (e.g. VC's signed-credential
+test fixtures).
+
 ## License
 
 [MIT](LICENSE) © Accredify

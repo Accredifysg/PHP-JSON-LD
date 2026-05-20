@@ -1,0 +1,22 @@
+{
+    "@type": [
+        "https://schema.org/Person"
+    ],
+    "https://schema.org/knows": [
+        {
+            "@type": [
+                "https://schema.org/Person"
+            ],
+            "https://schema.org/name": [
+                {
+                    "@value": "Bob"
+                }
+            ]
+        }
+    ],
+    "https://schema.org/name": [
+        {
+            "@value": "Alice"
+        }
+    ]
+}

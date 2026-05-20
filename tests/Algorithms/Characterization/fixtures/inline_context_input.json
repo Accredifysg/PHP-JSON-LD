@@ -1,0 +1,17 @@
+{
+  "@context": {
+    "name": "https://schema.org/name",
+    "Person": "https://schema.org/Person",
+    "knows": "https://schema.org/knows",
+    "id": "@id",
+    "type": "@type"
+  },
+  "id": "urn:person:alice",
+  "type": "Person",
+  "name": "Alice",
+  "knows": {
+    "id": "urn:person:bob",
+    "type": "Person",
+    "name": "Bob"
+  }
+}

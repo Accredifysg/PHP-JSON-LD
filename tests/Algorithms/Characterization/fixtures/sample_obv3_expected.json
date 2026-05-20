@@ -1,0 +1,164 @@
+{
+    "@id": "urn:uuid:00000000-0000-4000-8000-000000000001",
+    "@type": [
+        "https://purl.imsglobal.org/spec/vc/ob/vocab.html#OpenBadgeCredential",
+        "https://www.w3.org/2018/credentials#VerifiableCredential"
+    ],
+    "https://schema.org/name": [
+        {
+            "@value": "Sample Achievement Credential"
+        }
+    ],
+    "https://w3id.org/security#proof": [
+        {
+            "@type": [
+                "https://w3id.org/security#DataIntegrityProof"
+            ],
+            "http://purl.org/dc/terms/created": [
+                {
+                    "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
+                    "@value": "2025-01-01T00:00:00+00:00"
+                }
+            ],
+            "https://w3id.org/security#cryptosuite": [
+                {
+                    "@type": "https://w3id.org/security#cryptosuiteString",
+                    "@value": "eddsa-rdfc-2022"
+                }
+            ],
+            "https://w3id.org/security#proofPurpose": [
+                {
+                    "@id": "https://w3id.org/security#assertionMethod"
+                }
+            ],
+            "https://w3id.org/security#proofValue": [
+                {
+                    "@type": "https://w3id.org/security#multibase",
+                    "@value": "zEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAM"
+                }
+            ],
+            "https://w3id.org/security#verificationMethod": [
+                {
+                    "@id": "did:web:vc-issuer.example.com:sandbox:organizations:00000000-0000-4000-8000-000000000002#key-EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE"
+                }
+            ]
+        }
+    ],
+    "https://www.w3.org/2018/credentials#credentialStatus": [
+        {
+            "@id": "https://example.com/api/openbadges/revocations/00000000-0000-4000-8000-000000000001",
+            "@type": [
+                "https://purl.imsglobal.org/spec/vcrl/v1p0/context.json#1EdTechRevocationList"
+            ]
+        }
+    ],
+    "https://www.w3.org/2018/credentials#credentialSubject": [
+        {
+            "@type": [
+                "https://purl.imsglobal.org/spec/vc/ob/vocab.html#AchievementSubject"
+            ],
+            "https://purl.imsglobal.org/spec/vc/ob/vocab.html#achievement": [
+                {
+                    "@id": "https://example.com/achievements/sample-1",
+                    "@type": [
+                        "https://purl.imsglobal.org/spec/vc/ob/vocab.html#Achievement"
+                    ],
+                    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#Criteria": [
+                        {
+                            "@id": "https://example.edu",
+                            "https://purl.imsglobal.org/spec/vc/ob/vocab.html#narrative": [
+                                {
+                                    "@value": "Recipients must meet the example criteria."
+                                }
+                            ]
+                        }
+                    ],
+                    "https://schema.org/description": [
+                        {
+                            "@value": "An example achievement used for characterization testing."
+                        }
+                    ],
+                    "https://schema.org/name": [
+                        {
+                            "@value": "Sample Achievement"
+                        }
+                    ]
+                }
+            ],
+            "https://purl.imsglobal.org/spec/vc/ob/vocab.html#identifier": [
+                {
+                    "@type": [
+                        "https://purl.imsglobal.org/spec/vc/ob/vocab.html#IdentityObject"
+                    ],
+                    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#hashed": [
+                        {
+                            "@type": "https://www.w3.org/2001/XMLSchema#boolean",
+                            "@value": false
+                        }
+                    ],
+                    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#identityHash": [
+                        {
+                            "@value": "Alice Example"
+                        }
+                    ],
+                    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#identityType": [
+                        {
+                            "@value": "name"
+                        }
+                    ]
+                },
+                {
+                    "@type": [
+                        "https://purl.imsglobal.org/spec/vc/ob/vocab.html#IdentityObject"
+                    ],
+                    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#hashed": [
+                        {
+                            "@type": "https://www.w3.org/2001/XMLSchema#boolean",
+                            "@value": true
+                        }
+                    ],
+                    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#identityHash": [
+                        {
+                            "@value": "sha256$0000000000000000000000000000000000000000000000000000000000000000"
+                        }
+                    ],
+                    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#identityType": [
+                        {
+                            "@value": "emailAddress"
+                        }
+                    ],
+                    "https://purl.imsglobal.org/spec/vc/ob/vocab.html#salt": [
+                        {
+                            "@value": "examplesalt"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "https://www.w3.org/2018/credentials#issuer": [
+        {
+            "@id": "did:web:vc-issuer.example.com:sandbox:organizations:00000000-0000-4000-8000-000000000002",
+            "@type": [
+                "https://purl.imsglobal.org/spec/vc/ob/vocab.html#Profile"
+            ],
+            "https://schema.org/name": [
+                {
+                    "@value": "Example University"
+                }
+            ]
+        }
+    ],
+    "https://www.w3.org/2018/credentials#validFrom": [
+        {
+            "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
+            "@value": "2025-01-01T00:00:00+00:00"
+        }
+    ],
+    "https://www.w3.org/2018/credentials#validUntil": [
+        {
+            "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
+            "@value": "2025-12-31T00:00:00+00:00"
+        }
+    ]
+}
