@@ -9,10 +9,12 @@
 
 A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) specification.
 
-> **Status: Work in progress.** This package is being extracted from
-> [accredifysg/verifiable-credentials-php](https://github.com/accredifysg/verifiable-credentials-php)
-> and incrementally brought into conformance with the W3C JSON-LD 1.1 specification.
-> The public API is not yet stable; do not depend on it for production use until v1.0.
+> **Status: Pre-1.0.** v0.1.0 ships the JSON-LD code extracted from
+> [accredifysg/verifiable-credentials-php](https://github.com/accredifysg/verifiable-credentials-php).
+> It is functionally complete for VCv2 / Open Badges v3 expansion but is
+> **not yet spec-compliant** with JSON-LD 1.1 — see
+> [CHANGELOG](CHANGELOG.md) for known limitations. The public API may change
+> before v1.0.
 
 ## Goals
 
@@ -26,24 +28,46 @@ A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) spec
 
 ## Planned scope (v1.0)
 
-- [ ] Expansion (§5.5)
+- [x] Custom `DocumentLoader` interface
+- [~] Expansion (§5.5) — present, not spec-compliant yet
 - [ ] Compaction (§5.6)
 - [ ] Serialize JSON-LD to RDF (§6 / `toRdf`)
-- [ ] Custom `DocumentLoader` interface
 
 Out of scope for v1.0: Flattening, Framing, RDF-to-JSON-LD (`fromRdf`).
 
 ## Installation
 
 ```bash
-composer require accredifysg/php-json-ld
+composer require accredifysg/php-json-ld:^0.1
 ```
 
-Requires PHP 8.1+.
+Requires PHP 8.1+. You also need a PSR-18 HTTP client + PSR-17 request
+factory if you use the bundled `HttpDocumentLoader` (e.g. `guzzlehttp/guzzle`
+and `guzzlehttp/psr7`), or you can implement `DocumentLoader` yourself to
+serve `@context` URLs from wherever you like.
 
 ## Usage
 
-> Usage examples land in a later PR once the public API stabilises.
+```php
+use Accredify\JsonLd\JsonLdProcessor;
+use Accredify\JsonLd\Loaders\CachingDocumentLoader;
+use Accredify\JsonLd\Loaders\HttpDocumentLoader;
+use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\HttpFactory;
+
+$loader = new CachingDocumentLoader(
+    new HttpDocumentLoader(new Client, new HttpFactory),
+);
+
+$processor = new JsonLdProcessor($loader);
+$expanded = $processor->expand($yourDocument)->toArray();
+```
+
+If you want to serve known contexts from local files (recommended for
+verifiable credentials), implement `Accredify\JsonLd\Contracts\DocumentLoader`
+yourself. See
+[`tests/Algorithms/Characterization/Support/BundledContextLoader.php`](tests/Algorithms/Characterization/Support/BundledContextLoader.php)
+for an example.
 
 ## Compliance
 

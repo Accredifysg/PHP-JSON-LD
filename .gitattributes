@@ -1,0 +1,25 @@
+# Force LF line endings for all text files. Overrides Windows checkout-time
+# CRLF conversion (core.autocrlf=true) so contributors on different platforms
+# see the same bytes regardless of local git config.
+* text=auto eol=lf
+
+# Binary file types — never touch line endings.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# Files that don't need to ship in the composer dist tarball.
+# These cut the size of `composer require` downloads significantly,
+# especially the W3C submodule (tests/w3c/).
+/.editorconfig    export-ignore
+/.gitattributes   export-ignore
+/.gitignore       export-ignore
+/.gitmodules      export-ignore
+/.github          export-ignore
+/CHANGELOG.md     export-ignore
+/Pest.php         export-ignore
+/phpstan.neon.dist export-ignore
+/phpunit.xml      export-ignore
+/tests            export-ignore
