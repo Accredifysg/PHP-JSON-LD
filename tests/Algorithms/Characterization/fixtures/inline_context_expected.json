@@ -1,22 +1,26 @@
-{
-    "@type": [
-        "https://schema.org/Person"
-    ],
-    "https://schema.org/knows": [
-        {
-            "@type": [
-                "https://schema.org/Person"
-            ],
-            "https://schema.org/name": [
-                {
-                    "@value": "Bob"
-                }
-            ]
-        }
-    ],
-    "https://schema.org/name": [
-        {
-            "@value": "Alice"
-        }
-    ]
-}
+[
+    {
+        "@id": "urn:person:alice",
+        "@type": [
+            "https://schema.org/Person"
+        ],
+        "https://schema.org/knows": [
+            {
+                "@id": "urn:person:bob",
+                "@type": [
+                    "https://schema.org/Person"
+                ],
+                "https://schema.org/name": [
+                    {
+                        "@value": "Bob"
+                    }
+                ]
+            }
+        ],
+        "https://schema.org/name": [
+            {
+                "@value": "Alice"
+            }
+        ]
+    }
+]

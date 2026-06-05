@@ -6,29 +6,42 @@ namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Context\TermDefinitions;
 use Accredify\JsonLd\Enums\Keyword;
+use Throwable;
 
 /**
  * Lifted-and-shifted expansion routine from accredifysg/verifiable-credentials-php.
  *
- * Implements ENOUGH of the JSON-LD 1.1 Expansion Algorithm
- * (https://www.w3.org/TR/json-ld11-api/#expansion-algorithm) to satisfy the
- * VCv2 / Open Badges v3 codepaths used by the VC repo's
- * eddsa-rdfc-2022 crypto suite. It is NOT spec-compliant; known gaps:
+ * Implements the subset of the JSON-LD 1.1 Expansion Algorithm
+ * (https://www.w3.org/TR/json-ld11-api/#expansion-algorithm) needed by the
+ * VC repo's eddsa-rdfc-2022 + ecdsa-sd-2023 crypto suites. Notable features
+ * vs a bare lift:
  *
- * - IRI expansion uses FILTER_VALIDATE_URL, which rejects valid IRIs like
- *   `did:web:…`, `urn:…`, blank node `_:…`.
- * - No container handling (@list, @set, @language, @index, @graph, @id,
+ * - Result is always wrapped in an outer array (per the spec's "expansion
+ *   produces an array of node objects" rule).
+ * - `id` and `type` keyword aliases are handled directly in `expandObjectNode`
+ *   without requiring a term-definition lookup, so documents whose contexts
+ *   don't expose those aliases at the top level still expand correctly.
+ * - Type-scoped contexts: when an object has an `@type`/`type` whose term
+ *   definition contains a nested `@context`, those terms are merged into a
+ *   transient {@see TermDefinitions} used for the object's other properties.
+ * - `@vocab` is used as a fallback when expanding terms in `vocab` mode and
+ *   neither a term definition nor a compact-IRI prefix matches.
+ * - Compact IRI expansion (`prefix:path`) preserves the `#` or `/` suffix of
+ *   the prefix's IRI instead of always inserting a `/`.
  *
- *   @type, @nest, @included).
- * - No @reverse, @json, language-tagged / direction-tagged strings.
- * - Hardcoded xsd:string collapse.
- * - The `sort()` / `ksort()` / `escapeString()` calls bake a canonicalization
- *   concern into expansion - removing them is a Phase 4 task that will
- *   surface ordering bugs in the downstream RDFC-10 implementation.
+ * Known gaps vs full JSON-LD 1.1 (Phase 4 territory):
  *
- * Phase 4 replaces this entire file. Characterization tests in PR 2.8 pin
- * the current quirks so future refactors can distinguish intentional from
- * accidental output changes.
+ * - IRI expansion still uses FILTER_VALIDATE_URL, which rejects valid IRIs
+ *   like `did:web:…`, `urn:…`, blank node `_:…`.
+ * - No container handling: `@list`, `@set`, `@language`, `@index`, `@graph`,
+ *   `@id`, `@type`, `@nest`, `@included`.
+ * - No `@reverse`, `@json` literals, language-tagged / direction-tagged
+ *   strings.
+ * - The `sort` / `ksort` / `escapeString` calls bake a canonicalization
+ *   concern into expansion; removing them is a Phase 4 task that will
+ *   surface latent ordering bugs in downstream RDFC-10 consumers.
+ *
+ * Phase 4 replaces this entire file with a spec-compliant implementation.
  */
 class Expansion
 {
@@ -45,17 +58,28 @@ class Expansion
      */
     public function expand(array $document): array
     {
-        $result = $this->expandNode($document);
+        $expanded = $this->expandNode($document);
 
-        return is_array($result) ? $result : [];
+        if (! is_array($expanded)) {
+            return [];
+        }
+
+        // Wrap a single object result in an outer array per the JSON-LD 1.1
+        // Expansion Algorithm — the output is always a list of node objects.
+        // Empty results pass through unwrapped.
+        if (! isset($expanded[0]) && $expanded !== []) {
+            return [$expanded];
+        }
+
+        return $expanded;
     }
 
     /**
      * Expands a node based on its type (scalar, array, or object).
      *
-     * @return array<mixed>|string|null
+     * @return array<mixed>|string
      */
-    private function expandNode(mixed $node, ?string $activeProperty = null): array|string|null
+    private function expandNode(mixed $node, ?string $activeProperty = null): array|string
     {
         if (! is_array($node)) {
             return $this->expandScalarNode($node, $activeProperty);
@@ -67,9 +91,9 @@ class Expansion
     }
 
     /**
-     * @return array<mixed>|string|null
+     * @return array<mixed>|string
      */
-    private function expandScalarNode(mixed $node, ?string $activeProperty): array|string|null
+    private function expandScalarNode(mixed $node, ?string $activeProperty): array|string
     {
         $termDef = $this->termDefinitions->getTermDefinition($activeProperty);
 
@@ -78,7 +102,7 @@ class Expansion
         }
 
         if ($activeProperty === Keyword::Type->value) {
-            return is_string($node) ? $this->expandIri($node, true) : null;
+            return is_string($node) ? $this->expandIri($node, true) : '';
         }
 
         if ($termDef === null) {
@@ -104,7 +128,7 @@ class Expansion
                 return ['@id' => is_string($node) ? $this->expandIri($node) : ''];
             }
 
-            // Don't add @type for xsd:string as it's the default
+            // Don't add @type for xsd:string — it's the default literal type.
             $expandedType = $this->expandIri($type, true);
             if (
                 $expandedType === 'https://www.w3.org/2001/XMLSchema#string'
@@ -150,7 +174,7 @@ class Expansion
         $result = [];
         foreach ($node as $item) {
             $expandedItem = $this->expandNode($item, $activeProperty);
-            if ($expandedItem !== null) {
+            if ($expandedItem !== '' || $activeProperty === Keyword::Type->value) {
                 $result[] = $expandedItem;
             }
         }
@@ -170,6 +194,18 @@ class Expansion
     {
         $expanded = [];
 
+        // First pass: collect types so type-scoped contexts can activate.
+        $types = [];
+        if (isset($node['@type'])) {
+            $types = is_array($node['@type']) ? $node['@type'] : [$node['@type']];
+        } elseif (isset($node['type'])) {
+            $types = is_array($node['type']) ? $node['type'] : [$node['type']];
+        }
+
+        $scopedTermDefinitions = $this->createScopedTermDefinitions(
+            array_values(array_filter($types, 'is_string'))
+        );
+
         foreach ($node as $key => $value) {
             if (! is_string($key)) {
                 continue;
@@ -178,13 +214,25 @@ class Expansion
                 continue;
             }
 
-            if ($key === Keyword::Type->withoutAtSign()) {
+            // @id keyword (direct + alias).
+            if ($key === Keyword::Id->value || $key === Keyword::Id->withoutAtSign()) {
+                if (is_string($value)) {
+                    $expanded['@id'] = $value;
+                } elseif (is_scalar($value)) {
+                    $expanded['@id'] = (string) $value;
+                }
+
+                continue;
+            }
+
+            // @type keyword (direct + alias).
+            if ($key === Keyword::Type->value || $key === Keyword::Type->withoutAtSign()) {
                 $expanded['@type'] = $this->expandTypeValue($value);
 
                 continue;
             }
 
-            $expandedProperty = $this->expandProperty($key, $value);
+            $expandedProperty = $this->expandPropertyWithScope($key, $value, $scopedTermDefinitions);
             if ($expandedProperty !== null) {
                 [$expandedKey, $expandedValue] = $expandedProperty;
                 $expanded[$expandedKey] = $expandedValue;
@@ -194,6 +242,105 @@ class Expansion
         ksort($expanded);
 
         return $expanded;
+    }
+
+    /**
+     * Builds a transient {@see TermDefinitions} that includes terms from any
+     * type-scoped contexts associated with the given types.
+     *
+     * @param  list<string>  $types
+     */
+    private function createScopedTermDefinitions(array $types): TermDefinitions
+    {
+        $scoped = new TermDefinitions($this->termDefinitions->termDefinitions);
+
+        $baseVocab = $this->termDefinitions->getVocab();
+        if ($baseVocab !== null) {
+            $scoped->setVocab($baseVocab);
+        }
+
+        foreach ($types as $type) {
+            $typeDef = $this->termDefinitions->getTermDefinition($type);
+            if (
+                $typeDef === null
+                || ! isset($typeDef['@context'])
+                || ! is_array($typeDef['@context'])
+            ) {
+                continue;
+            }
+
+            // A type-scoped context may declare its own @vocab; push it so
+            // it takes precedence within this object's expansion.
+            if (
+                isset($typeDef['@context'][Keyword::Vocab->value])
+                && is_string($typeDef['@context'][Keyword::Vocab->value])
+            ) {
+                $scoped->pushVocab($typeDef['@context'][Keyword::Vocab->value]);
+            }
+
+            foreach ($typeDef['@context'] as $term => $definition) {
+                if (! is_string($term) || str_starts_with($term, '@')) {
+                    continue;
+                }
+                if (! is_string($definition) && ! is_array($definition)) {
+                    continue;
+                }
+                try {
+                    $scoped->addTermDefinition($term, $definition);
+                } catch (Throwable) {
+                    // Already-defined or invalid terms — skip rather than abort.
+                }
+            }
+        }
+
+        return $scoped;
+    }
+
+    /**
+     * @return array{0: string, 1: mixed}|null [expandedKey, expandedValue]
+     */
+    private function expandPropertyWithScope(string $key, mixed $value, TermDefinitions $scoped): ?array
+    {
+        // Prefer the scoped definition, fall back to the base term map.
+        $termDef = $scoped->getTermDefinition($key) ?? $this->termDefinitions->getTermDefinition($key);
+
+        if ($termDef === null) {
+            if (str_contains($key, ':')) {
+                $expandedKey = $this->expandIri($key, true);
+                if ($expandedKey !== $key) {
+                    $termDef = ['@id' => $expandedKey];
+                }
+            }
+            if ($termDef === null) {
+                // Last resort: try @vocab expansion.
+                $expandedKey = $this->expandIri($key, true);
+                if ($expandedKey !== $key) {
+                    $termDef = ['@id' => $expandedKey];
+                } else {
+                    return null;
+                }
+            }
+        }
+
+        if (! isset($termDef['@id']) || ! is_string($termDef['@id'])) {
+            return null;
+        }
+        $expandedKey = $this->expandIri($termDef['@id'], true);
+        $expandedValue = $this->expandNode($value, $key);
+
+        if ($expandedKey === Keyword::Id->value) {
+            if (is_array($expandedValue) && isset($expandedValue['@value'])) {
+                return [$expandedKey, $expandedValue['@value']];
+            }
+
+            return [$expandedKey, $expandedValue];
+        }
+
+        $finalValue = (is_array($expandedValue) && array_key_exists(0, $expandedValue))
+            ? $expandedValue
+            : [$expandedValue];
+
+        return [$expandedKey, $finalValue];
     }
 
     /**
@@ -229,59 +376,9 @@ class Expansion
     }
 
     /**
-     * @return array{0: string, 1: mixed}|null [expandedKey, expandedValue]
-     */
-    private function expandProperty(string $key, mixed $value): ?array
-    {
-        $termDef = $this->termDefinitions->getTermDefinition($key);
-
-        if ($termDef === null) {
-            if (str_contains($key, ':')) {
-                $expandedKey = $this->expandIri($key, true);
-                if ($expandedKey !== $key) {
-                    $termDef = ['@id' => $expandedKey];
-                }
-            }
-            if ($termDef === null) {
-                return null;
-            }
-        }
-
-        if (! isset($termDef['@id']) || ! is_string($termDef['@id'])) {
-            return null;
-        }
-        $expandedKey = $this->expandIri($termDef['@id'], true);
-        $expandedValue = $this->expandNode($value, $key);
-
-        if ($expandedValue === null) {
-            return null;
-        }
-
-        if ($expandedKey === Keyword::Id->value) {
-            // @id keeps its raw value (no array wrapping).
-            if (is_array($expandedValue) && isset($expandedValue['@value'])) {
-                return [$expandedKey, $expandedValue['@value']];
-            }
-
-            return [$expandedKey, $expandedValue];
-        }
-
-        $finalValue = (is_array($expandedValue) && array_key_exists(0, $expandedValue))
-            ? $expandedValue
-            : [$expandedValue];
-
-        return [$expandedKey, $finalValue];
-    }
-
-    /**
-     * Expands a vocabulary term to its IRI.
-     *
-     * Carries forward a VC quirk: iterates over the TermDefinitions object's
-     * public properties (= one iteration yielding the inner term map) and
-     * checks for `@id` / `@vocab` keys on it. In practice this dead-code
-     * branch never matches because ContextProcessor strips keywords out of
-     * the term map. Preserved verbatim under the lift-and-shift charter;
-     * Phase 4 removes it.
+     * Expands a vocabulary term. Carries forward a VC quirk: iterates the
+     * inner term definitions array searching for the value via
+     * {@see findTermInDefinition}.
      */
     private function expandVocabTerm(string $value): string
     {
@@ -290,7 +387,7 @@ class Expansion
             return $termDef['@id'];
         }
 
-        foreach ((array) $this->termDefinitions as $def) {
+        foreach ($this->termDefinitions->termDefinitions as $def) {
             if (is_array($def)) {
                 $result = $this->findTermInDefinition($value, $def);
                 if ($result !== null) {
@@ -334,20 +431,53 @@ class Expansion
             $currentValue = $termDef['@id'];
         }
 
-        while (str_contains($currentValue, ':')) {
-            [$prefix, $path] = explode(':', $currentValue, 2);
+        // Try compact-IRI prefix expansion FIRST so terms like "sec:created"
+        // use the "sec" prefix definition rather than falling back to @vocab.
+        $prefixExpanded = false;
 
-            if (in_array($prefix, $this->processedPrefixes, true)) {
-                break;
+        if (str_contains($currentValue, ':')) {
+            while (str_contains($currentValue, ':')) {
+                [$prefix, $path] = explode(':', $currentValue, 2);
+
+                if (in_array($prefix, $this->processedPrefixes, true)) {
+                    break;
+                }
+                $this->processedPrefixes[] = $prefix;
+
+                $prefixDef = $this->termDefinitions->getTermDefinition($prefix);
+                if ($prefixDef === null || ! isset($prefixDef['@id']) || ! is_string($prefixDef['@id'])) {
+                    break;
+                }
+
+                $prefixIri = $prefixDef['@id'];
+                if (str_ends_with($prefixIri, '#') || str_ends_with($prefixIri, '/')) {
+                    // Prefix already has a separator — concatenate directly.
+                    $currentValue = $prefixIri.$path;
+                } else {
+                    $currentValue = $prefixIri.'/'.$path;
+                }
+
+                $prefixExpanded = true;
             }
-            $this->processedPrefixes[] = $prefix;
+        }
 
-            $prefixDef = $this->termDefinitions->getTermDefinition($prefix);
-            if ($prefixDef === null || ! isset($prefixDef['@id']) || ! is_string($prefixDef['@id'])) {
-                break;
+        // Fall back to @vocab if:
+        // 1. vocab flag is true,
+        // 2. no term definition matched,
+        // 3. prefix expansion didn't happen,
+        // 4. the value is not already a URL.
+        if (
+            $vocab
+            && $termDef === null
+            && ! $prefixExpanded
+            && ! filter_var($currentValue, FILTER_VALIDATE_URL)
+        ) {
+            $vocabIri = $this->termDefinitions->getVocab();
+            if ($vocabIri !== null) {
+                // Per JSON-LD spec: concatenate directly. The vocab IRI is
+                // expected to already end with the appropriate separator.
+                return $vocabIri.$currentValue;
             }
-
-            $currentValue = rtrim($prefixDef['@id'], '/').'/'.$path;
         }
 
         return $currentValue;

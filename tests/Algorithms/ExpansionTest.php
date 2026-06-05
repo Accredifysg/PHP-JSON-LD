@@ -31,7 +31,7 @@ function makeExpansion(array $contextDoc, array $loaderMap = []): Expansion
 }
 
 describe('Expansion::expand', function () {
-    it('expands a simple typed term value', function () {
+    it('wraps a single-object result in an outer array', function () {
         $expander = makeExpansion([
             '@context' => [
                 'name' => 'https://schema.org/name',
@@ -39,13 +39,15 @@ describe('Expansion::expand', function () {
             'name' => 'Alice',
         ]);
 
-        $expanded = $expander->expand([
-            'name' => 'Alice',
-        ]);
+        $expanded = $expander->expand(['name' => 'Alice']);
 
-        // The exact shape is locked by VC's expander; this is the smoke test.
-        expect($expanded)->toHaveKey('https://schema.org/name');
-        expect($expanded['https://schema.org/name'])->toBe([['@value' => 'Alice']]);
+        // Per JSON-LD 1.1, expansion always produces a list of node objects.
+        expect($expanded)->toBeArray();
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first)->toHaveKey('https://schema.org/name');
+        expect($first['https://schema.org/name'])->toBe([['@value' => 'Alice']]);
     });
 
     it('strips @context from the output', function () {
@@ -61,7 +63,10 @@ describe('Expansion::expand', function () {
             'name' => 'Bob',
         ]);
 
-        expect($expanded)->not->toHaveKey('@context');
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first)->not->toHaveKey('@context');
     });
 
     it('expands @type values', function () {
@@ -78,24 +83,31 @@ describe('Expansion::expand', function () {
             'name' => 'X',
         ]);
 
-        expect($expanded['@type'])->toBe(['https://schema.org/Person']);
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first['@type'])->toBe(['https://schema.org/Person']);
     });
 
-    it('expands @id values via the id term alias', function () {
+    it('expands @id directly without requiring a term-definition alias', function () {
         $expander = makeExpansion([
             '@context' => [
-                'id' => '@id',
                 'name' => 'https://schema.org/name',
             ],
             'name' => 'X',
         ]);
 
+        // The "id" keyword alias works even when not explicitly mapped in
+        // the context — expandObjectNode handles it as a built-in.
         $expanded = $expander->expand([
             'id' => 'urn:thing:1',
             'name' => 'X',
         ]);
 
-        expect($expanded['@id'])->toBe('urn:thing:1');
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first['@id'])->toBe('urn:thing:1');
     });
 
     it('returns an empty array for a fully-empty input', function () {

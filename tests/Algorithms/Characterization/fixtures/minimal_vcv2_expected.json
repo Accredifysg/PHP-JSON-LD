@@ -1,27 +1,29 @@
-{
-    "@id": "https://example.com/credentials/1234",
-    "@type": [
-        "https://www.w3.org/2018/credentials#VerifiableCredential"
-    ],
-    "https://www.w3.org/2018/credentials#credentialSubject": [
-        {
-            "@id": "did:example:subject",
-            "https://schema.org/name": [
-                {
-                    "@value": "Alice"
-                }
-            ]
-        }
-    ],
-    "https://www.w3.org/2018/credentials#issuer": [
-        {
-            "@id": "did:example:123"
-        }
-    ],
-    "https://www.w3.org/2018/credentials#validFrom": [
-        {
-            "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-            "@value": "2024-01-01T00:00:00+00:00"
-        }
-    ]
-}
+[
+    {
+        "@id": "https://example.com/credentials/1234",
+        "@type": [
+            "https://www.w3.org/2018/credentials#VerifiableCredential"
+        ],
+        "https://www.w3.org/2018/credentials#credentialSubject": [
+            {
+                "@id": "did:example:subject",
+                "https://schema.org/name": [
+                    {
+                        "@value": "Alice"
+                    }
+                ]
+            }
+        ],
+        "https://www.w3.org/2018/credentials#issuer": [
+            {
+                "@id": "did:example:123"
+            }
+        ],
+        "https://www.w3.org/2018/credentials#validFrom": [
+            {
+                "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
+                "@value": "2024-01-01T00:00:00+00:00"
+            }
+        ]
+    }
+]

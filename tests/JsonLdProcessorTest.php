@@ -17,8 +17,13 @@ describe('JsonLdProcessor::expand', function () {
             'name' => 'Alice',
         ]);
 
+        // Expansion produces an array of node objects per JSON-LD 1.1.
         expect($result)->toBeInstanceOf(ExpandedDocument::class);
-        expect($result->toArray())->toHaveKey('https://schema.org/name');
+        $array = $result->toArray();
+        $first = $array[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first)->toHaveKey('https://schema.org/name');
     });
 
     it('strips @context from the expanded output', function () {

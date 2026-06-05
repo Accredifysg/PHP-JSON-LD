@@ -150,6 +150,15 @@ class ContextProcessor
             return;
         }
 
+        // A context object that wraps another @context — recurse into it.
+        // Some VC context endpoints return `{ "@context": { … } }` at the
+        // top level even when not embedded as a term definition.
+        if (isset($context['@context']) && is_array($context['@context'])) {
+            $this->processContextLayer($context['@context'], $depth + 1);
+
+            return;
+        }
+
         // Map of term -> definition
         $processedContext = [];
         foreach ($context as $key => $value) {
@@ -183,6 +192,13 @@ class ContextProcessor
     private function mergeContexts(): void
     {
         foreach ($this->processedContexts as $context) {
+            // Push any @vocab onto the term definitions' vocab stack so the
+            // Expansion algorithm can use it as a fallback for undefined
+            // terms.
+            if (isset($context[Keyword::Vocab->value]) && is_string($context[Keyword::Vocab->value])) {
+                $this->termDefinitions->pushVocab($context[Keyword::Vocab->value]);
+            }
+
             foreach ($context as $key => $value) {
                 if (Keyword::contains($key)) {
                     continue;

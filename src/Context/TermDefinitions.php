@@ -41,12 +41,57 @@ use Accredify\JsonLd\Exceptions\JsonLdException;
  */
 class TermDefinitions
 {
+    /** @var list<string> Stack of active @vocab IRIs (innermost-last). */
+    private array $vocabStack = [];
+
     /**
      * @param  array<string, TermDefinition|string>  $termDefinitions
      */
     public function __construct(
         public array $termDefinitions = []
     ) {}
+
+    /**
+     * Push a `@vocab` IRI onto the stack.
+     *
+     * `@vocab` participates in IRI expansion as a fallback: when a term is
+     * neither defined nor a compact IRI, the active `@vocab` is prepended to
+     * it. Stacking lets a type-scoped context temporarily override the
+     * outer `@vocab` without losing the parent value.
+     */
+    public function pushVocab(?string $vocab): void
+    {
+        if ($vocab !== null) {
+            $this->vocabStack[] = $vocab;
+        }
+    }
+
+    public function popVocab(): void
+    {
+        if ($this->vocabStack !== []) {
+            array_pop($this->vocabStack);
+        }
+    }
+
+    /**
+     * Returns the active (innermost) `@vocab` IRI, or null if none is set.
+     */
+    public function getVocab(): ?string
+    {
+        return $this->vocabStack === [] ? null : end($this->vocabStack);
+    }
+
+    /**
+     * Replaces the entire vocab stack with a single value (or clears it).
+     *
+     * Kept for convenience when constructing scoped term definitions from a
+     * parent — call `setVocab($parent->getVocab())` to mirror the parent's
+     * active vocab without copying its full stack.
+     */
+    public function setVocab(?string $vocab): void
+    {
+        $this->vocabStack = $vocab !== null ? [$vocab] : [];
+    }
 
     /**
      * @param  TermDefinition|string  $termDefinition  String values are
