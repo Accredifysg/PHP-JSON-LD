@@ -69,9 +69,10 @@ describe('Expansion::expand', function () {
         expect($first)->not->toHaveKey('@context');
     });
 
-    it('expands @type values', function () {
+    it('expands @type values when the context aliases type → @type', function () {
         $expander = makeExpansion([
             '@context' => [
+                'type' => '@type',
                 'name' => 'https://schema.org/name',
                 'Person' => 'https://schema.org/Person',
             ],
@@ -89,16 +90,15 @@ describe('Expansion::expand', function () {
         expect($first['@type'])->toBe(['https://schema.org/Person']);
     });
 
-    it('expands @id directly without requiring a term-definition alias', function () {
+    it('expands @id when the context aliases id → @id', function () {
         $expander = makeExpansion([
             '@context' => [
+                'id' => '@id',
                 'name' => 'https://schema.org/name',
             ],
             'name' => 'X',
         ]);
 
-        // The "id" keyword alias works even when not explicitly mapped in
-        // the context — expandObjectNode handles it as a built-in.
         $expanded = $expander->expand([
             'id' => 'urn:thing:1',
             'name' => 'X',

@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-13
+
+**Breaking.** First Phase 4 release: the lifted-and-shifted v0.1.x
+expander is replaced with a from-scratch implementation of the
+JSON-LD 1.1 Expansion / Value Expansion / IRI Expansion algorithms.
+
+W3C JSON-LD 1.1 expand test suite progress:
+
+```
+v0.1.1 baseline:   69 passed / 316 failed
+v0.2.0:           113 passed / 272 failed   (+44 passes)
+```
+
+### Changed
+
+- `Accredify\JsonLd\Algorithms\Expansion` rewritten from scratch to
+  follow §5.2 / §5.4 / §5.5 of the JSON-LD 1.1 API spec.
+  - **Free-floating nodes are dropped** during expansion (§5.5 step 14).
+    A document like `{"@id": "urn:x"}` now expands to `[]` instead of
+    throwing.
+  - **`@value` objects are preserved as value-object leaves** rather
+    than recursed into as node objects. Fixes the v0.1.x behaviour
+    where `{"@value": "v", "@type": "t"}` lost its `@value`.
+  - **IRI Expansion handles `did:`, `urn:`, `mailto:`, blank-node
+    `_:…`, and any scheme-prefixed value** instead of relying on
+    `FILTER_VALIDATE_URL`.
+  - **Compact IRI expansion is single-pass** (`prefix:suffix` → the
+    prefix's IRI mapping concatenated with `suffix`) instead of
+    iterating until no `:` remains, which the v0.1.x code did
+    aggressively.
+  - **`@type` values appear in input document order**, not
+    alphabetically sorted (the v0.1.x `sort($types)` is removed).
+  - **`id` / `type` keyword aliases are NOT applied implicitly** — a
+    context must explicitly map `"id": "@id"` / `"type": "@type"` per
+    the spec. (The v0.1.x expander treated `id` / `type` as builtins.)
+  - Term-definition `@id` chains (e.g. OBv3's `AchievementCredential
+    → OpenBadgeCredential → https://…/OpenBadgeCredential`) are now
+    iteratively resolved, with a cycle guard.
+
+### Added
+
+- `@list` and `@set` container handling.
+
+### Removed
+
+- The lift-and-shifted Expansion class. Its `escapeString`, `ksort`,
+  `sort` quirks no longer apply to expanded output.
+
+### Migration notes for consumers
+
+Downstream consumers that depended on v0.1.x's quirky byte-equivalent-
+to-VC output **will see different bytes from this release**. For VC's
+`EddsaRdfc2022CryptoSuite` specifically, the new expand chain produces
+different RDFC-10 input and therefore different signatures — so the
+v0.2.x line is intentionally NOT a drop-in upgrade from v0.1.1.
+Consumers should either pin `^0.1.1` or coordinate the upgrade with
+matching downstream changes (regenerate signed-credential test
+fixtures, or migrate RDFC-10 to consume the new expand output).
+
+The characterization fixture `sample_obv3_expected.json` is regenerated
+against the new expander and now reflects the spec-compliant output
+shape.
+
 ## [0.1.1] - 2026-05-13
 
 Syncs the lifted expander + context processor with current
@@ -101,6 +164,7 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/accredifysg/php-json-ld/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/accredifysg/php-json-ld/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/accredifysg/php-json-ld/releases/tag/v0.1.0

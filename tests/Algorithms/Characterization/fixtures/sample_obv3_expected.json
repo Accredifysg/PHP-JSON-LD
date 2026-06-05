@@ -2,8 +2,8 @@
     {
         "@id": "urn:uuid:00000000-0000-4000-8000-000000000001",
         "@type": [
-            "https://purl.imsglobal.org/spec/vc/ob/vocab.html#OpenBadgeCredential",
-            "https://www.w3.org/2018/credentials#VerifiableCredential"
+            "https://www.w3.org/2018/credentials#VerifiableCredential",
+            "https://purl.imsglobal.org/spec/vc/ob/vocab.html#OpenBadgeCredential"
         ],
         "https://schema.org/name": [
             {

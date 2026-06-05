@@ -47,22 +47,25 @@ composer test:w3c
 composer test:all
 ```
 
-## Current baseline (v0.1.1, PR 4.0)
+## Current score
 
 ```
-Expansion:    69 passed / 316 failed (out of 385 tests)
+Expansion:    113 passed / 272 failed (v0.2.0)
 Compaction:   skipped (PR 4.9 pending)
 toRdf:        skipped (PR 4.10 pending)
 ```
 
-The 69 expand passes split as 32 positive-evaluation passes (output
-matches the spec's expected expanded form) + 37 negative-evaluation
-passes (the spec expected an error, and we threw one).
+Each Phase 4 PR:
+1. Re-runs `composer test:w3c`.
+2. Records the before / after `passed` count in the commit message.
+3. Never regresses the `passed` count.
 
-Each PR in Phase 4 must:
-1. Re-run `composer test:w3c`.
-2. Record the before / after `passed` count in the PR description.
-3. Never regress the `passed` count.
+### History
+
+| Release | Expand passed | Δ      | Note                                  |
+| ------- | -------------:| ------:| ------------------------------------- |
+| v0.1.1  |           69  |    —   | Harness wired; lift-and-shift baseline |
+| v0.2.0  |          113  |   +44  | Expansion rewrite (PR 4.1)            |
 
 ## Out of scope
 
