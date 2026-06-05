@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-13
+
+Adds a first-pass **Compaction** algorithm (§5.6) — the first algorithm
+beyond expansion. This is the release that unblocks compaction-dependent
+consumers (e.g. VC's ecdsa-sd-2023 selective-disclosure path, which calls
+`$processor->compact()`).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact
+v0.7.0:       163        —    (compaction not implemented; 713 skipped)
+v0.8.0:       163       67    (compaction live; 467 toRdf still skipped)
+```
+
+Expansion is unchanged (163, no regression).
+
+### Added
+
+- `Accredify\JsonLd\Algorithms\Compaction` — IRI compaction (§5.7),
+  value compaction (§5.9), `@list` / `@set` container coercion, and the
+  core compaction recursion (§5.6). The inverse context keys on
+  fully-expanded IRIs, so terms whose `@id` is itself a compact IRI
+  (`ex:term1`) resolve correctly.
+- `Accredify\JsonLd\Documents\CompactedDocument` — read-only wrapper for
+  compacted output (mirrors `ExpandedDocument`).
+- `Processor::compact()` / `JsonLdProcessor::compact(array $expanded,
+  array|string $context)` — compacts an expanded document against a
+  context and prepends that context to the result.
+
+### Deferred
+
+- Container *map* forms (`@language` / `@index` / `@id` / `@type` /
+  `@graph` maps), `@reverse`, and scoped contexts during compaction.
+- `compactArrays` / `ordered` options beyond the defaults.
+
+### Consumer impact
+
+None. `compact()` is purely additive — expansion output is byte-identical
+to v0.7.0 (characterization fixtures unchanged). VC stays pinned at
+`^0.1.1`; when it later adopts `^0.8`, its `SkolemizationFunctions`
+compaction call can migrate off the in-repo processor.
+
 ## [0.7.0] - 2026-05-13
 
 Adds `@base` and document-relative IRI resolution (RFC 3986 §5).
@@ -399,7 +442,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/accredifysg/php-json-ld/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/accredifysg/php-json-ld/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/accredifysg/php-json-ld/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/accredifysg/php-json-ld/compare/v0.4.0...v0.5.0

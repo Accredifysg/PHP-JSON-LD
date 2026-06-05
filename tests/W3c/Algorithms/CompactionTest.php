@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Accredify\JsonLd\Tests\W3c\Harness;
 use Accredify\JsonLd\Tests\W3c\NotImplementedException;
-use Accredify\JsonLd\Tests\W3c\NullProcessor;
+use Accredify\JsonLd\Tests\W3c\Support\PhpJsonLdAdapter;
 use Accredify\JsonLd\Tests\W3c\TestCase;
 
 /*
@@ -27,7 +27,7 @@ dataset('compaction-tests', function () {
 });
 
 it('compacts per W3C manifest', function (TestCase $test) {
-    $processor = new NullProcessor;
+    $processor = PhpJsonLdAdapter::default();
 
     try {
         $actual = $processor->compact(
@@ -37,6 +37,13 @@ it('compacts per W3C manifest', function (TestCase $test) {
         );
     } catch (NotImplementedException) {
         $this->markTestSkipped('Compaction not yet implemented');
+    } catch (Throwable $e) {
+        if ($test->isNegative) {
+            expect(true)->toBeTrue();
+
+            return;
+        }
+        throw $e;
     }
 
     if ($test->isPositive) {

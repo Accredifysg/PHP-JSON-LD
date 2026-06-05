@@ -27,7 +27,7 @@ tests/
     │   └── W3cDocumentLoader.php   # offline loader for W3C fixtures
     └── Algorithms/
         ├── ExpansionTest.php       # runs via PhpJsonLdAdapter
-        ├── CompactionTest.php      # still NullProcessor (PR 4.9)
+        ├── CompactionTest.php      # runs via PhpJsonLdAdapter
         └── ToRdfTest.php           # still NullProcessor (PR 4.10)
 ```
 
@@ -50,8 +50,8 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    163 passed / 222 failed (v0.7.0)
-Compaction:   skipped (PR 4.9 pending)
+Expansion:    163 passed / 222 failed (v0.8.0)
+Compaction:    67 passed / 179 failed (v0.8.0)
 toRdf:        skipped (PR 4.10 pending)
 ```
 
@@ -71,6 +71,7 @@ Each Phase 4 PR:
 | v0.5.0  |          139  |   +13  | Value objects + @json (PR 4.4)        |
 | v0.6.0  |          147  |    +8  | @reverse (PR 4.5)                     |
 | v0.7.0  |          163  |   +16  | @base + relative IRIs (PR 4.6)        |
+| v0.8.0  |          163  |     0  | Compaction added (67 compact passes)  |
 
 ### Notes on v0.4.0
 

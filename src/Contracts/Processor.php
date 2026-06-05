@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Accredify\JsonLd\Contracts;
 
+use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 
 /**
  * Public entry point for the package's algorithms.
  *
- * Only `expand` is defined in v0.1; `compact` and `toRdf` join in Phase 4.
+ * `expand` and `compact` are implemented; `toRdf` joins in a later PR.
  *
  * Kept as a separate interface from {@see DocumentLoader} so that consumers
  * can mock just the processor in tests without worrying about loader
@@ -31,4 +32,19 @@ interface Processor
      *                         raises.
      */
     public function expand(array $document, ?string $base = null): ExpandedDocument;
+
+    /**
+     * Compact an expanded JSON-LD document against the given context.
+     *
+     * @param  array<array-key, mixed>  $expanded  An expanded JSON-LD document
+     *                                             (array of node objects, or a
+     *                                             single node object).
+     * @param  array<array-key, mixed>|string  $context  The context to compact
+     *                                                   against (a context map,
+     *                                                   a `{@context: …}` wrapper,
+     *                                                   or a context URL).
+     *
+     * @throws JsonLdException
+     */
+    public function compact(array $expanded, array|string $context): CompactedDocument;
 }

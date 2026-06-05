@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Accredify\JsonLd;
 
+use Accredify\JsonLd\Algorithms\Compaction;
 use Accredify\JsonLd\Algorithms\Expansion;
 use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Contracts\DocumentLoader;
 use Accredify\JsonLd\Contracts\Processor;
+use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
+use Accredify\JsonLd\Enums\Keyword;
 
 /**
  * Default {@see Processor} implementation.
@@ -45,5 +48,31 @@ final class JsonLdProcessor implements Processor
         return new ExpandedDocument(
             $expansion->expand($documentWithoutContext),
         );
+    }
+
+    public function compact(array $expanded, array|string $context): CompactedDocument
+    {
+        // Normalise the supplied context into a {@context: …} document for
+        // ContextProcessor (which reads the @context key).
+        if (is_array($context) && isset($context['@context'])) {
+            $contextDocument = $context;
+        } else {
+            $contextDocument = ['@context' => $context];
+        }
+
+        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader);
+        $compaction = new Compaction($contextProcessor->getTermDefinitions());
+
+        $compacted = $compaction->compact($expanded);
+
+        // Prepend the supplied @context (only when there's content + a
+        // non-empty context), matching the spec's output shape.
+        $contextValue = is_array($context) && isset($context['@context']) ? $context['@context'] : $context;
+        if ($compacted !== [] && $contextValue !== [] && $contextValue !== '') {
+            $compacted = [Keyword::Context->value => $contextValue] + $compacted;
+        }
+
+        /** @var array<string, mixed> $compacted */
+        return new CompactedDocument($compacted);
     }
 }

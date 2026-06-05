@@ -46,7 +46,9 @@ final class PhpJsonLdAdapter implements Processor
 
     public function compact(array $input, array $context, array $options): array
     {
-        throw new NotImplementedException('Compaction lands in PR 4.9');
+        return (new JsonLdProcessor($this->loader))
+            ->compact($input, $context)
+            ->toArray();
     }
 
     public function toRdf(array $input, array $options): string
