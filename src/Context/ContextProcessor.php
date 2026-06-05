@@ -8,6 +8,7 @@ use Accredify\JsonLd\Contracts\DocumentLoader;
 use Accredify\JsonLd\Enums\Keyword;
 use Accredify\JsonLd\Exceptions\DocumentLoaderException;
 use Accredify\JsonLd\Exceptions\JsonLdException;
+use Accredify\JsonLd\Internal\IriResolver;
 use Accredify\JsonLd\Loaders\HttpDocumentLoader;
 
 /**
@@ -53,12 +54,18 @@ class ContextProcessor
     public function __construct(
         private readonly array $jsonLd,
         private readonly DocumentLoader $documentLoader,
+        ?string $baseIri = null,
     ) {
         if (! isset($jsonLd['@context'])) {
             throw new JsonLdException('Invalid JSON-LD: Missing @context');
         }
 
         $this->termDefinitions = new TermDefinitions;
+
+        // The initial base is the document location (or a caller-supplied
+        // base). `@base` declarations in the context can override it.
+        $this->termDefinitions->setBase($baseIri);
+
         $this->processJsonLdContext();
     }
 
@@ -178,7 +185,14 @@ class ContextProcessor
     {
         $isValid = match ($key) {
             Keyword::Version->value => in_array($value, [1.0, 1.1], true),
-            Keyword::Base->value, Keyword::Vocab->value => $value === null || (is_string($value) && filter_var($value, FILTER_VALIDATE_URL) !== false),
+            // @base accepts any string (absolute, relative, or empty) or null
+            // — it is resolved against the active base during merge, so the
+            // strict-URL check no longer applies (paired with the resolution
+            // landing in this release).
+            Keyword::Base->value => $value === null || is_string($value),
+            // @vocab still requires an absolute IRI or null; relative-@vocab
+            // resolution is a later PR.
+            Keyword::Vocab->value => $value === null || (is_string($value) && filter_var($value, FILTER_VALIDATE_URL) !== false),
             Keyword::Language->value => $value === null || (is_string($value) && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $value) === 1),
             default => true,
         };
@@ -192,6 +206,20 @@ class ContextProcessor
     private function mergeContexts(): void
     {
         foreach ($this->processedContexts as $context) {
+            // Apply @base: relative values resolve against the current
+            // effective base; null resets it. array_key_exists (not isset)
+            // so an explicit null reset is honoured.
+            if (array_key_exists(Keyword::Base->value, $context)) {
+                $baseValue = $context[Keyword::Base->value];
+                if ($baseValue === null) {
+                    $this->termDefinitions->setBase(null);
+                } elseif (is_string($baseValue)) {
+                    $this->termDefinitions->setBase(
+                        IriResolver::resolve($this->termDefinitions->getBase(), $baseValue)
+                    );
+                }
+            }
+
             // Push any @vocab onto the term definitions' vocab stack so the
             // Expansion algorithm can use it as a fallback for undefined
             // terms.

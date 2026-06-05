@@ -168,9 +168,17 @@ describe('ContextProcessor keyword validation', function () {
             ->toBeInstanceOf(TermDefinitions::class);
     });
 
-    it('rejects non-URL @base / @vocab', function () {
-        expect(fn () => process(['@base' => 'not-a-url']))
-            ->toThrow(JsonLdException::class, 'Invalid @base value');
+    it('accepts relative @base (resolved against the document base)', function () {
+        // As of v0.7.0, @base accepts relative/compact/empty strings — they
+        // are resolved against the active base during context merge.
+        expect(process(['@base' => '../relative/'])->getTermDefinitions())
+            ->toBeInstanceOf(TermDefinitions::class);
+        expect(process(['@base' => ''])->getTermDefinitions())
+            ->toBeInstanceOf(TermDefinitions::class);
+    });
+
+    it('still rejects non-URL @vocab', function () {
+        // @vocab resolution is a later PR, so it keeps the stricter check.
         expect(fn () => process(['@vocab' => 'not-a-url']))
             ->toThrow(JsonLdException::class, 'Invalid @vocab value');
     });

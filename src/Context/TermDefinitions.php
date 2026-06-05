@@ -45,12 +45,30 @@ class TermDefinitions
     /** @var list<string> Stack of active @vocab IRIs (innermost-last). */
     private array $vocabStack = [];
 
+    /** Active base IRI for document-relative IRI resolution, or null. */
+    private ?string $base = null;
+
     /**
      * @param  array<string, TermDefinition|string>  $termDefinitions
      */
     public function __construct(
         public array $termDefinitions = []
     ) {}
+
+    /**
+     * Sets the active base IRI (used to resolve document-relative `@id` /
+     * `@type` IRIs during expansion). Null disables document-relative
+     * resolution.
+     */
+    public function setBase(?string $base): void
+    {
+        $this->base = $base;
+    }
+
+    public function getBase(): ?string
+    {
+        return $this->base;
+    }
 
     /**
      * Push a `@vocab` IRI onto the stack.

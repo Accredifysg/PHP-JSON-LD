@@ -21,9 +21,14 @@ interface Processor
     /**
      * @param  array<array-key, mixed>  $document  A JSON-LD document with at
      *                                             least an `@context` key.
+     * @param  string|null  $base  Initial base IRI for document-relative
+     *                             `@id` / `@type` resolution (typically the
+     *                             document's URL). `@base` in the context
+     *                             overrides it. Null disables document-relative
+     *                             resolution.
      *
      * @throws JsonLdException When `@context` is missing or any sub-algorithm
      *                         raises.
      */
-    public function expand(array $document): ExpandedDocument;
+    public function expand(array $document, ?string $base = null): ExpandedDocument;
 }

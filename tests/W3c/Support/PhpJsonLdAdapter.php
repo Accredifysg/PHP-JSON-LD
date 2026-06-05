@@ -33,11 +33,14 @@ final class PhpJsonLdAdapter implements Processor
 
     public function expand(array $input, array $options): array
     {
-        // TODO (PR 4.5): pipe options.base / options.expandContext /
-        //   options.processingMode through a JsonLdOptions value object.
-        //   For now we ignore them — most W3C tests don't need them.
+        // `base` is the effective document base — option.base if the manifest
+        // entry set one, otherwise the document URL (injected by the test
+        // harness). Other options (expandContext, processingMode) are not yet
+        // threaded; they arrive with the JsonLdOptions VO in a later PR.
+        $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
+
         return (new JsonLdProcessor($this->loader))
-            ->expand($input)
+            ->expand($input, $base)
             ->toArray();
     }
 

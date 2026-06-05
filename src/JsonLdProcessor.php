@@ -33,9 +33,9 @@ final class JsonLdProcessor implements Processor
         private readonly DocumentLoader $documentLoader,
     ) {}
 
-    public function expand(array $document): ExpandedDocument
+    public function expand(array $document, ?string $base = null): ExpandedDocument
     {
-        $contextProcessor = new ContextProcessor($document, $this->documentLoader);
+        $contextProcessor = new ContextProcessor($document, $this->documentLoader, $base);
 
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);

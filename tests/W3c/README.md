@@ -50,7 +50,7 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    147 passed / 238 failed (v0.6.0)
+Expansion:    163 passed / 222 failed (v0.7.0)
 Compaction:   skipped (PR 4.9 pending)
 toRdf:        skipped (PR 4.10 pending)
 ```
@@ -69,6 +69,8 @@ Each Phase 4 PR:
 | v0.3.0  |          129  |   +16  | Container handling (PR 4.2)           |
 | v0.4.0  |          126  |    -3  | Scope activation (PR 4.3) — see notes |
 | v0.5.0  |          139  |   +13  | Value objects + @json (PR 4.4)        |
+| v0.6.0  |          147  |    +8  | @reverse (PR 4.5)                     |
+| v0.7.0  |          163  |   +16  | @base + relative IRIs (PR 4.6)        |
 
 ### Notes on v0.4.0
 

@@ -33,6 +33,7 @@ final class TestCase
         public readonly ?string $contextPath,
         public readonly array $options,
         public readonly string $baseIri,
+        public readonly ?string $documentUrl,
         public readonly array $rawTypes,
     ) {}
 

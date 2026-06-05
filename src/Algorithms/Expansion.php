@@ -7,6 +7,7 @@ namespace Accredify\JsonLd\Algorithms;
 use Accredify\JsonLd\Context\TermDefinitions;
 use Accredify\JsonLd\Enums\Keyword;
 use Accredify\JsonLd\Exceptions\JsonLdException;
+use Accredify\JsonLd\Internal\IriResolver;
 
 /**
  * JSON-LD 1.1 Expansion Algorithm.
@@ -36,11 +37,13 @@ use Accredify\JsonLd\Exceptions\JsonLdException;
  *    (`scheme://…`, `did:…`, `urn:…`), compact IRIs (`prefix:suffix`),
  *    `@vocab` fallback.
  *
+ *  - `@base` / document-relative IRI resolution (RFC 3986 §5) for `@id`
+ *    and `@type`, via {@see IriResolver}.
+ *
  * Deferred (future Phase 4 PRs):
  *
  *  - `@included` blocks.
- *  - `@base` / document-relative IRI resolution (the `documentRelative`
- *    flag is currently a pass-through stub).
+ *  - Relative / compact `@vocab` resolution.
  *  - `@propagate: true`; `@protected` enforcement; `@import` in contexts.
  *  - Spec-faithful error codes for the full negative-test surface.
  */
@@ -460,8 +463,11 @@ class Expansion
      */
     private function expandTypeValue(mixed $value): ?array
     {
+        // @type IRIs expand with both vocab and document-relative modes
+        // (§5.5): @vocab takes precedence if set, otherwise a relative @type
+        // resolves against @base.
         if (is_string($value)) {
-            $expanded = $this->expandIri($value, vocab: true);
+            $expanded = $this->expandIri($value, vocab: true, documentRelative: true);
 
             return $expanded === null ? [] : [$expanded];
         }
@@ -475,7 +481,7 @@ class Expansion
             if (! is_string($item)) {
                 continue;
             }
-            $expanded = $this->expandIri($item, vocab: true);
+            $expanded = $this->expandIri($item, vocab: true, documentRelative: true);
             if ($expanded !== null) {
                 $types[] = $expanded;
             }
@@ -631,12 +637,14 @@ class Expansion
             }
         }
 
-        // Step 8: @base fallback for document-relative IRI expansion.
-        // (Stub — @base isn't yet wired through ContextProcessor. When it
-        // is, this should resolve `value` against the active base IRI per
-        // RFC 3986 §5.3. For now we pass relative IRIs through unchanged.)
+        // Step 8: document-relative resolution against the active @base
+        // (RFC 3986 §5). The base lives on documentBase — @base is a
+        // document-level setting, so scoped overlays don't carry it.
         if ($documentRelative) {
-            return $value;
+            $base = $this->documentBase->getBase();
+            if ($base !== null && $base !== '') {
+                return IriResolver::resolve($base, $value);
+            }
         }
 
         // Step 9: return as-is.

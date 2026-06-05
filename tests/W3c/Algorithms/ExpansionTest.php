@@ -36,8 +36,15 @@ dataset('expansion-tests', function () {
 it('expands per W3C manifest', function (TestCase $test) {
     $processor = PhpJsonLdAdapter::default();
 
+    // Effective base: the manifest's option.base if present, else the
+    // document URL. Injected into options for the adapter to consume.
+    $options = $test->options;
+    if (! isset($options['base']) && $test->documentUrl !== null) {
+        $options['base'] = $test->documentUrl;
+    }
+
     try {
-        $actual = $processor->expand($test->loadInput(), $test->options);
+        $actual = $processor->expand($test->loadInput(), $options);
     } catch (NotImplementedException) {
         $this->markTestSkipped('Expansion not yet implemented');
     } catch (Throwable $e) {

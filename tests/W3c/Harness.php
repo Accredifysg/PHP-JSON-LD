@@ -87,6 +87,12 @@ final class Harness
         $isNegative = in_array('jld:NegativeEvaluationTest', $types, true);
         $algorithm = $this->resolveAlgorithm($types);
 
+        // The document URL is the manifest base + the relative input ref
+        // (e.g. "expand/0062-in.jsonld"). Used as the default base IRI for
+        // document-relative IRI resolution; option.base overrides it.
+        $inputRef = isset($entry['input']) && is_string($entry['input']) ? $entry['input'] : null;
+        $documentUrl = $inputRef !== null ? $baseIri.$inputRef : null;
+
         return new TestCase(
             id: $id,
             name: isset($entry['name']) && is_string($entry['name']) ? $entry['name'] : '',
@@ -100,6 +106,7 @@ final class Harness
             contextPath: $this->joinRelativePath($manifestDir, $entry['context'] ?? null),
             options: $this->stringKeyedArray($entry['option'] ?? []),
             baseIri: $baseIri,
+            documentUrl: $documentUrl,
             rawTypes: $types,
         );
     }

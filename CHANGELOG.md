@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-13
+
+Adds `@base` and document-relative IRI resolution (RFC 3986 §5).
+
+W3C JSON-LD 1.1 expand test suite progress:
+
+```
+v0.1.1 baseline:  69 passed
+v0.2.0:          113 passed   (+44)  Expansion rewrite
+v0.3.0:          129 passed   (+16)  Container handling
+v0.4.0:          126 passed   (-3)   Scope activation
+v0.5.0:          139 passed   (+13)  Value objects + @json
+v0.6.0:          147 passed   (+8)   @reverse
+v0.7.0:          163 passed   (+16)  @base + relative IRIs
+```
+
+### Added
+
+- **RFC 3986 IRI resolution** (`Accredify\JsonLd\Internal\IriResolver`):
+  full Transform-References + Remove-Dot-Segments + Merge-Paths.
+- **Document-relative IRI expansion.** Relative `@id` and `@type` values
+  resolve against the active base IRI. `@type` expansion now runs in both
+  vocab and document-relative modes (§5.5): `@vocab` wins if set, else the
+  value resolves against `@base`.
+- **`@base` in contexts.** A context `@base` overrides the document base;
+  relative `@base` resolves against the current base; `@base: null` resets it.
+- **`Processor::expand()` / `JsonLdProcessor::expand()` gain an optional
+  `?string $base` parameter** — the initial base IRI (typically the
+  document URL). Backward-compatible: existing single-argument calls are
+  unaffected (VC's calls keep working).
+
+### Changed
+
+- `@base` context validation relaxed to accept any string (relative,
+  compact, empty) or null, now that the value is resolved. `@vocab` keeps
+  the stricter absolute-IRI check pending its own resolution PR.
+
+### Consumer impact
+
+None. The characterization fixtures are byte-identical to v0.6.0 — VC's
+documents carry absolute `@id`s, so document-relative resolution is a
+no-op for them. The new `$base` parameter is optional. VC stays pinned
+at `^0.1.1`.
+
 ## [0.6.0] - 2026-05-13
 
 Adds `@reverse` expansion (both forms) with reverse-value error detection.
@@ -355,7 +399,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/accredifysg/php-json-ld/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/accredifysg/php-json-ld/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/accredifysg/php-json-ld/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/accredifysg/php-json-ld/compare/v0.3.0...v0.4.0
