@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Accredify\JsonLd\Context;
 
+use Accredify\JsonLd\Algorithms\Expansion;
 use Accredify\JsonLd\Enums\ContainerType;
 use Accredify\JsonLd\Enums\Keyword;
 use Accredify\JsonLd\Exceptions\JsonLdException;
@@ -114,6 +115,14 @@ class TermDefinitions
      *                             Strings stored in {@see $termDefinitions} are inflated to
      *                             `['@id' => $value]` before being returned, so callers can assume an
      *                             array shape.
+     *
+     * Note: this method intentionally only checks top-level term
+     * definitions. Terms defined inside a type-scoped or property-scoped
+     * `@context` are NOT findable here — the {@see Expansion}
+     * activates those scopes by overlaying their terms onto a fresh
+     * TermDefinitions before lookups. (v0.1.x's recursive search through
+     * nested @context entries leaked scoped terms into unscoped lookups,
+     * breaking spec compliance.)
      */
     public function getTermDefinition(?string $term): ?array
     {
@@ -125,15 +134,6 @@ class TermDefinitions
             $value = $this->termDefinitions[$term];
 
             return is_string($value) ? ['@id' => $value] : $value;
-        }
-
-        foreach ($this->termDefinitions as $definition) {
-            if (is_array($definition)) {
-                $result = $this->findExactTermInDefinition($term, $definition);
-                if ($result !== null) {
-                    return $result;
-                }
-            }
         }
 
         return null;
@@ -187,29 +187,5 @@ class TermDefinitions
                 }
             }
         }
-    }
-
-    /**
-     * @param  TermDefinition  $definition
-     * @return TermDefinition|null
-     */
-    private function findExactTermInDefinition(string $term, array $definition): ?array
-    {
-        if (isset($definition[$term])) {
-            $value = $definition[$term];
-
-            return is_string($value) ? ['@id' => $value] : (is_array($value) ? $value : null);
-        }
-
-        foreach ($definition as $value) {
-            if (is_array($value)) {
-                $result = $this->findExactTermInDefinition($term, $value);
-                if ($result !== null) {
-                    return $result;
-                }
-            }
-        }
-
-        return null;
     }
 }

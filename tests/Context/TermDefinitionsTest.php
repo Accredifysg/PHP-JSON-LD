@@ -108,7 +108,11 @@ describe('TermDefinitions::getTermDefinition', function () {
         expect($defs->getTermDefinition('id'))->toBe(['@id' => '@id']);
     });
 
-    it('descends into nested @context maps to find a term', function () {
+    it('does NOT descend into nested @context maps to find a term', function () {
+        // Spec-correct behaviour as of v0.4.0: nested @context entries inside
+        // a term definition are NOT findable via top-level lookup. They become
+        // available only when the Expansion algorithm activates that term's
+        // scope (type-scoped or property-scoped context activation).
         $defs = new TermDefinitions([
             'VerifiableCredential' => [
                 '@id' => 'https://www.w3.org/2018/credentials#VerifiableCredential',
@@ -119,6 +123,15 @@ describe('TermDefinitions::getTermDefinition', function () {
             ],
         ]);
 
-        expect($defs->getTermDefinition('inner'))->toBe(['@id' => 'https://example.com/inner']);
+        expect($defs->getTermDefinition('inner'))->toBeNull();
+        // The outer term IS findable.
+        expect($defs->getTermDefinition('VerifiableCredential'))
+            ->toBe([
+                '@id' => 'https://www.w3.org/2018/credentials#VerifiableCredential',
+                '@context' => [
+                    '@protected' => true,
+                    'inner' => ['@id' => 'https://example.com/inner'],
+                ],
+            ]);
     });
 });

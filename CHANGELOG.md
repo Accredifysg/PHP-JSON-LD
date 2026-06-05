@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-13
+
+Type-scoped and property-scoped context activation. Each object now
+computes its own active context (instead of relying on the document-
+level flat term map being recursively searched).
+
+W3C JSON-LD 1.1 expand test suite progress:
+
+```
+v0.1.1 baseline:  69 passed
+v0.2.0:          113 passed   (+44)  Expansion rewrite
+v0.3.0:          129 passed   (+16)  Container handling
+v0.4.0:          126 passed   (-3)   Scope activation
+```
+
+**The pass count slipped by 3 on the W3C suite** because v0.3.0's
+`TermDefinitions::getTermDefinition` did recursive search through
+nested `@context` entries, which accidentally helped some tests by
+making scoped terms findable as if they were unscoped. The new
+spec-correct lookup is strictly top-level; scoped terms become
+available only when their scope activates. Several scope-specific
+tests that v0.3.0 failed now pass (e.g. `#tc009`, `#tc010`, `#tc011`),
+while a few tests that depended on the leaky lookup now fail. Net
+direction is positive (more spec-correct), even though the absolute
+count dipped.
+
+VC consumers see zero regression: the characterization fixtures
+produce byte-identical expanded output to v0.3.0 for the
+`sample_obv3` / `minimal_vcv2` / `inline_context` inputs.
+
+### Added
+
+- **Type-scoped context activation.** When expanding a node object,
+  the algorithm collects its `@type` values (including aliased
+  `type` forms), looks up each type's term definition for a nested
+  `@context`, and overlays those terms onto a fresh active context
+  derived from `documentBase`. Per §5.5 step 12 of the spec.
+- **Property-scoped context activation.** When expanding the value
+  of a property whose term definition carries a nested `@context`,
+  that context is layered on top of the current active context for
+  the value's expansion. This is what unlocks correct handling of,
+  e.g., the VC v2 `proofPurpose` term whose property-scoped context
+  defines `assertionMethod` etc.
+- `Expansion` now tracks a `$documentBase` separately from the
+  mutable `$termDefinitions`. Each nested `expandObject` resets to
+  `$documentBase` before computing its own type-scoped overlay, so
+  the parent's scope doesn't leak.
+
+### Changed
+
+- **`TermDefinitions::getTermDefinition()` no longer searches
+  recursively into nested `@context` entries.** Term lookup is
+  strictly top-level on the active context. The recursive helper
+  `findExactTermInDefinition()` is deleted.
+
+### Migration notes for consumers
+
+- VC consumers: the `sample_obv3` characterization fixture is
+  byte-identical to v0.3.0 — no signature pipeline impact.
+- Downstream that relied on the old recursive lookup (which leaked
+  scoped terms into unscoped contexts) will see different output.
+  This was a bug; the new behaviour is spec-correct.
+
+### Known gaps
+
+- `@propagate: true` is not implemented; scoped contexts always
+  reset at nested object boundaries.
+- The `@import`, `@protected`, and `@base` keywords inside scoped
+  contexts are not yet honoured.
+- Property-scoped contexts ARE applied for the value's expansion,
+  but they don't propagate deeper (when the value is itself an
+  object). Full propagation handling is a future PR.
+
 ## [0.3.0] - 2026-05-13
 
 **Breaking.** Adds container handling to Expansion. Properties whose
@@ -203,7 +276,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/accredifysg/php-json-ld/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/accredifysg/php-json-ld/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/accredifysg/php-json-ld/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/accredifysg/php-json-ld/compare/v0.1.0...v0.1.1

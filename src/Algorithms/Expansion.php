@@ -42,7 +42,25 @@ use Accredify\JsonLd\Enums\Keyword;
  */
 class Expansion
 {
-    public function __construct(private readonly TermDefinitions $termDefinitions) {}
+    /**
+     * Document-level active context — the term definitions produced by
+     * processing the document's `@context`. Stays constant during expansion;
+     * nested objects always re-derive their per-object scope from this.
+     */
+    private readonly TermDefinitions $documentBase;
+
+    /**
+     * "Current" active context — what term lookups use right now. Equals
+     * `$documentBase` except inside an object that has activated a
+     * type-scoped or property-scoped overlay.
+     */
+    private TermDefinitions $termDefinitions;
+
+    public function __construct(TermDefinitions $termDefinitions)
+    {
+        $this->documentBase = $termDefinitions;
+        $this->termDefinitions = $termDefinitions;
+    }
 
     /**
      * Entry point. Always returns a list of node objects per the spec.
@@ -168,66 +186,104 @@ class Expansion
     {
         $result = [];
 
-        foreach ($obj as $key => $value) {
-            if (! is_string($key)) {
-                continue;
-            }
-            if ($key === Keyword::Context->value) {
-                // Context already merged upstream by ContextProcessor.
-                continue;
-            }
+        // §5.5 step 12: type-scoped context activation. Collect the object's
+        // @type values, look up their term definitions in the document base,
+        // and overlay any nested `@context` onto a fresh active context.
+        // The overlay applies for this object's property resolution only —
+        // recursion into nested object values resets to documentBase so
+        // type-scoped contexts don't propagate (§4.1.10 @propagate default).
+        // Reset to documentBase: each object computes its own active context
+        // from the document level. Parent's type-scoped overlay must not leak
+        // into this nested object's expansion.
+        $previousActive = $this->termDefinitions;
+        $this->termDefinitions = $this->documentBase;
 
-            // @nest unwrapping: the value is a map whose entries are treated
-            // as if they were direct properties of the parent. The @nest
-            // keyword and any term mapping to @nest container behave the
-            // same way.
-            $termDef = $this->termDefinitions->getTermDefinition($key);
-            if ($key === Keyword::Nest->value || $this->hasContainer($termDef, Keyword::Nest->value)) {
-                $this->mergeNestedObject($value, $result);
+        $typeScoped = $this->activateTypeScopedContexts($obj);
+        if ($typeScoped !== null) {
+            $this->termDefinitions = $typeScoped;
+        }
 
-                continue;
-            }
-
-            $expandedKey = $this->expandIri($key, vocab: true);
-            if ($expandedKey === null) {
-                continue;
-            }
-
-            // JSON-LD keyword keys get special handling.
-            if ($this->isKeyword($expandedKey)) {
-                $expandedValue = $this->expandKeywordValue($expandedKey, $value);
-                if ($expandedValue !== null) {
-                    $result[$expandedKey] = $expandedValue;
+        try {
+            foreach ($obj as $key => $value) {
+                if (! is_string($key)) {
+                    continue;
+                }
+                if ($key === Keyword::Context->value) {
+                    // Context already merged upstream by ContextProcessor.
+                    continue;
                 }
 
-                continue;
+                // @nest unwrapping: the value is a map whose entries are
+                // treated as if they were direct properties of the parent.
+                $termDef = $this->termDefinitions->getTermDefinition($key);
+                if ($key === Keyword::Nest->value || $this->hasContainer($termDef, Keyword::Nest->value)) {
+                    $this->mergeNestedObject($value, $result);
+
+                    continue;
+                }
+
+                $expandedKey = $this->expandIri($key, vocab: true);
+                if ($expandedKey === null) {
+                    continue;
+                }
+
+                // JSON-LD keyword keys get special handling.
+                if ($this->isKeyword($expandedKey)) {
+                    $expandedValue = $this->expandKeywordValue($expandedKey, $value);
+                    if ($expandedValue !== null) {
+                        $result[$expandedKey] = $expandedValue;
+                    }
+
+                    continue;
+                }
+
+                // Property-scoped context: if the property's term def has
+                // a `@context`, that overlay is active during the value's
+                // expansion. We layer it on top of the current active
+                // (which includes any type-scoped overlay), so the value
+                // sees both the typed object's terms and the property's
+                // own terms.
+                $beforeValue = $this->termDefinitions;
+                if ($termDef !== null && isset($termDef['@context']) && is_array($termDef['@context'])) {
+                    $propScope = new TermDefinitions($this->termDefinitions->termDefinitions);
+                    $vocab = $this->termDefinitions->getVocab();
+                    if ($vocab !== null) {
+                        $propScope->setVocab($vocab);
+                    }
+                    $this->overlayContextOnto($propScope, $termDef['@context']);
+                    $this->termDefinitions = $propScope;
+                }
+
+                try {
+                    // Container handling: @language / @index / @id / @type
+                    // / @graph maps each transform the value's shape before
+                    // expansion. @list and @set are handled in expandArray
+                    // / expandKeywordValue.
+                    $containerHandled = $this->expandContainerValue($key, $value, $termDef);
+                    if ($containerHandled !== null) {
+                        $this->mergeProperty($result, $expandedKey, $containerHandled);
+
+                        continue;
+                    }
+
+                    $expandedValue = $this->expandElement($value, $key);
+                } finally {
+                    $this->termDefinitions = $beforeValue;
+                }
+
+                if ($expandedValue === null) {
+                    continue;
+                }
+
+                // Normalise to array (spec wraps property values as lists).
+                $list = array_is_list($expandedValue)
+                    ? $expandedValue
+                    : [$expandedValue];
+
+                $this->mergeProperty($result, $expandedKey, $list);
             }
-
-            // Container handling — @language / @index / @id / @type /
-            // @graph maps each transform the value's shape before
-            // expansion. @list and @set are handled in expandArray /
-            // expandKeywordValue. Everything else falls through to default
-            // expansion.
-            $containerHandled = $this->expandContainerValue($key, $value, $termDef);
-            if ($containerHandled !== null) {
-                $this->mergeProperty($result, $expandedKey, $containerHandled);
-
-                continue;
-            }
-
-            // Regular property: recursively expand the value with this key
-            // as the active property (so nested term-def coercion works).
-            $expandedValue = $this->expandElement($value, $key);
-            if ($expandedValue === null) {
-                continue;
-            }
-
-            // Normalise to array (spec wraps property values as lists).
-            $list = array_is_list($expandedValue)
-                ? $expandedValue
-                : [$expandedValue];
-
-            $this->mergeProperty($result, $expandedKey, $list);
+        } finally {
+            $this->termDefinitions = $previousActive;
         }
 
         // Value-object short-circuit: if @value is set, the spec treats this
@@ -569,6 +625,149 @@ class Expansion
     {
         // Schemes are ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) per RFC 3986.
         return preg_match('/^[A-Za-z][A-Za-z0-9+\-.]*:/', $value) === 1;
+    }
+
+    /**
+     * §5.5 step 12: collect the @type values of the object and overlay each
+     * type's nested `@context` onto a fresh active context derived from
+     * documentBase. Returns null if no types declare a scoped context.
+     *
+     * @param  array<array-key, mixed>  $obj
+     */
+    private function activateTypeScopedContexts(array $obj): ?TermDefinitions
+    {
+        // Types come from either `@type` directly, or any alias the active
+        // context maps to `@type`. We look at the current active context for
+        // alias resolution.
+        $rawTypes = [];
+        foreach ($obj as $key => $value) {
+            if (! is_string($key)) {
+                continue;
+            }
+            if ($key === Keyword::Type->value) {
+                $rawTypes = array_merge($rawTypes, is_array($value) ? $value : [$value]);
+
+                continue;
+            }
+            $td = $this->termDefinitions->getTermDefinition($key);
+            if ($td !== null && isset($td['@id']) && $td['@id'] === Keyword::Type->value) {
+                $rawTypes = array_merge($rawTypes, is_array($value) ? $value : [$value]);
+            }
+        }
+
+        $types = [];
+        foreach ($rawTypes as $t) {
+            if (is_string($t)) {
+                $types[] = $t;
+            }
+        }
+        if ($types === []) {
+            return null;
+        }
+
+        // Spec §5.5 step 12.1: sort types alphabetically so activation is
+        // deterministic when multiple types overlap.
+        sort($types);
+
+        $scoped = null;
+        foreach ($types as $type) {
+            // Types may be defined inside another term's nested @context
+            // (e.g. DataIntegrityProof inside an imported security context).
+            // We allow recursive lookup HERE so the scope can activate, but
+            // not for regular property resolution where leaking would
+            // violate spec scoping.
+            $typeDef = $this->documentBase->getTermDefinition($type)
+                ?? $this->findTypeDefRecursive($type, $this->documentBase->termDefinitions);
+            if (
+                $typeDef === null
+                || ! isset($typeDef['@context'])
+                || ! is_array($typeDef['@context'])
+            ) {
+                continue;
+            }
+
+            if ($scoped === null) {
+                // Initialise from documentBase. Copy term definitions so the
+                // overlay doesn't mutate the base.
+                $scoped = new TermDefinitions($this->documentBase->termDefinitions);
+                $baseVocab = $this->documentBase->getVocab();
+                if ($baseVocab !== null) {
+                    $scoped->setVocab($baseVocab);
+                }
+            }
+
+            $this->overlayContextOnto($scoped, $typeDef['@context']);
+        }
+
+        return $scoped;
+    }
+
+    /**
+     * Recursively searches for a type's term definition by walking into any
+     * nested `@context` entries it encounters. Used ONLY for type lookup
+     * during scope activation — not for general property resolution, where
+     * the spec requires strict scope isolation.
+     *
+     * @param  array<array-key, mixed>  $haystack
+     * @return array<array-key, mixed>|null
+     */
+    private function findTypeDefRecursive(string $type, array $haystack): ?array
+    {
+        foreach ($haystack as $term => $definition) {
+            if (! is_array($definition)) {
+                continue;
+            }
+            if ($term === $type && isset($definition['@context'])) {
+                return $definition;
+            }
+            if (isset($definition['@context']) && is_array($definition['@context'])) {
+                $nested = $this->findTypeDefRecursive($type, $definition['@context']);
+                if ($nested !== null) {
+                    return $nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Overlays the entries of a scoped @context onto an existing
+     * {@see TermDefinitions}. Keyword entries (`@vocab`, `@base`, …) update
+     * the relevant active-context state; everything else is added as a term
+     * definition, replacing any existing entry for the same key.
+     *
+     * @param  array<array-key, mixed>  $context
+     */
+    private function overlayContextOnto(TermDefinitions $target, array $context): void
+    {
+        foreach ($context as $term => $definition) {
+            if (! is_string($term)) {
+                continue;
+            }
+
+            if ($term === Keyword::Vocab->value && is_string($definition)) {
+                $target->pushVocab($definition);
+
+                continue;
+            }
+            if (str_starts_with($term, '@')) {
+                // Other keyword overrides (@base, @language, @direction, etc.)
+                // are out of scope for this PR.
+                continue;
+            }
+
+            if (! is_string($definition) && ! is_array($definition)) {
+                continue;
+            }
+
+            // Replace any existing entry — scoped contexts intentionally
+            // shadow the base. Use the underlying property directly to
+            // bypass the syntax-check that would reject keyword aliases.
+            $target->termDefinitions[$term] = is_string($definition)
+                ? ['@id' => $definition]
+                : $definition;
+        }
     }
 
     /**

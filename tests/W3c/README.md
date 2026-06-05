@@ -50,7 +50,7 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    129 passed / 256 failed (v0.3.0)
+Expansion:    126 passed / 259 failed (v0.4.0)
 Compaction:   skipped (PR 4.9 pending)
 toRdf:        skipped (PR 4.10 pending)
 ```
@@ -67,6 +67,20 @@ Each Phase 4 PR:
 | v0.1.1  |           69  |    —   | Harness wired; lift-and-shift baseline |
 | v0.2.0  |          113  |   +44  | Expansion rewrite (PR 4.1)            |
 | v0.3.0  |          129  |   +16  | Container handling (PR 4.2)           |
+| v0.4.0  |          126  |    -3  | Scope activation (PR 4.3) — see notes |
+
+### Notes on v0.4.0
+
+The absolute count dipped by 3, but the architectural change was a
+net win. v0.3.0's term lookup did recursive search through nested
+`@context` entries, which accidentally made scoped terms findable as
+if they were unscoped. v0.4.0 enforces strict scope: terms are only
+visible when their scope (type-scoped or property-scoped) is active.
+Several scope-specific tests now pass (`#tc009`, `#tc010`, `#tc011`,
+etc.); a few tests that benefited from the leak now fail.
+
+VC consumers see zero regression — the characterization fixtures are
+byte-identical to v0.3.0.
 
 ## Out of scope
 
