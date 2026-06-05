@@ -177,6 +177,17 @@ class Expansion
                 continue;
             }
 
+            // @nest unwrapping: the value is a map whose entries are treated
+            // as if they were direct properties of the parent. The @nest
+            // keyword and any term mapping to @nest container behave the
+            // same way.
+            $termDef = $this->termDefinitions->getTermDefinition($key);
+            if ($key === Keyword::Nest->value || $this->hasContainer($termDef, Keyword::Nest->value)) {
+                $this->mergeNestedObject($value, $result);
+
+                continue;
+            }
+
             $expandedKey = $this->expandIri($key, vocab: true);
             if ($expandedKey === null) {
                 continue;
@@ -188,6 +199,18 @@ class Expansion
                 if ($expandedValue !== null) {
                     $result[$expandedKey] = $expandedValue;
                 }
+
+                continue;
+            }
+
+            // Container handling — @language / @index / @id / @type /
+            // @graph maps each transform the value's shape before
+            // expansion. @list and @set are handled in expandArray /
+            // expandKeywordValue. Everything else falls through to default
+            // expansion.
+            $containerHandled = $this->expandContainerValue($key, $value, $termDef);
+            if ($containerHandled !== null) {
+                $this->mergeProperty($result, $expandedKey, $containerHandled);
 
                 continue;
             }
@@ -204,17 +227,7 @@ class Expansion
                 ? $expandedValue
                 : [$expandedValue];
 
-            // Merge with any existing entries for the same expanded property
-            // (e.g. when both an alias and the keyword form appear).
-            if (isset($result[$expandedKey])) {
-                /** @var array<mixed> $existing */
-                $existing = is_array($result[$expandedKey]) && array_is_list($result[$expandedKey])
-                    ? $result[$expandedKey]
-                    : [$result[$expandedKey]];
-                $result[$expandedKey] = array_merge($existing, $list);
-            } else {
-                $result[$expandedKey] = $list;
-            }
+            $this->mergeProperty($result, $expandedKey, $list);
         }
 
         // Value-object short-circuit: if @value is set, the spec treats this
@@ -556,5 +569,284 @@ class Expansion
     {
         // Schemes are ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) per RFC 3986.
         return preg_match('/^[A-Za-z][A-Za-z0-9+\-.]*:/', $value) === 1;
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null  $termDef
+     */
+    private function hasContainer(?array $termDef, string $keyword): bool
+    {
+        if ($termDef === null || ! isset($termDef['@container'])) {
+            return false;
+        }
+
+        $container = $termDef['@container'];
+        if (is_string($container)) {
+            return $container === $keyword;
+        }
+        if (is_array($container)) {
+            return in_array($keyword, $container, true);
+        }
+
+        return false;
+    }
+
+    /**
+     * Dispatches a property's value through the appropriate container-handling
+     * routine. Returns the expanded list of values, or null if no container
+     * applies and the caller should fall through to default expansion.
+     *
+     * @param  array<array-key, mixed>|null  $termDef
+     * @return list<mixed>|null
+     */
+    private function expandContainerValue(string $key, mixed $value, ?array $termDef): ?array
+    {
+        if ($termDef === null || ! isset($termDef['@container'])) {
+            return null;
+        }
+
+        // @language map: {en: "hi", fr: "salut"} → list of value objects with @language.
+        if ($this->hasContainer($termDef, Keyword::Language->value) && is_array($value) && ! array_is_list($value)) {
+            return $this->expandLanguageMap($value);
+        }
+
+        // @index map: {first: ..., second: ...} → list of expanded nodes with @index.
+        if ($this->hasContainer($termDef, Keyword::Index->value) && is_array($value) && ! array_is_list($value)) {
+            return $this->expandIndexMap($key, $value);
+        }
+
+        // @id map: {"urn:1": {...}, "urn:2": {...}} → list of nodes with @id set.
+        if ($this->hasContainer($termDef, Keyword::Id->value) && is_array($value) && ! array_is_list($value)) {
+            return $this->expandIdMap($key, $value);
+        }
+
+        // @type map: {Person: {...}, Animal: {...}} → list of nodes with @type set.
+        if ($this->hasContainer($termDef, Keyword::Type->value) && is_array($value) && ! array_is_list($value)) {
+            return $this->expandTypeMap($key, $value);
+        }
+
+        // @graph container: value is wrapped in a graph object.
+        if ($this->hasContainer($termDef, Keyword::Graph->value)) {
+            return $this->expandGraphContainer($key, $value);
+        }
+
+        return null;
+    }
+
+    /**
+     * §5.5 step 13.4.7 — @language container.
+     *
+     * @param  array<array-key, mixed>  $map
+     * @return list<array<string, mixed>>
+     */
+    private function expandLanguageMap(array $map): array
+    {
+        $result = [];
+        foreach ($map as $language => $entry) {
+            if (! is_string($language)) {
+                continue;
+            }
+            // Each entry can be a single string or a list of strings.
+            $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
+            foreach ($items as $item) {
+                if ($item === null) {
+                    continue;
+                }
+                $valueObject = [Keyword::Value->value => $item];
+                if ($language !== Keyword::None->value) {
+                    $valueObject[Keyword::Language->value] = $language;
+                }
+                ksort($valueObject);
+                $result[] = $valueObject;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * §5.5 step 13.4.9 — @index container.
+     *
+     * @param  array<array-key, mixed>  $map
+     * @return list<mixed>
+     */
+    private function expandIndexMap(string $activeProperty, array $map): array
+    {
+        $result = [];
+        foreach ($map as $index => $entry) {
+            if (! is_string($index)) {
+                continue;
+            }
+            $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
+            foreach ($items as $item) {
+                $expanded = $this->expandElement($item, $activeProperty);
+                if ($expanded === null) {
+                    continue;
+                }
+                $list = array_is_list($expanded) ? $expanded : [$expanded];
+                foreach ($list as $expandedItem) {
+                    if (is_array($expandedItem) && ! array_is_list($expandedItem) && $index !== Keyword::None->value) {
+                        /** @var array<string, mixed> $expandedItem */
+                        $expandedItem[Keyword::Index->value] = $index;
+                        ksort($expandedItem);
+                    }
+                    $result[] = $expandedItem;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * §5.5 step 13.4.8 — @id container.
+     *
+     * @param  array<array-key, mixed>  $map
+     * @return list<mixed>
+     */
+    private function expandIdMap(string $activeProperty, array $map): array
+    {
+        $result = [];
+        foreach ($map as $id => $entry) {
+            if (! is_string($id)) {
+                continue;
+            }
+            $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
+            foreach ($items as $item) {
+                $expanded = $this->expandElement($item, $activeProperty);
+                if ($expanded === null) {
+                    continue;
+                }
+                $list = array_is_list($expanded) ? $expanded : [$expanded];
+                foreach ($list as $expandedItem) {
+                    if (is_array($expandedItem) && ! array_is_list($expandedItem) && $id !== Keyword::None->value) {
+                        /** @var array<string, mixed> $expandedItem */
+                        $expandedId = $this->expandIri($id, documentRelative: true);
+                        if ($expandedId !== null) {
+                            $expandedItem[Keyword::Id->value] = $expandedId;
+                            ksort($expandedItem);
+                        }
+                    }
+                    $result[] = $expandedItem;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * §5.5 step 13.4.8 — @type container.
+     *
+     * @param  array<array-key, mixed>  $map
+     * @return list<mixed>
+     */
+    private function expandTypeMap(string $activeProperty, array $map): array
+    {
+        $result = [];
+        foreach ($map as $type => $entry) {
+            if (! is_string($type)) {
+                continue;
+            }
+            $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
+            foreach ($items as $item) {
+                $expanded = $this->expandElement($item, $activeProperty);
+                if ($expanded === null) {
+                    continue;
+                }
+                $list = array_is_list($expanded) ? $expanded : [$expanded];
+                foreach ($list as $expandedItem) {
+                    if (is_array($expandedItem) && ! array_is_list($expandedItem) && $type !== Keyword::None->value) {
+                        /** @var array<string, mixed> $expandedItem */
+                        $expandedType = $this->expandIri($type, vocab: true);
+                        if ($expandedType !== null) {
+                            $existing = isset($expandedItem[Keyword::Type->value]) && is_array($expandedItem[Keyword::Type->value])
+                                ? $expandedItem[Keyword::Type->value]
+                                : [];
+                            array_unshift($existing, $expandedType);
+                            $expandedItem[Keyword::Type->value] = $existing;
+                            ksort($expandedItem);
+                        }
+                    }
+                    $result[] = $expandedItem;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * §5.5 step 13.4.10 — @graph container. The property's value is wrapped
+     * in a `@graph` object.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function expandGraphContainer(string $activeProperty, mixed $value): array
+    {
+        $expanded = $this->expandElement($value, $activeProperty);
+        if ($expanded === null) {
+            return [];
+        }
+        $graphContent = array_is_list($expanded) ? $expanded : [$expanded];
+
+        return [[Keyword::Graph->value => $graphContent]];
+    }
+
+    /**
+     * §5.5 step 13.4.4 — @nest. The nested object's keys are treated as if
+     * they were direct properties of the parent.
+     *
+     * @param  array<string, mixed>  $result  modified in place
+     */
+    private function mergeNestedObject(mixed $value, array &$result): void
+    {
+        // The value of an @nest key MUST be an object (or list of objects);
+        // anything else is ignored per spec.
+        if (! is_array($value)) {
+            return;
+        }
+        $items = array_is_list($value) ? $value : [$value];
+
+        foreach ($items as $nested) {
+            if (! is_array($nested) || array_is_list($nested)) {
+                continue;
+            }
+
+            // Recursively expand the nested object as if it were the parent,
+            // then merge its keys into $result.
+            $expandedNested = $this->expandObject($nested, null);
+            if (! is_array($expandedNested) || array_is_list($expandedNested)) {
+                continue;
+            }
+
+            foreach ($expandedNested as $nestedKey => $nestedValue) {
+                if (! is_string($nestedKey)) {
+                    continue;
+                }
+                $list = is_array($nestedValue) && array_is_list($nestedValue) ? $nestedValue : [$nestedValue];
+                $this->mergeProperty($result, $nestedKey, $list);
+            }
+        }
+    }
+
+    /**
+     * Merges a list of expanded values into the result map under
+     * `$expandedKey`, concatenating if the key is already present.
+     *
+     * @param  array<string, mixed>  $result  modified in place
+     * @param  list<mixed>  $values
+     */
+    private function mergeProperty(array &$result, string $expandedKey, array $values): void
+    {
+        if (isset($result[$expandedKey])) {
+            /** @var array<mixed> $existing */
+            $existing = is_array($result[$expandedKey]) && array_is_list($result[$expandedKey])
+                ? $result[$expandedKey]
+                : [$result[$expandedKey]];
+            $result[$expandedKey] = array_merge($existing, $values);
+        } else {
+            $result[$expandedKey] = $values;
+        }
     }
 }

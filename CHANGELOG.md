@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-13
+
+**Breaking.** Adds container handling to Expansion. Properties whose
+term definitions have a `@container` mapping now reshape their values
+during expansion.
+
+W3C JSON-LD 1.1 expand test suite progress:
+
+```
+v0.1.1 baseline:  69 passed
+v0.2.0:          113 passed   (+44)
+v0.3.0:          129 passed   (+16)
+```
+
+### Added
+
+- `@language` container — `{en: "hi", fr: "salut"}` expands to a list
+  of value objects with `@language` set.
+- `@index` container — `{first: …, second: …}` expands to a list of
+  expanded values with `@index` set on each.
+- `@id` container — `{"urn:1": {…}, "urn:2": {…}}` expands to a list
+  of node objects with `@id` set.
+- `@type` container — `{Person: {…}, Animal: {…}}` expands to a list
+  of node objects with `@type` set.
+- `@graph` container — value wraps in a `@graph` object.
+- `@nest` — keys inside a `@nest` value are treated as direct
+  properties of the parent.
+
+### Migration notes for consumers
+
+`@graph` container handling materially changes the expanded shape of
+anything using it — most notably the VC v2 `proof` term, which is
+declared with `@type: @id` + `@container: @graph`. Documents with
+proof blocks expand to a structure that has an extra `@graph` wrapper
+around the proof's properties. This is spec-correct; the v0.1.x /
+v0.2.x output omitted the wrapper.
+
+VC consumers should stay pinned at `^0.1.1` until coordinated.
+
 ## [0.2.0] - 2026-05-13
 
 **Breaking.** First Phase 4 release: the lifted-and-shifted v0.1.x
@@ -164,7 +203,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/accredifysg/php-json-ld/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/accredifysg/php-json-ld/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/accredifysg/php-json-ld/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/accredifysg/php-json-ld/releases/tag/v0.1.0

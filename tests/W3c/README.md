@@ -50,7 +50,7 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    113 passed / 272 failed (v0.2.0)
+Expansion:    129 passed / 256 failed (v0.3.0)
 Compaction:   skipped (PR 4.9 pending)
 toRdf:        skipped (PR 4.10 pending)
 ```
@@ -66,6 +66,7 @@ Each Phase 4 PR:
 | ------- | -------------:| ------:| ------------------------------------- |
 | v0.1.1  |           69  |    —   | Harness wired; lift-and-shift baseline |
 | v0.2.0  |          113  |   +44  | Expansion rewrite (PR 4.1)            |
+| v0.3.0  |          129  |   +16  | Container handling (PR 4.2)           |
 
 ## Out of scope
 

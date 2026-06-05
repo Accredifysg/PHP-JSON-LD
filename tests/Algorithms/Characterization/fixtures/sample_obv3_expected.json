@@ -12,35 +12,39 @@
         ],
         "https://w3id.org/security#proof": [
             {
-                "@type": [
-                    "https://w3id.org/security#DataIntegrityProof"
-                ],
-                "http://purl.org/dc/terms/created": [
+                "@graph": [
                     {
-                        "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
-                        "@value": "2025-01-01T00:00:00+00:00"
-                    }
-                ],
-                "https://w3id.org/security#cryptosuite": [
-                    {
-                        "@type": "https://w3id.org/security#cryptosuiteString",
-                        "@value": "eddsa-rdfc-2022"
-                    }
-                ],
-                "https://w3id.org/security#proofPurpose": [
-                    {
-                        "@id": "https://w3id.org/security#assertionMethod"
-                    }
-                ],
-                "https://w3id.org/security#proofValue": [
-                    {
-                        "@type": "https://w3id.org/security#multibase",
-                        "@value": "zEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAM"
-                    }
-                ],
-                "https://w3id.org/security#verificationMethod": [
-                    {
-                        "@id": "did:web:vc-issuer.example.com:sandbox:organizations:00000000-0000-4000-8000-000000000002#key-EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE"
+                        "@type": [
+                            "https://w3id.org/security#DataIntegrityProof"
+                        ],
+                        "http://purl.org/dc/terms/created": [
+                            {
+                                "@type": "http://www.w3.org/2001/XMLSchema#dateTime",
+                                "@value": "2025-01-01T00:00:00+00:00"
+                            }
+                        ],
+                        "https://w3id.org/security#cryptosuite": [
+                            {
+                                "@type": "https://w3id.org/security#cryptosuiteString",
+                                "@value": "eddsa-rdfc-2022"
+                            }
+                        ],
+                        "https://w3id.org/security#proofPurpose": [
+                            {
+                                "@id": "https://w3id.org/security#assertionMethod"
+                            }
+                        ],
+                        "https://w3id.org/security#proofValue": [
+                            {
+                                "@type": "https://w3id.org/security#multibase",
+                                "@value": "zEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAM"
+                            }
+                        ],
+                        "https://w3id.org/security#verificationMethod": [
+                            {
+                                "@id": "did:web:vc-issuer.example.com:sandbox:organizations:00000000-0000-4000-8000-000000000002#key-EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE"
+                            }
+                        ]
                     }
                 ]
             }
