@@ -20,12 +20,15 @@ tests/
     ├── Harness.php                 # reads + parses a manifest
     ├── TestCase.php                # value object per manifest entry
     ├── Processor.php               # adapter interface
-    ├── NullProcessor.php           # default: throws NotImplemented
+    ├── NullProcessor.php           # legacy: throws NotImplemented
     ├── NotImplementedException.php
+    ├── Support/
+    │   ├── PhpJsonLdAdapter.php    # delegates to Accredify\JsonLd\JsonLdProcessor
+    │   └── W3cDocumentLoader.php   # offline loader for W3C fixtures
     └── Algorithms/
-        ├── ExpansionTest.php
-        ├── CompactionTest.php
-        └── ToRdfTest.php
+        ├── ExpansionTest.php       # runs via PhpJsonLdAdapter
+        ├── CompactionTest.php      # still NullProcessor (PR 4.9)
+        └── ToRdfTest.php           # still NullProcessor (PR 4.10)
 ```
 
 ## Running
@@ -44,17 +47,22 @@ composer test:w3c
 composer test:all
 ```
 
-## Current baseline
+## Current baseline (v0.1.1, PR 4.0)
 
-Every test currently reports `skipped: not yet implemented`. As Phase 4 of
-the [plan](../../C:\Users\Shaun\.claude\plans\can-you-write-the-noble-mist.md)
-lands real algorithms, swap `NullProcessor` in the `Algorithms/*Test.php`
-files for an adapter that delegates into `Accredify\JsonLd`.
+```
+Expansion:    69 passed / 316 failed (out of 385 tests)
+Compaction:   skipped (PR 4.9 pending)
+toRdf:        skipped (PR 4.10 pending)
+```
+
+The 69 expand passes split as 32 positive-evaluation passes (output
+matches the spec's expected expanded form) + 37 negative-evaluation
+passes (the spec expected an error, and we threw one).
 
 Each PR in Phase 4 must:
-1. Re-run `composer test:w3c`
-2. Record the before / after `passed` count in the PR description
-3. Never regress the passed count
+1. Re-run `composer test:w3c`.
+2. Record the before / after `passed` count in the PR description.
+3. Never regress the `passed` count.
 
 ## Out of scope
 

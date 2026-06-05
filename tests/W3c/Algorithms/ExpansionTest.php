@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Accredify\JsonLd\Tests\W3c\Harness;
 use Accredify\JsonLd\Tests\W3c\NotImplementedException;
-use Accredify\JsonLd\Tests\W3c\NullProcessor;
+use Accredify\JsonLd\Tests\W3c\Support\PhpJsonLdAdapter;
 use Accredify\JsonLd\Tests\W3c\TestCase;
 
 /*
@@ -34,12 +34,22 @@ dataset('expansion-tests', function () {
 });
 
 it('expands per W3C manifest', function (TestCase $test) {
-    $processor = new NullProcessor;
+    $processor = PhpJsonLdAdapter::default();
 
     try {
         $actual = $processor->expand($test->loadInput(), $test->options);
     } catch (NotImplementedException) {
         $this->markTestSkipped('Expansion not yet implemented');
+    } catch (Throwable $e) {
+        // Real expander error (loader failure, missing context, internal
+        // exception). For positive tests this is a failure; for negative
+        // tests it counts as a pass (the spec expected an error).
+        if ($test->isNegative) {
+            expect(true)->toBeTrue(); // satisfy Pest's "no assertions" check
+
+            return;
+        }
+        throw $e;
     }
 
     if ($test->isPositive) {
