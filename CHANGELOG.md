@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-13
+
+Spec-correct value objects + `@json` literals, with value-object error
+detection. This is the first PR where validation tightening and the
+matching semantics land together, so the W3C count moves up for
+legitimate reasons rather than via accidental over-throwing.
+
+W3C JSON-LD 1.1 expand test suite progress:
+
+```
+v0.1.1 baseline:  69 passed
+v0.2.0:          113 passed   (+44)  Expansion rewrite
+v0.3.0:          129 passed   (+16)  Container handling
+v0.4.0:          126 passed   (-3)   Scope activation
+v0.5.0:          139 passed   (+13)  Value objects + @json
+```
+
+### Added
+
+- **Value-object finalisation (§5.5 step 15).** A value object (one with
+  `@value`) is validated and normalised:
+  - Unexpected sibling keys → `invalid value object` error.
+  - `@type` cannot coexist with `@language` / `@direction` → error.
+  - `@value: null` drops the value object.
+  - A language-tagged value requires a string `@value` → error otherwise.
+  - Non-`@json` value objects require a scalar `@value` → error otherwise.
+- **`@json` typed literals.** A term coerced with `@type: @json` preserves
+  its value verbatim (scalar, array, or object) as
+  `{@value: …, @type: @json}`.
+- **Bare `{@language}` / `{@direction}` objects are dropped.** A value
+  object with a language/direction tag but no `@value` is a free-floating
+  tag with nothing to attach to, and is removed during expansion (matches
+  W3C `#t0008`).
+
+### Why the count went up (and v0.4.0's went down)
+
+v0.4.0 dipped because tightening scope removed accidental negative-test
+passes without adding positives. v0.5.0 avoids that trap: the value-object
+error checks make the relevant negative tests pass *for the right reason*
+(we throw on genuinely-invalid value objects), while `@language` /
+`@direction` / `@json` positive tests convert. Net +13.
+
+### Consumer impact
+
+None. The `sample_obv3` / `minimal_vcv2` / `inline_context` characterization
+fixtures produce byte-identical expanded output to v0.4.0 — VC's signature
+pipeline is unaffected. VC consumers remain pinned at `^0.1.1`.
+
 ## [0.4.0] - 2026-05-13
 
 Type-scoped and property-scoped context activation. Each object now
@@ -276,7 +324,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/accredifysg/php-json-ld/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/accredifysg/php-json-ld/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/accredifysg/php-json-ld/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/accredifysg/php-json-ld/compare/v0.1.1...v0.2.0

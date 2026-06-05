@@ -6,6 +6,7 @@ namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Context\TermDefinitions;
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Exceptions\JsonLdException;
 
 /**
  * JSON-LD 1.1 Expansion Algorithm.
@@ -14,31 +15,32 @@ use Accredify\JsonLd\Enums\Keyword;
  * (Expansion) of the JSON-LD 1.1 API specification:
  * https://www.w3.org/TR/json-ld11-api/
  *
- * Scope of this PR (4.1 in the revised Phase 4 plan):
+ * Implemented:
  *
- *  - The core Expansion Algorithm: drops free-floating nodes, wraps the
- *    result in an outer array, expands properties via IRI Expansion (vocab
- *    mode), preserves value objects as value-object leaves, handles `@id` /
- *    `@type` / `@list` / `@set`.
- *  - Value Expansion: respects term-definition `@type` coercion to `@id`,
- *    `@vocab`, or arbitrary datatype IRIs.
- *  - IRI Expansion: handles JSON-LD keywords, blank nodes (`_:…`), full
- *    IRIs (`scheme://…`, `did:…`, `urn:…`), compact IRIs (`prefix:suffix`),
- *    `@vocab` fallback. `documentRelative` mode is a stub — proper `@base`
- *    resolution lands when Context Processing acquires a base IRI.
+ *  - Core Expansion Algorithm: drops free-floating nodes, wraps the result
+ *    in an outer array, expands properties via IRI Expansion (vocab mode),
+ *    handles `@id` / `@type` / `@list` / `@set`.
+ *  - Value Expansion + value-object finalisation: term-definition `@type`
+ *    coercion to `@id` / `@vocab` / datatype IRIs; value-object validation
+ *    (disallowed keys, `@type`/`@language` mutual exclusion, language-tagged
+ *    `@value` must be a string, `@value: null` drops); `@json` typed
+ *    literals preserved verbatim.
+ *  - Container handling: `@language`, `@index`, `@id`, `@type`, `@graph`,
+ *    `@nest`.
+ *  - Type-scoped + property-scoped context activation (each object derives
+ *    its own active context from documentBase).
+ *  - IRI Expansion: keywords, blank nodes (`_:…`), full IRIs
+ *    (`scheme://…`, `did:…`, `urn:…`), compact IRIs (`prefix:suffix`),
+ *    `@vocab` fallback.
  *
- * Deferred:
+ * Deferred (future Phase 4 PRs):
  *
- *  - `@language`, `@index`, `@graph`, `@id`, `@type`, `@nest`, `@included`
- *    container handling — PR 4.2.
- *  - `@reverse`, `@json` literals, language-tagged + direction-tagged
- *    strings — PR 4.3.
- *  - Type-scoped + property-scoped contexts that activate per-object —
- *    deferred to a future Context Processing PR. v0.1.1's flattened
- *    approximation is still in effect via TermDefinitions.
- *
- * Released as v0.2.0 — this is a breaking change vs v0.1.x for any
- * downstream that depended on the lift-and-shifted output shape.
+ *  - `@reverse` properties.
+ *  - `@included` blocks.
+ *  - `@base` / document-relative IRI resolution (the `documentRelative`
+ *    flag is currently a pass-through stub).
+ *  - `@propagate: true`; `@protected` enforcement; `@import` in contexts.
+ *  - Spec-faithful error codes for the full negative-test surface.
  */
 class Expansion
 {
@@ -227,6 +229,15 @@ class Expansion
                     continue;
                 }
 
+                // @value is a literal — recorded verbatim (including null,
+                // which finalizeValueObject uses to drop the object). It is
+                // never expanded, so it bypasses expandKeywordValue.
+                if ($expandedKey === Keyword::Value->value) {
+                    $result[Keyword::Value->value] = $value;
+
+                    continue;
+                }
+
                 // JSON-LD keyword keys get special handling.
                 if ($this->isKeyword($expandedKey)) {
                     $expandedValue = $this->expandKeywordValue($expandedKey, $value);
@@ -255,6 +266,19 @@ class Expansion
                 }
 
                 try {
+                    // @json type coercion: a term with `@type: @json`
+                    // preserves its value verbatim as a JSON literal,
+                    // regardless of the value's shape (scalar, array, or
+                    // object). It bypasses normal node/value expansion.
+                    if ($this->isJsonTyped($termDef)) {
+                        $this->mergeProperty($result, $expandedKey, [[
+                            Keyword::Value->value => $value,
+                            Keyword::Type->value => Keyword::Json->value,
+                        ]]);
+
+                        continue;
+                    }
+
                     // Container handling: @language / @index / @id / @type
                     // / @graph maps each transform the value's shape before
                     // expansion. @list and @set are handled in expandArray
@@ -286,12 +310,22 @@ class Expansion
             $this->termDefinitions = $previousActive;
         }
 
-        // Value-object short-circuit: if @value is set, the spec treats this
-        // as a value object and returns it as-is (a leaf, not a node).
-        if (isset($result[Keyword::Value->value])) {
-            ksort($result);
+        // Value-object finalization (§5.5 step 15). If @value is present,
+        // the object is a value object and is validated + normalised.
+        if (array_key_exists(Keyword::Value->value, $result)) {
+            return $this->finalizeValueObject($result);
+        }
 
-            return $result;
+        // A bare {@language}/{@direction} object with no @value is a
+        // free-floating language/direction with nothing to attach to —
+        // dropped during expansion. (Matches W3C expand test #t0008's
+        // "drop-lang-only" case.)
+        if (
+            ! isset($result[Keyword::Id->value])
+            && (isset($result[Keyword::Language->value]) || isset($result[Keyword::Direction->value]))
+            && ! $this->hasNonValueObjectProperty($result)
+        ) {
+            return null;
         }
 
         // @list object: pass through as-is (the @list value itself was
@@ -341,13 +375,8 @@ class Expansion
             case Keyword::Type->value:
                 return $this->expandTypeValue($value);
 
-            case Keyword::Value->value:
-                // @value is always a scalar (string/int/float/bool) or null.
-                if (is_array($value)) {
-                    return null;
-                }
-
-                return $value;
+                // Note: @value is handled directly in expandObject (recorded
+                // verbatim, including null) and never reaches this method.
 
             case Keyword::Language->value:
             case Keyword::Direction->value:
@@ -577,6 +606,101 @@ class Expansion
 
         // Step 9: return as-is.
         return $value;
+    }
+
+    /**
+     * §5.5 step 15: validate + normalise a value object.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>|null
+     */
+    private function finalizeValueObject(array $result): ?array
+    {
+        $allowed = [
+            Keyword::Value->value => true,
+            Keyword::Type->value => true,
+            Keyword::Language->value => true,
+            Keyword::Index->value => true,
+            Keyword::Direction->value => true,
+        ];
+        foreach (array_keys($result) as $resultKey) {
+            if (! isset($allowed[$resultKey])) {
+                throw new JsonLdException("Invalid value object: unexpected key '{$resultKey}'");
+            }
+        }
+
+        $hasType = isset($result[Keyword::Type->value]);
+        $hasLanguage = isset($result[Keyword::Language->value]);
+        $hasDirection = isset($result[Keyword::Direction->value]);
+
+        // @type is mutually exclusive with @language / @direction.
+        if ($hasType && ($hasLanguage || $hasDirection)) {
+            throw new JsonLdException('Invalid value object: @type cannot coexist with @language or @direction');
+        }
+
+        $value = $result[Keyword::Value->value];
+
+        // @value: null → the value object is dropped.
+        if ($value === null) {
+            return null;
+        }
+
+        // A language-tagged value requires a string @value.
+        if ($hasLanguage && ! is_string($value)) {
+            throw new JsonLdException('Invalid language-tagged value: @value must be a string when @language is present');
+        }
+
+        // @json values are preserved verbatim — no further constraints.
+        $type = $hasType ? $result[Keyword::Type->value] : null;
+        $isJson = $type === Keyword::Json->value
+            || (is_array($type) && in_array(Keyword::Json->value, $type, true));
+
+        // For non-@json value objects, @value must be a scalar.
+        if (! $isJson && ! is_scalar($value)) {
+            throw new JsonLdException('Invalid value object: @value must be a scalar');
+        }
+
+        ksort($result);
+
+        return $result;
+    }
+
+    /**
+     * True if a result map carries any key that isn't a value-object
+     * keyword — i.e. it's a node object rather than a (malformed) value
+     * object. Used to decide whether a `{@language}`-only object should be
+     * dropped.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function hasNonValueObjectProperty(array $result): bool
+    {
+        $valueObjectKeywords = [
+            Keyword::Value->value => true,
+            Keyword::Type->value => true,
+            Keyword::Language->value => true,
+            Keyword::Index->value => true,
+            Keyword::Direction->value => true,
+        ];
+        foreach (array_keys($result) as $resultKey) {
+            if (! isset($valueObjectKeywords[$resultKey])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * True if the term definition coerces its values to `@json` literals.
+     *
+     * @param  array<array-key, mixed>|null  $termDef
+     */
+    private function isJsonTyped(?array $termDef): bool
+    {
+        return $termDef !== null
+            && isset($termDef['@type'])
+            && $termDef['@type'] === Keyword::Json->value;
     }
 
     private function containerIs(?string $activeProperty, string $keyword): bool
