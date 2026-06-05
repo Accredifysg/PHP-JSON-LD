@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-13
+
+Adds `@reverse` expansion (both forms) with reverse-value error detection.
+
+W3C JSON-LD 1.1 expand test suite progress:
+
+```
+v0.1.1 baseline:  69 passed
+v0.2.0:          113 passed   (+44)  Expansion rewrite
+v0.3.0:          129 passed   (+16)  Container handling
+v0.4.0:          126 passed   (-3)   Scope activation
+v0.5.0:          139 passed   (+13)  Value objects + @json
+v0.6.0:          147 passed   (+8)   @reverse
+```
+
+### Added
+
+- **`@reverse` keyword.** `{"@reverse": {prop: node, …}}` expands its map
+  and folds the entries into the node's `@reverse` map. A nested
+  `@reverse` (double reverse) folds back into forward properties.
+- **Reverse-property terms.** A term defined as `{"@reverse": "…iri"}`
+  routes its values into the `@reverse` map under the reverse IRI.
+- **Reverse-value validation.** Reverse properties may only reference
+  nodes; a `@value` or `@list` reverse value raises
+  `invalid reverse property value`.
+
+### Consumer impact
+
+None. Characterization fixtures are byte-identical to v0.5.0; VC stays
+pinned at `^0.1.1`.
+
 ## [0.5.0] - 2026-05-13
 
 Spec-correct value objects + `@json` literals, with value-object error
@@ -324,7 +355,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/accredifysg/php-json-ld/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/accredifysg/php-json-ld/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/accredifysg/php-json-ld/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/accredifysg/php-json-ld/compare/v0.2.0...v0.3.0

@@ -50,7 +50,7 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    139 passed / 246 failed (v0.5.0)
+Expansion:    147 passed / 238 failed (v0.6.0)
 Compaction:   skipped (PR 4.9 pending)
 toRdf:        skipped (PR 4.10 pending)
 ```

@@ -27,6 +27,9 @@ use Accredify\JsonLd\Exceptions\JsonLdException;
  *    literals preserved verbatim.
  *  - Container handling: `@language`, `@index`, `@id`, `@type`, `@graph`,
  *    `@nest`.
+ *  - `@reverse` — both the keyword (a map of reverse relations, with
+ *    double-reverse folding back to forward) and reverse-property terms
+ *    (`{"@reverse": "…"}`). Rejects `@value` / `@list` reverse values.
  *  - Type-scoped + property-scoped context activation (each object derives
  *    its own active context from documentBase).
  *  - IRI Expansion: keywords, blank nodes (`_:…`), full IRIs
@@ -35,7 +38,6 @@ use Accredify\JsonLd\Exceptions\JsonLdException;
  *
  * Deferred (future Phase 4 PRs):
  *
- *  - `@reverse` properties.
  *  - `@included` blocks.
  *  - `@base` / document-relative IRI resolution (the `documentRelative`
  *    flag is currently a pass-through stub).
@@ -188,6 +190,11 @@ class Expansion
     {
         $result = [];
 
+        // Accumulates reverse relations (from the `@reverse` keyword and from
+        // reverse-property terms). Merged into $result['@reverse'] at the end.
+        /** @var array<string, list<mixed>> $reverseMap */
+        $reverseMap = [];
+
         // §5.5 step 12: type-scoped context activation. Collect the object's
         // @type values, look up their term definitions in the document base,
         // and overlay any nested `@context` onto a fresh active context.
@@ -224,8 +231,30 @@ class Expansion
                     continue;
                 }
 
+                // Reverse-property term: a term whose definition carries a
+                // `@reverse` mapping (e.g. `"isKnownBy": {"@reverse": "…knows"}`).
+                // Its values are expanded as nodes and stored under the
+                // reverse IRI in the @reverse map. (§5.5 step 13.7.)
+                if ($termDef !== null && isset($termDef['@reverse']) && is_string($termDef['@reverse'])) {
+                    $reverseIri = $this->expandIri($termDef['@reverse'], vocab: true);
+                    if ($reverseIri !== null) {
+                        $this->collectReverseValues($reverseMap, $reverseIri, $this->expandElement($value, $key));
+                    }
+
+                    continue;
+                }
+
                 $expandedKey = $this->expandIri($key, vocab: true);
                 if ($expandedKey === null) {
+                    continue;
+                }
+
+                // @reverse keyword: a map of reverse relations. Each entry is
+                // expanded and moved into this node's @reverse map; a nested
+                // @reverse (double reverse) folds back to forward properties.
+                if ($expandedKey === Keyword::Reverse->value) {
+                    $this->expandReverseKeyword($value, $result, $reverseMap);
+
                     continue;
                 }
 
@@ -308,6 +337,12 @@ class Expansion
             }
         } finally {
             $this->termDefinitions = $previousActive;
+        }
+
+        // Attach accumulated reverse relations (§5.5 step 13.7.4 / 13.4.6).
+        if ($reverseMap !== []) {
+            ksort($reverseMap);
+            $result[Keyword::Reverse->value] = $reverseMap;
         }
 
         // Value-object finalization (§5.5 step 15). If @value is present,
@@ -606,6 +641,71 @@ class Expansion
 
         // Step 9: return as-is.
         return $value;
+    }
+
+    /**
+     * Handles the `@reverse` keyword: a map of reverse relations. Each entry
+     * is expanded and folded into the node's reverse map; a nested `@reverse`
+     * (double reverse) folds back into forward properties on $result.
+     *
+     * @param  array<string, mixed>  $result  forward properties (modified in place)
+     * @param  array<string, list<mixed>>  $reverseMap  reverse relations (modified in place)
+     */
+    private function expandReverseKeyword(mixed $value, array &$result, array &$reverseMap): void
+    {
+        // The @reverse value must be a map (node object), not a list/scalar.
+        if (! is_array($value) || array_is_list($value)) {
+            throw new JsonLdException('Invalid @reverse value: must be a map');
+        }
+
+        $expanded = $this->expandObject($value, Keyword::Reverse->value);
+        if (! is_array($expanded) || array_is_list($expanded)) {
+            return;
+        }
+
+        foreach ($expanded as $prop => $items) {
+            if (! is_string($prop) || ! is_array($items)) {
+                continue;
+            }
+
+            // A nested @reverse inside a @reverse is a double reverse — its
+            // entries are forward properties of the current node.
+            if ($prop === Keyword::Reverse->value) {
+                foreach ($items as $fwdProp => $fwdItems) {
+                    if (is_string($fwdProp) && is_array($fwdItems)) {
+                        $this->mergeProperty($result, $fwdProp, array_values($fwdItems));
+                    }
+                }
+
+                continue;
+            }
+
+            $this->collectReverseValues($reverseMap, $prop, $items);
+        }
+    }
+
+    /**
+     * Appends expanded values to a reverse-property entry, rejecting value
+     * objects and list objects (reverse properties can only reference nodes).
+     *
+     * @param  array<string, list<mixed>>  $reverseMap  modified in place
+     */
+    private function collectReverseValues(array &$reverseMap, string $reverseIri, mixed $expandedValue): void
+    {
+        if ($expandedValue === null) {
+            return;
+        }
+        $items = is_array($expandedValue) && array_is_list($expandedValue)
+            ? $expandedValue
+            : [$expandedValue];
+
+        foreach ($items as $item) {
+            if (is_array($item) && (array_key_exists(Keyword::Value->value, $item) || isset($item[Keyword::List->value]))) {
+                throw new JsonLdException('Invalid reverse property value: reverse properties cannot have @value or @list values');
+            }
+        }
+
+        $reverseMap[$reverseIri] = array_merge($reverseMap[$reverseIri] ?? [], $items);
     }
 
     /**
