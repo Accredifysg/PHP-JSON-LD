@@ -53,6 +53,10 @@ final class PhpJsonLdAdapter implements Processor
 
     public function toRdf(array $input, array $options): string
     {
-        throw new NotImplementedException('toRdf lands in PR 4.10');
+        $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
+
+        return (new JsonLdProcessor($this->loader))
+            ->toRdf($input, $base)
+            ->toNQuads();
     }
 }

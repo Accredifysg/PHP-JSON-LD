@@ -28,7 +28,7 @@ tests/
     └── Algorithms/
         ├── ExpansionTest.php       # runs via PhpJsonLdAdapter
         ├── CompactionTest.php      # runs via PhpJsonLdAdapter
-        └── ToRdfTest.php           # still NullProcessor (PR 4.10)
+        └── ToRdfTest.php           # runs via PhpJsonLdAdapter (N-Quads)
 ```
 
 ## Running
@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    177 passed / 208 failed (v0.12.0)
-Compaction:    95 passed / 151 failed (v0.12.0)
-toRdf:        skipped (PR 4.10 pending)
+Expansion:    191 passed / 194 failed (v0.13.0)
+Compaction:    95 passed / 151 failed (v0.13.0)
+toRdf:        234 passed / 233 failed (v0.13.0)
 ```
 
 Each Phase 4 PR:
@@ -76,6 +76,7 @@ Each Phase 4 PR:
 | v0.10.0 |          170  |     0  | Compaction container-maps (+23 compact)|
 | v0.11.0 |          175  |    +5  | @direction + default @language        |
 | v0.12.0 |          177  |    +2  | Drop unmapped relative terms (§5.5 #13)|
+| v0.13.0 |          191  |   +14  | toRdf (§7) + expansion gaps it surfaced|
 
 ### Notes on v0.4.0
 

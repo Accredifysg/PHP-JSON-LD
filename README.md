@@ -29,9 +29,9 @@ A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) spec
 ## Planned scope (v1.0)
 
 - [x] Custom `DocumentLoader` interface
-- [~] Expansion (§5.5) — implemented; ~163/385 of the W3C expand suite
+- [~] Expansion (§5.5) — implemented; ~191/385 of the W3C expand suite
 - [~] Compaction (§5.6) — implemented incl. container-maps; ~95/246 of the W3C compact suite
-- [ ] Serialize JSON-LD to RDF (§6 / `toRdf`)
+- [~] Serialize JSON-LD to RDF (§7 / `toRdf`) — implemented; ~234/467 of the W3C toRdf suite (N-Quads output; `@json`/JCS, `rdfDirection`, and generalized RDF pending)
 
 Out of scope for v1.0: Flattening, Framing, RDF-to-JSON-LD (`fromRdf`).
 

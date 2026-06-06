@@ -6,11 +6,13 @@ namespace Accredify\JsonLd;
 
 use Accredify\JsonLd\Algorithms\Compaction;
 use Accredify\JsonLd\Algorithms\Expansion;
+use Accredify\JsonLd\Algorithms\ToRdf;
 use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Contracts\DocumentLoader;
 use Accredify\JsonLd\Contracts\Processor;
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
+use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Enums\Keyword;
 
 /**
@@ -74,5 +76,27 @@ final class JsonLdProcessor implements Processor
 
         /** @var array<string, mixed> $compacted */
         return new CompactedDocument($compacted);
+    }
+
+    public function toRdf(array $document, ?string $base = null): RdfDataset
+    {
+        // A missing @context is tolerated for toRdf: documents that address
+        // their predicates with full IRIs need no context. Inject an empty
+        // one so ContextProcessor (which requires the key) expands against an
+        // empty active context rather than throwing.
+        $documentForContext = $document;
+        if (! isset($documentForContext['@context'])) {
+            $documentForContext['@context'] = [];
+        }
+
+        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $base);
+
+        $documentWithoutContext = $document;
+        unset($documentWithoutContext['@context']);
+
+        $expanded = (new Expansion($contextProcessor->getTermDefinitions()))
+            ->expand($documentWithoutContext);
+
+        return new RdfDataset((new ToRdf)->toRdf($expanded));
     }
 }

@@ -83,6 +83,17 @@ class Expansion
             return [];
         }
 
+        // Top-level @graph unwrap: a result that is a single map containing
+        // only @graph represents the default graph, so it is replaced by the
+        // @graph contents (rather than becoming a free-floating named graph).
+        if (
+            ! array_is_list($expanded)
+            && array_keys($expanded) === [Keyword::Graph->value]
+            && is_array($expanded[Keyword::Graph->value])
+        ) {
+            $expanded = $expanded[Keyword::Graph->value];
+        }
+
         // If the result is a list, flatten it (drop nulls).
         if (array_is_list($expanded)) {
             $out = [];
@@ -215,6 +226,31 @@ class Expansion
             $this->termDefinitions = $typeScoped;
         }
 
+        // §5.5 step 8: an embedded @context (an inline term map, or an array of
+        // them) overlays onto the active context for this object's property
+        // expansion — processed up front, regardless of where the @context key
+        // sits in the object. Remote (string) contexts nested inside a document
+        // are not yet resolved here.
+        if (isset($obj[Keyword::Context->value])) {
+            $embedded = $obj[Keyword::Context->value];
+            $layers = is_array($embedded) && array_is_list($embedded) ? $embedded : [$embedded];
+            $scoped = new TermDefinitions($this->termDefinitions->termDefinitions);
+            $vocab = $this->termDefinitions->getVocab();
+            if ($vocab !== null) {
+                $scoped->setVocab($vocab);
+            }
+            $appliedInline = false;
+            foreach ($layers as $layer) {
+                if (is_array($layer)) {
+                    $this->overlayContextOnto($scoped, $layer);
+                    $appliedInline = true;
+                }
+            }
+            if ($appliedInline) {
+                $this->termDefinitions = $scoped;
+            }
+        }
+
         try {
             foreach ($obj as $key => $value) {
                 if (! is_string($key)) {
@@ -228,7 +264,10 @@ class Expansion
                 // @nest unwrapping: the value is a map whose entries are
                 // treated as if they were direct properties of the parent.
                 $termDef = $this->termDefinitions->getTermDefinition($key);
-                if ($key === Keyword::Nest->value || $this->hasContainer($termDef, Keyword::Nest->value)) {
+                $isNestKey = $key === Keyword::Nest->value
+                    || ($termDef !== null && ($termDef['@id'] ?? null) === Keyword::Nest->value)
+                    || $this->hasContainer($termDef, Keyword::Nest->value);
+                if ($isNestKey) {
                     $this->mergeNestedObject($value, $result);
 
                     continue;
@@ -272,7 +311,7 @@ class Expansion
 
                 // JSON-LD keyword keys get special handling.
                 if ($this->isKeyword($expandedKey)) {
-                    $expandedValue = $this->expandKeywordValue($expandedKey, $value);
+                    $expandedValue = $this->expandKeywordValue($expandedKey, $value, $activeProperty);
                     if ($expandedValue !== null) {
                         $result[$expandedKey] = $expandedValue;
                     }
@@ -407,7 +446,7 @@ class Expansion
      * Specialised expansion for JSON-LD keyword keys (`@id`, `@type`,
      * `@value`, `@list`, `@set`, `@language`, `@index`, etc).
      */
-    private function expandKeywordValue(string $expandedKey, mixed $value): mixed
+    private function expandKeywordValue(string $expandedKey, mixed $value, ?string $activeProperty = null): mixed
     {
         switch ($expandedKey) {
             case Keyword::Id->value:
@@ -429,26 +468,14 @@ class Expansion
                 return is_string($value) ? $value : null;
 
             case Keyword::List->value:
-                $expandedList = $this->expandElement($value, null);
-                if (is_array($expandedList) && array_is_list($expandedList)) {
-                    return $expandedList;
-                }
-                if ($expandedList === null) {
-                    return [];
-                }
-
-                return [$expandedList];
-
             case Keyword::Set->value:
-                $expandedSet = $this->expandElement($value, null);
-                if (is_array($expandedSet) && array_is_list($expandedSet)) {
-                    return $expandedSet;
-                }
-                if ($expandedSet === null) {
-                    return [];
-                }
-
-                return [$expandedSet];
+                // §5.5: @list / @set contents expand under the *active property*
+                // (the property the value belongs to) so scalar items
+                // value-expand rather than being dropped as free-floating. Items
+                // are expanded individually so a `@container: @list` term does
+                // NOT re-wrap them — the @list keyword already establishes the
+                // list.
+                return $this->expandKeywordItems($value, $activeProperty);
 
             case Keyword::Graph->value:
                 $expandedGraph = $this->expandElement($value, Keyword::Graph->value);
@@ -457,10 +484,54 @@ class Expansion
                 }
 
                 return $expandedGraph === null ? [] : [$expandedGraph];
+
+            case Keyword::Included->value:
+                // §5.5 step 13.4.14: @included contents are expanded as node
+                // objects and kept as an array.
+                $expandedIncluded = $this->expandElement($value, null);
+                if ($expandedIncluded === null) {
+                    return null;
+                }
+                if (array_is_list($expandedIncluded)) {
+                    return $expandedIncluded;
+                }
+
+                return [$expandedIncluded];
         }
 
         // Unknown keyword — silently drop.
         return null;
+    }
+
+    /**
+     * Expand the members of an `@list` / `@set` value under the active
+     * property, one item at a time, flattening one level. Expanding per item
+     * avoids re-triggering a `@container: @list` wrap on the property.
+     *
+     * @return list<mixed>
+     */
+    private function expandKeywordItems(mixed $value, ?string $activeProperty): array
+    {
+        $items = is_array($value) && array_is_list($value) ? $value : [$value];
+
+        $result = [];
+        foreach ($items as $item) {
+            $expanded = $this->expandElement($item, $activeProperty);
+            if ($expanded === null) {
+                continue;
+            }
+            if (array_is_list($expanded)) {
+                foreach ($expanded as $sub) {
+                    if ($sub !== null) {
+                        $result[] = $sub;
+                    }
+                }
+            } else {
+                $result[] = $expanded;
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -623,20 +694,11 @@ class Expansion
             $resolvedThroughTermDef = true;
         }
 
-        if ($resolvedThroughTermDef && $vocab) {
-            // If iteration produced something that looks like an absolute
-            // IRI, return it. Otherwise fall through to compact-IRI / @vocab
-            // handling on the resolved value.
-            if ($this->looksLikeAbsoluteIri($current)) {
-                return $current;
-            }
-            $value = $current;
-        } elseif ($resolvedThroughTermDef) {
-            // Non-vocab mode: still return the resolved value if it's an
-            // absolute IRI (matches v0.1.1 behaviour for @id contexts).
-            if ($this->looksLikeAbsoluteIri($current)) {
-                return $current;
-            }
+        if ($resolvedThroughTermDef) {
+            // Continue IRI expansion on the resolved mapping so that a term
+            // whose @id is itself a compact IRI (e.g. "label" → "rdfs:label")
+            // is fully expanded via its prefix at step 6. Absolute IRIs fall
+            // through step 6 unchanged (the "//" / absolute-IRI checks).
             $value = $current;
         }
 

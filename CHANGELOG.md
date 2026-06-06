@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-06
+
+Adds the **toRdf** algorithm (§7) — the third v1.0 pillar — and fixes the
+expansion gaps it surfaced.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.12.0:      177       95        0      272
+v0.13.0:      191       95      234      520   (+14 expand, +234 toRdf)
+```
+
+### Added
+
+- **Deserialize JSON-LD to RDF (§7).** A new `JsonLdProcessor::toRdf()`
+  returning an `RdfDataset` value object that serialises to canonical
+  N-Quads. Implements Node Map Generation (§7.2), Object to RDF Conversion
+  (§7.3), and List Conversion (§7.4):
+  - IRI / blank-node / literal terms (`src/Rdf/RdfTerm`, `RdfQuad`).
+  - Deterministic blank-node identifiers (`_:b0`, `_:b1`, …) via a shared
+    issuer threaded through node-map generation and list conversion.
+  - Canonical literal forms: `xsd:integer`, `xsd:double` (e.g. `5.3E0`),
+    `xsd:boolean`; explicit datatypes; language tags; `@list` → RDF
+    collections; named graphs in the fourth quad position.
+  - A missing `@context` is tolerated (documents may address predicates
+    with full IRIs).
+  - Basic `@json` literal support (sorted-key JSON; full JCS — Unicode
+    normalisation, ECMAScript number formatting — is not yet implemented).
+  - Not yet handled: `rdfDirection`, `produceGeneralizedRdf`.
+
+### Fixed
+
+These expansion fixes were surfaced by the toRdf work and lift both the
+expand and toRdf scores:
+
+- **`@list` / `@set` contents now expand under the active property**, so
+  scalar list items value-expand instead of being dropped (they were
+  expanded with a null active property). Items are expanded individually so
+  a `@container: @list` term doesn't double-wrap them.
+- **Compact IRIs whose prefix comes from a term's `@id`** (e.g. a term
+  mapping to `"rdfs:label"`) are now fully expanded via their prefix rather
+  than being returned as a pseudo-absolute IRI.
+- **Top-level `@graph` unwrap**: a result that is a single map containing
+  only `@graph` is replaced by the `@graph` contents (the default graph),
+  instead of becoming a free-floating named graph.
+- **Embedded `@context` inside nested objects** (inline term maps) is now
+  processed before the object's properties are expanded, regardless of key
+  order. (Remote string contexts nested in a document are still not
+  resolved.)
+- **`@included`** is now expanded (it was silently dropped).
+- **Aliased `@nest`** (a term mapping to `@nest`) is now treated as a nest
+  container, merging its values as direct properties.
+
+### Consumer impact
+
+Additive. Expansion of the VC/OBv3/IDVC characterization fixtures remains
+byte-identical, the unit suite stays green (158 tests), and compaction is
+unchanged. VC stays pinned at `^0.1.1`. The new `toRdf()` is available for a
+future VC migration off its hand-rolled `JsonLdToQuadsProcessor`.
+
 ## [0.12.0] - 2026-06-06
 
 Drops unmapped relative terms during expansion (§5.5 step 13). Found by

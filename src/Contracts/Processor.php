@@ -6,12 +6,13 @@ namespace Accredify\JsonLd\Contracts;
 
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
+use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 
 /**
  * Public entry point for the package's algorithms.
  *
- * `expand` and `compact` are implemented; `toRdf` joins in a later PR.
+ * `expand`, `compact`, and `toRdf` are implemented.
  *
  * Kept as a separate interface from {@see DocumentLoader} so that consumers
  * can mock just the processor in tests without worrying about loader
@@ -47,4 +48,19 @@ interface Processor
      * @throws JsonLdException
      */
     public function compact(array $expanded, array|string $context): CompactedDocument;
+
+    /**
+     * Deserialize a JSON-LD document to an RDF dataset (the toRdf algorithm).
+     *
+     * Unlike {@see expand()}, a missing `@context` is tolerated (the document
+     * is expanded against an empty active context) since many RDF-bearing
+     * documents address their predicates with full IRIs.
+     *
+     * @param  array<array-key, mixed>  $document  A JSON-LD document.
+     * @param  string|null  $base  Initial base IRI for document-relative
+     *                             resolution (typically the document's URL).
+     *
+     * @throws JsonLdException
+     */
+    public function toRdf(array $document, ?string $base = null): RdfDataset;
 }
