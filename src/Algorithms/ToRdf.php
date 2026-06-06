@@ -280,7 +280,15 @@ final class ToRdf
 
     private function isAbsoluteIri(string $value): bool
     {
-        return preg_match('/^[A-Za-z][A-Za-z0-9+.-]*:/', $value) === 1;
+        if (preg_match('/^[A-Za-z][A-Za-z0-9+.-]*:/', $value) !== 1) {
+            return false;
+        }
+
+        // Reject characters that are not permitted in an IRIREF (spaces,
+        // control characters, and the delimiter set), so a malformed IRI such
+        // as "http://example.com/a b" produces no RDF term and its statement
+        // is dropped.
+        return preg_match('/[\x00-\x20"<>{}|\^`\\\\]/', $value) !== 1;
     }
 
     /**

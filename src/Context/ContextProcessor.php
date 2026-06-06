@@ -190,9 +190,10 @@ class ContextProcessor
             // strict-URL check no longer applies (paired with the resolution
             // landing in this release).
             Keyword::Base->value => $value === null || is_string($value),
-            // @vocab still requires an absolute IRI or null; relative-@vocab
-            // resolution is a later PR.
-            Keyword::Vocab->value => $value === null || (is_string($value) && filter_var($value, FILTER_VALIDATE_URL) !== false),
+            // @vocab accepts an absolute IRI, a compact IRI, a blank node
+            // ("_:"), an empty string, or a relative reference — all resolved
+            // during merge. Only a non-string (other than null) is invalid.
+            Keyword::Vocab->value => $value === null || is_string($value),
             Keyword::Language->value => $value === null || (is_string($value) && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $value) === 1),
             Keyword::Direction->value => $value === null || $value === 'ltr' || $value === 'rtl',
             default => true,
@@ -233,11 +234,16 @@ class ContextProcessor
                 $this->termDefinitions->setDefaultDirection(is_string($dir) ? $dir : null);
             }
 
-            // Push any @vocab onto the term definitions' vocab stack so the
-            // Expansion algorithm can use it as a fallback for undefined
-            // terms.
-            if (isset($context[Keyword::Vocab->value]) && is_string($context[Keyword::Vocab->value])) {
-                $this->termDefinitions->pushVocab($context[Keyword::Vocab->value]);
+            // Apply @vocab. A null clears it; otherwise the value is resolved
+            // (compact IRI via a prefix term, empty string / relative against
+            // the base or current @vocab, blank node kept as-is) and pushed.
+            if (array_key_exists(Keyword::Vocab->value, $context)) {
+                $vocabValue = $context[Keyword::Vocab->value];
+                if ($vocabValue === null) {
+                    $this->termDefinitions->setVocab(null);
+                } elseif (is_string($vocabValue)) {
+                    $this->termDefinitions->pushVocab($this->resolveVocab($vocabValue));
+                }
             }
 
             foreach ($context as $key => $value) {
@@ -254,6 +260,48 @@ class ContextProcessor
                 }
             }
         }
+    }
+
+    /**
+     * Resolve an `@vocab` value to its effective IRI (or blank-node prefix):
+     *  - empty string → the active base IRI;
+     *  - blank node ("_:…") → kept verbatim;
+     *  - compact IRI whose prefix is a defined term → expanded via the prefix;
+     *  - absolute IRI (scheme://… or scheme:…) → kept;
+     *  - relative reference → appended to the current @vocab if set, else
+     *    resolved against the base.
+     */
+    private function resolveVocab(string $vocab): string
+    {
+        if ($vocab === '') {
+            return $this->termDefinitions->getBase() ?? '';
+        }
+
+        if (str_starts_with($vocab, '_:')) {
+            return $vocab;
+        }
+
+        if (str_contains($vocab, ':')) {
+            [$prefix, $suffix] = explode(':', $vocab, 2);
+            if (! str_starts_with($suffix, '//')) {
+                $prefixDef = $this->termDefinitions->getTermDefinition($prefix);
+                if ($prefixDef !== null && isset($prefixDef['@id']) && is_string($prefixDef['@id'])) {
+                    return $prefixDef['@id'].$suffix;
+                }
+            }
+
+            return $vocab; // absolute IRI
+        }
+
+        // Relative reference: append to the current @vocab, else resolve
+        // against the base.
+        $currentVocab = $this->termDefinitions->getVocab();
+        if ($currentVocab !== null) {
+            return $currentVocab.$vocab;
+        }
+        $base = $this->termDefinitions->getBase();
+
+        return $base !== null ? IriResolver::resolve($base, $vocab) : $vocab;
     }
 
     /**

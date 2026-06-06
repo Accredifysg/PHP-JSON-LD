@@ -177,9 +177,16 @@ describe('ContextProcessor keyword validation', function () {
             ->toBeInstanceOf(TermDefinitions::class);
     });
 
-    it('still rejects non-URL @vocab', function () {
-        // @vocab resolution is a later PR, so it keeps the stricter check.
-        expect(fn () => process(['@vocab' => 'not-a-url']))
+    it('accepts a relative / compact @vocab (resolved during merge)', function () {
+        // @vocab may be a relative reference, compact IRI, blank node, or
+        // empty string — all resolved at merge time. Only a non-string is
+        // invalid.
+        expect(process(['@vocab' => 'not-a-url'])->getTermDefinitions())
+            ->toBeInstanceOf(TermDefinitions::class);
+    });
+
+    it('rejects a non-string @vocab', function () {
+        expect(fn () => process(['@vocab' => 42]))
             ->toThrow(JsonLdException::class, 'Invalid @vocab value');
     });
 

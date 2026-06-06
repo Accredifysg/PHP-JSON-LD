@@ -94,6 +94,17 @@ it('places named-graph statements in the fourth quad position', function () {
     );
 });
 
+it('drops a statement whose IRI is not well-formed (contains a space)', function () {
+    // A subject/predicate/object IRI containing characters illegal in an
+    // IRIREF (e.g. a space) yields no RDF term, so the statement is dropped.
+    $nq = toNQuads([
+        '@id' => 'http://example.com/a b',
+        'http://example.com/foo' => 'bar',
+    ]);
+
+    expect($nq)->toBe('');
+});
+
 it('drops a relative-IRI predicate (no RDF representation)', function () {
     $nq = toNQuads([
         '@context' => ['known' => 'http://example.com/known'],

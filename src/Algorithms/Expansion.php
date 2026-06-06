@@ -673,49 +673,64 @@ class Expansion
             return null;
         }
 
-        // A term explicitly mapped to null (`"term": null` / `{"@id": null}`)
-        // is decoupled: it does not expand (and must not fall back to @vocab).
-        $explicitDef = $this->termDefinitions->getTermDefinition($value);
-        if ($explicitDef !== null && array_key_exists('@id', $explicitDef) && $explicitDef['@id'] === null) {
-            return null;
+        // Step 4: a term whose IRI mapping is a keyword resolves to that
+        // keyword regardless of mode (e.g. a `type` → `@type` alias used as a
+        // property key OR an @id value).
+        $valueDef = $this->termDefinitions->getTermDefinition($value);
+        if (
+            $valueDef !== null
+            && isset($valueDef['@id'])
+            && is_string($valueDef['@id'])
+            && $this->isKeyword($valueDef['@id'])
+        ) {
+            return $valueDef['@id'];
         }
 
-        // Step 4-5: term definition lookup. Iterate when a term's IRI mapping
-        // is itself a term (alias chains like AchievementCredential →
-        // OpenBadgeCredential → https://…/OpenBadgeCredential). The spec's
-        // Create Term Definition algorithm (§4.2.2) would normally pre-resolve
-        // these during context processing; until that's wired up, we resolve
-        // on demand here. `seen` guards against cycles.
-        $seen = [];
-        $current = $value;
-        $resolvedThroughTermDef = false;
-        while (! isset($seen[$current])) {
-            $seen[$current] = true;
-            $termDef = $this->termDefinitions->getTermDefinition($current);
-            if (
-                $termDef === null
-                || ! isset($termDef['@id'])
-                || ! is_string($termDef['@id'])
-                || $termDef['@id'] === $current
-            ) {
-                break;
-            }
-            $mapping = $termDef['@id'];
-
-            if ($this->isKeyword($mapping)) {
-                return $mapping;
+        // Step 5: a term's IRI mapping only applies in vocab mode. For a
+        // non-vocab value (e.g. an @id), a bare term is NOT resolved against a
+        // term definition — it falls through to compact-IRI handling (step 6)
+        // and then document-relative resolution (step 8).
+        if ($vocab) {
+            // A term explicitly mapped to null (`"term": null` / `{"@id": null}`)
+            // is decoupled: it does not expand and must not fall back to @vocab.
+            if ($valueDef !== null && array_key_exists('@id', $valueDef) && $valueDef['@id'] === null) {
+                return null;
             }
 
-            $current = $mapping;
-            $resolvedThroughTermDef = true;
-        }
+            // Resolve alias chains (e.g. AchievementCredential →
+            // OpenBadgeCredential → https://…/OpenBadgeCredential). The spec's
+            // Create Term Definition algorithm pre-resolves these; we resolve
+            // on demand. `seen` guards against cycles.
+            $seen = [];
+            $current = $value;
+            $resolvedThroughTermDef = false;
+            while (! isset($seen[$current])) {
+                $seen[$current] = true;
+                $termDef = $this->termDefinitions->getTermDefinition($current);
+                if (
+                    $termDef === null
+                    || ! isset($termDef['@id'])
+                    || ! is_string($termDef['@id'])
+                    || $termDef['@id'] === $current
+                ) {
+                    break;
+                }
+                $mapping = $termDef['@id'];
 
-        if ($resolvedThroughTermDef) {
-            // Continue IRI expansion on the resolved mapping so that a term
-            // whose @id is itself a compact IRI (e.g. "label" → "rdfs:label")
-            // is fully expanded via its prefix at step 6. Absolute IRIs fall
-            // through step 6 unchanged (the "//" / absolute-IRI checks).
-            $value = $current;
+                if ($this->isKeyword($mapping)) {
+                    return $mapping;
+                }
+
+                $current = $mapping;
+                $resolvedThroughTermDef = true;
+            }
+
+            if ($resolvedThroughTermDef) {
+                // Continue IRI expansion on the resolved mapping so that a term
+                // whose @id is itself a compact IRI (e.g. "label" → "rdfs:label")
+                // is fully expanded via its prefix at step 6.
+                $value = $current;
+            }
         }
 
         // Step 6: compact IRI / blank node / absolute IRI handling.
@@ -885,6 +900,14 @@ class Expansion
         // For non-@json value objects, @value must be a scalar.
         if (! $isJson && ! is_scalar($value)) {
             throw new JsonLdException('Invalid value object: @value must be a scalar');
+        }
+
+        // Inside a value object, @type is a single datatype IRI (a scalar
+        // string), not an array — expandTypeValue produces a list, so collapse
+        // a single-element list back to a scalar. (Node-object @type, which
+        // stays an array, never reaches finalizeValueObject.)
+        if (isset($result[Keyword::Type->value]) && is_array($result[Keyword::Type->value]) && count($result[Keyword::Type->value]) === 1) {
+            $result[Keyword::Type->value] = $result[Keyword::Type->value][0];
         }
 
         ksort($result);

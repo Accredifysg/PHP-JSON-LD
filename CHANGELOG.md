@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-06
+
+Spec-grounded conformance grind, driven by a fix plan extracted from the
+local W3C "JSON-LD 1.1 Processing Algorithms and API" specification. Each
+change verified net-positive in isolation; one planned change (tolerating a
+missing `@context`) was measured net-negative — it exposes the absence of
+content-level validation, the negative-test trap — and dropped.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.14.0:      201       95      247      543
+v0.15.0:      213       98      273      584   (+12 expand, +3 compact, +26 toRdf)
+```
+
+### Fixed
+
+- **IRI Expansion gates term lookup on vocab mode (§5.2 steps 4-5).** A term's
+  IRI mapping is now applied only when expanding in vocab mode (property keys,
+  `@type`); a non-vocab value such as an `@id` no longer matches a same-named
+  term and instead resolves document-relative against the base. A term whose
+  mapping is a *keyword* still resolves in either mode.
+- **Value-object `@type` is a scalar (§5.3 step 4).** Inside a value object,
+  `@type` is collapsed from a single-element list back to the datatype-IRI
+  string (node-object `@type` stays an array).
+- **`@vocab` accepts compact IRIs, blank nodes, the empty string, and relative
+  references (§4.1.2 step 5.8)**, each resolved during context merge (compact
+  via its prefix term, empty/relative against the base or current `@vocab`,
+  blank node verbatim). Only a non-string `@vocab` is rejected.
+- **toRdf drops statements with malformed IRIs (§8.1/§8.2).** A subject,
+  predicate, object, or graph IRI containing characters illegal in an IRIREF
+  (e.g. a space) yields no RDF term, so the statement is silently dropped.
+
+### Added
+
+- **`jld:PositiveSyntaxTest` handling in the toRdf harness.** Entries with no
+  expected fixture now pass when the processor produces output without
+  raising (previously mis-scored as failures).
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (160),
+compaction improved. VC stays pinned at `^0.1.1`.
+
 ## [0.14.0] - 2026-06-06
 
 Conformance grind on top of v0.13.0's toRdf — four measured expansion /

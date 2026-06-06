@@ -62,10 +62,18 @@ it('serialises to RDF per W3C manifest', function (TestCase $test) {
         throw $e;
     }
 
-    if ($test->isPositive && $test->expectPath !== null) {
-        $expected = (string) file_get_contents($test->expectPath);
-        expect(normaliseNQuads($actual))->toEqual(normaliseNQuads($expected));
-    } else {
+    if ($test->isNegative) {
         $this->fail('Negative tests should throw, but the processor returned a result');
     }
+
+    if ($test->expectPath === null) {
+        // jld:PositiveSyntaxTest — no expected fixture; passing means the
+        // processor produced valid output without raising.
+        expect($actual)->toBeString();
+
+        return;
+    }
+
+    $expected = (string) file_get_contents($test->expectPath);
+    expect(normaliseNQuads($actual))->toEqual(normaliseNQuads($expected));
 })->with('to-rdf-tests');
