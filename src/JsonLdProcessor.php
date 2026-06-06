@@ -45,7 +45,7 @@ final class JsonLdProcessor implements Processor
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);
 
-        $expansion = new Expansion($contextProcessor->getTermDefinitions());
+        $expansion = new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader);
 
         return new ExpandedDocument(
             $expansion->expand($documentWithoutContext),
@@ -94,7 +94,7 @@ final class JsonLdProcessor implements Processor
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);
 
-        $expanded = (new Expansion($contextProcessor->getTermDefinitions()))
+        $expanded = (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader))
             ->expand($documentWithoutContext);
 
         return new RdfDataset((new ToRdf)->toRdf($expanded));

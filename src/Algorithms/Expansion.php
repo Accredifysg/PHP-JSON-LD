@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Accredify\JsonLd\Algorithms;
 
+use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Context\TermDefinitions;
+use Accredify\JsonLd\Contracts\DocumentLoader;
 use Accredify\JsonLd\Enums\Keyword;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\Internal\IriResolver;
@@ -63,10 +65,18 @@ class Expansion
      */
     private TermDefinitions $termDefinitions;
 
-    public function __construct(TermDefinitions $termDefinitions)
+    /**
+     * Optional loader, used to resolve remote / `@import` scoped contexts
+     * (a term definition's `@context` that is a string URL or carries
+     * `@import`). When null, only inline scoped contexts are applied.
+     */
+    private readonly ?DocumentLoader $documentLoader;
+
+    public function __construct(TermDefinitions $termDefinitions, ?DocumentLoader $documentLoader = null)
     {
         $this->documentBase = $termDefinitions;
         $this->termDefinitions = $termDefinitions;
+        $this->documentLoader = $documentLoader;
     }
 
     /**
@@ -1116,6 +1126,22 @@ class Expansion
     }
 
     /**
+     * True if a scoped @context carries an explicit `@propagate: true` —
+     * overriding the type-scoped default of non-propagation.
+     */
+    private function contextPropagateTrue(mixed $context): bool
+    {
+        $layers = is_array($context) && array_is_list($context) ? $context : [$context];
+        foreach ($layers as $layer) {
+            if (is_array($layer) && ($layer[Keyword::Propagate->value] ?? null) === true) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Apply a scoped @context (property-scoped / embedded / type-scoped) onto a
      * base active context and return the resulting context. Handles:
      *  - a null / [null] layer → reset to a fresh context (the original
@@ -1142,6 +1168,13 @@ class Expansion
                     throw new JsonLdException('Invalid context nullification: a null context cannot clear protected terms');
                 }
                 $active = new TermDefinitions;
+            } elseif (is_string($layer) || (is_array($layer) && array_key_exists(Keyword::Import->value, $layer))) {
+                // A remote (string) scoped context, or one that sources another
+                // via @import, is resolved through the DocumentLoader; the
+                // resolved term map is then overlaid.
+                foreach ($this->resolveRemoteContext($layer) as $term => $definition) {
+                    $this->overlayContextOnto($active, [$term => $definition], $overrideProtected);
+                }
             } elseif (is_array($layer)) {
                 $this->overlayContextOnto($active, $layer, $overrideProtected);
             }
@@ -1152,6 +1185,29 @@ class Expansion
         }
 
         return $active;
+    }
+
+    /**
+     * Resolve a string (remote) or `@import`-bearing scoped context to a flat
+     * term-definition map via {@see ContextProcessor} (which handles loading
+     * and `@import` reverse-merge). Returns an empty map if no loader is wired.
+     *
+     * @param  string|array<array-key, mixed>  $layer
+     * @return array<string, mixed>
+     */
+    private function resolveRemoteContext(string|array $layer): array
+    {
+        if ($this->documentLoader === null) {
+            return [];
+        }
+
+        $processor = new ContextProcessor(
+            ['@context' => $layer],
+            $this->documentLoader,
+            $this->documentBase->getBase(),
+        );
+
+        return $processor->getTermDefinitions()->termDefinitions;
     }
 
     /**
@@ -1203,9 +1259,13 @@ class Expansion
                 ?? $this->findTypeDefRecursive($type, $this->documentBase->termDefinitions);
             if (
                 $typeDef === null
-                || ! isset($typeDef['@context'])
-                || ! is_array($typeDef['@context'])
+                || ! array_key_exists('@context', $typeDef)
+                || $typeDef['@context'] === null
             ) {
+                continue;
+            }
+            $typeContext = $typeDef['@context'];
+            if (! is_string($typeContext) && ! is_array($typeContext)) {
                 continue;
             }
 
@@ -1214,18 +1274,28 @@ class Expansion
                 // definitions so the overlay doesn't mutate it, and record the
                 // pre-type-scoped context as the previous context so a nested
                 // node object rolls type-scoped terms back (§5.5 step 7;
-                // type-scoped contexts have @propagate = false).
+                // type-scoped contexts have @propagate = false) — unless an
+                // explicit @propagate:true makes the context propagate.
                 $scoped = new TermDefinitions($this->termDefinitions->termDefinitions);
                 $vocab = $this->termDefinitions->getVocab();
                 if ($vocab !== null) {
                     $scoped->setVocab($vocab);
                 }
-                $scoped->setPreviousContext($this->termDefinitions);
+                if (! $this->contextPropagateTrue($typeContext)) {
+                    $scoped->setPreviousContext($this->termDefinitions);
+                }
             }
 
             // Type-scoped contexts may NOT redefine protected terms
-            // (override-protected = false).
-            $this->overlayContextOnto($scoped, $typeDef['@context'], overrideProtected: false);
+            // (override-protected = false). A remote / @import-bearing type
+            // context is resolved through the loader first.
+            if (is_string($typeContext) || array_key_exists(Keyword::Import->value, $typeContext)) {
+                foreach ($this->resolveRemoteContext($typeContext) as $term => $definition) {
+                    $this->overlayContextOnto($scoped, [$term => $definition], false);
+                }
+            } else {
+                $this->overlayContextOnto($scoped, $typeContext, overrideProtected: false);
+            }
         }
 
         return $scoped;

@@ -73,9 +73,17 @@ describe('TermDefinitions::addTermDefinition', function () {
             ->toThrow(JsonLdException::class, "Invalid @protected in term 'x'");
     });
 
-    it('rejects non-array nested @context', function () {
+    it('accepts a string (remote) nested @context', function () {
+        // A scoped @context may be a remote context IRI, resolved during
+        // expansion via the document loader.
         $defs = new TermDefinitions;
-        expect(fn () => $defs->addTermDefinition('x', ['@id' => 'x', '@context' => 'https://example.com/']))
+        $defs->addTermDefinition('x', ['@id' => 'x', '@context' => 'https://example.com/']);
+        expect($defs->getTermDefinition('x'))->toHaveKey('@context');
+    });
+
+    it('rejects a nested @context that is neither a string, map, nor null', function () {
+        $defs = new TermDefinitions;
+        expect(fn () => $defs->addTermDefinition('x', ['@id' => 'x', '@context' => 42]))
             ->toThrow(JsonLdException::class, "Invalid @context in term 'x'");
     });
 

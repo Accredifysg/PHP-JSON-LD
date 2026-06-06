@@ -407,15 +407,20 @@ class TermDefinitions
             throw new JsonLdException("Invalid @protected in term '{$term}'");
         }
 
-        // Validate nested @context if present
-        if (isset($definition['@context'])) {
-            if (! is_array($definition['@context'])) {
-                throw new JsonLdException("Invalid @context in term '{$term}': must be an array");
+        // Validate a nested (scoped) @context if present. It may be a string
+        // (a remote context IRI), null, or a map / array of layers; only a
+        // bad shape (e.g. a bare number/bool) is rejected here. A map's
+        // @protected entry must be boolean.
+        if (array_key_exists('@context', $definition) && $definition['@context'] !== null) {
+            $scoped = $definition['@context'];
+            if (! is_string($scoped) && ! is_array($scoped)) {
+                throw new JsonLdException("Invalid @context in term '{$term}'");
             }
-
-            foreach ($definition['@context'] as $contextKey => $contextValue) {
-                if ($contextKey === Keyword::Protected->value && ! is_bool($contextValue)) {
-                    throw new JsonLdException("Invalid @protected in nested context for term '{$term}'");
+            if (is_array($scoped)) {
+                foreach ($scoped as $contextKey => $contextValue) {
+                    if ($contextKey === Keyword::Protected->value && ! is_bool($contextValue)) {
+                        throw new JsonLdException("Invalid @protected in nested context for term '{$term}'");
+                    }
                 }
             }
         }

@@ -102,6 +102,13 @@ class ContextProcessor
 
     private function handleRemoteContext(string $url, int $depth): void
     {
+        // A context reference may be relative; resolve it against the active
+        // base before loading (§4.1.2 step 5.2.1).
+        $base = $this->termDefinitions->getBase();
+        if ($base !== null && $base !== '' && ! filter_var($url, FILTER_VALIDATE_URL)) {
+            $url = IriResolver::resolve($base, $url);
+        }
+
         if (! filter_var($url, FILTER_VALIDATE_URL)) {
             throw new JsonLdException('Remote context must be a valid URL');
         }

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-06-06
+
+Scoped remote / `@import` contexts and relative context references.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.20.0:      266      101      336      703
+v0.21.0:      271      101      342      714   (+5 expand, +6 toRdf)
+```
+
+### Added
+
+- **Remote / `@import` scoped contexts.** A `DocumentLoader` is now threaded
+  into the expander, so a term's scoped `@context` that is a string IRI or
+  carries `@import` (in type-scoped, property-scoped, or embedded position)
+  is dereferenced and overlaid. Type-scoped `@import` honours `@propagate`.
+- **Relative context references** are resolved against the active base before
+  loading (so a document context like `"so-context.jsonld"` resolves against
+  the document URL).
+- A term definition's scoped `@context` may be a string or null (previously
+  only an inline array/map was accepted).
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (168).
+VC stays pinned at `^0.1.1`.
+
 ## [0.20.0] - 2026-06-06
 
 `@import` — context sourcing at the document level.
