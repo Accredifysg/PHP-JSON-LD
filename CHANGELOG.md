@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-06
+
+Conformance grind on top of v0.13.0's toRdf — four measured expansion /
+context fixes, each kept only after verifying a net-positive W3C delta.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.13.0:      191       95      234      520
+v0.14.0:      201       95      247      543   (+10 expand, +13 toRdf)
+```
+
+### Fixed
+
+- **Array `@container` values** (e.g. `["@graph", "@set"]`, `["@index",
+  "@set"]`) are now accepted by term-definition validation. The expander
+  already understood array containers; only the validation rejected them.
+- **`@set` is unwrapped during expansion.** `{"@set": […]}` now expands to
+  its contents directly (an empty `@set` expands to nothing) instead of
+  being retained as a node object — which previously surfaced as a stray
+  blank node in toRdf output.
+- **Property-valued index** (`@container: @index` with `@index: "<prop>"`):
+  each map key is now attached as a *value* of the named property on the
+  expanded item, instead of as `@index` metadata.
+- **Terms mapped to `null`** (`"term": null` / `{"@id": null}`) are now
+  decoupled — they no longer fall back to `@vocab` during IRI expansion.
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (158),
+compaction unchanged. VC stays pinned at `^0.1.1`.
+
 ## [0.13.0] - 2026-06-06
 
 Adds the **toRdf** algorithm (§7) — the third v1.0 pillar — and fixes the

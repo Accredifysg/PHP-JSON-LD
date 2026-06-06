@@ -14,6 +14,9 @@ use Accredify\JsonLd\Tests\Context\Support\StubDocumentLoader;
 | break them.
 */
 
+/**
+ * @param  array<array-key, mixed>  $document
+ */
 function toNQuads(array $document, ?string $base = null): string
 {
     return (new JsonLdProcessor(new StubDocumentLoader))

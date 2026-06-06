@@ -394,6 +394,15 @@ class Expansion
             $result[Keyword::Reverse->value] = $reverseMap;
         }
 
+        // @set unwrap (§5.5 step 13.4.5): the @set wrapper is dropped and its
+        // already-expanded contents become the expansion result directly. An
+        // empty @set therefore expands to nothing.
+        if (array_key_exists(Keyword::Set->value, $result)) {
+            $set = $result[Keyword::Set->value];
+
+            return is_array($set) && array_is_list($set) ? $set : [$set];
+        }
+
         // Value-object finalization (§5.5 step 15). If @value is present,
         // the object is a value object and is validated + normalised.
         if (array_key_exists(Keyword::Value->value, $result)) {
@@ -661,6 +670,13 @@ class Expansion
 
         // Step 2: keyword-shaped but unknown → warn + null.
         if (str_starts_with($value, '@') && preg_match('/^@[A-Za-z]+$/', $value) === 1) {
+            return null;
+        }
+
+        // A term explicitly mapped to null (`"term": null` / `{"@id": null}`)
+        // is decoupled: it does not expand (and must not fall back to @vocab).
+        $explicitDef = $this->termDefinitions->getTermDefinition($value);
+        if ($explicitDef !== null && array_key_exists('@id', $explicitDef) && $explicitDef['@id'] === null) {
             return null;
         }
 
@@ -1206,6 +1222,18 @@ class Expansion
      */
     private function expandIndexMap(string $activeProperty, array $map): array
     {
+        // Property-valued index (§5.5): when the active property's term sets
+        // @index to a property IRI (rather than the @index keyword), each map
+        // key is attached as a *value* of that property on the expanded item,
+        // instead of as @index metadata.
+        $termDef = $this->termDefinitions->getTermDefinition($activeProperty);
+        $indexKey = is_array($termDef) && isset($termDef[Keyword::Index->value]) && is_string($termDef[Keyword::Index->value])
+            ? $termDef[Keyword::Index->value]
+            : Keyword::Index->value;
+        $indexProperty = $indexKey !== Keyword::Index->value
+            ? $this->expandIri($indexKey, vocab: true)
+            : null;
+
         $result = [];
         foreach ($map as $index => $entry) {
             if (! is_string($index)) {
@@ -1221,7 +1249,16 @@ class Expansion
                 foreach ($list as $expandedItem) {
                     if (is_array($expandedItem) && ! array_is_list($expandedItem) && $index !== Keyword::None->value) {
                         /** @var array<string, mixed> $expandedItem */
-                        $expandedItem[Keyword::Index->value] = $index;
+                        if ($indexProperty !== null) {
+                            $indexValue = $this->expandValue($indexKey, $index);
+                            $existing = isset($expandedItem[$indexProperty]) && is_array($expandedItem[$indexProperty])
+                                ? $expandedItem[$indexProperty]
+                                : [];
+                            array_unshift($existing, $indexValue);
+                            $expandedItem[$indexProperty] = $existing;
+                        } else {
+                            $expandedItem[Keyword::Index->value] = $index;
+                        }
                         ksort($expandedItem);
                     }
                     $result[] = $expandedItem;

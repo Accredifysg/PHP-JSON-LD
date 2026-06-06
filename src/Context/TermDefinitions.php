@@ -211,9 +211,15 @@ class TermDefinitions
 
         if (isset($definition['@container'])) {
             $container = $definition['@container'];
-            if (! is_string($container) || ! ContainerType::contains($container)) {
-                $repr = is_string($container) ? $container : gettype($container);
-                throw new JsonLdException("Invalid @container in term '{$term}': {$repr}");
+            // @container may be a single keyword or an array of keywords
+            // (e.g. ["@graph", "@set"] or ["@index", "@set"]). Each entry must
+            // be a recognised container type.
+            $entries = is_array($container) ? $container : [$container];
+            foreach ($entries as $entry) {
+                if (! is_string($entry) || ! ContainerType::contains($entry)) {
+                    $repr = is_string($entry) ? $entry : gettype($entry);
+                    throw new JsonLdException("Invalid @container in term '{$term}': {$repr}");
+                }
             }
         }
 

@@ -246,6 +246,11 @@ class ContextProcessor
                 }
                 if (is_string($value) || is_array($value)) {
                     $this->termDefinitions->addTermDefinition($key, $value);
+                } elseif ($value === null) {
+                    // A term mapped to null is explicitly decoupled: it must
+                    // NOT fall back to @vocab during IRI expansion. Record it
+                    // with a null @id so expansion can drop it.
+                    $this->termDefinitions->termDefinitions[$key] = [Keyword::Id->value => null];
                 }
             }
         }

@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    191 passed / 194 failed (v0.13.0)
-Compaction:    95 passed / 151 failed (v0.13.0)
-toRdf:        234 passed / 233 failed (v0.13.0)
+Expansion:    201 passed / 184 failed (v0.14.0)
+Compaction:    95 passed / 151 failed (v0.14.0)
+toRdf:        247 passed / 220 failed (v0.14.0)
 ```
 
 Each Phase 4 PR:
@@ -77,6 +77,7 @@ Each Phase 4 PR:
 | v0.11.0 |          175  |    +5  | @direction + default @language        |
 | v0.12.0 |          177  |    +2  | Drop unmapped relative terms (§5.5 #13)|
 | v0.13.0 |          191  |   +14  | toRdf (§7) + expansion gaps it surfaced|
+| v0.14.0 |          201  |   +10  | array @container, @set unwrap, prop-index, null terms|
 
 ### Notes on v0.4.0
 
