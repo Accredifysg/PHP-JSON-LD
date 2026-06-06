@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-05-13
+
+Adds `@direction` and default `@language` to value expansion.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   total
+v0.10.0:      170       95       265
+v0.11.0:      175       95       270   (+5 expand)
+```
+
+### Added
+
+- **Context-level default `@language` / `@direction`.** A context's
+  top-level `@language` / `@direction` are stored on the active context
+  and applied to plain string values during value expansion.
+- **Per-term `@language` / `@direction` coercion**, which overrides the
+  default. An explicit `null` mapping on a term suppresses the default
+  entirely (the value carries no language/direction). Non-string values
+  never receive language/direction tags.
+- `@direction` context validation (`ltr` / `rtl` / null).
+
+### Consumer impact
+
+None. Expansion of the VC/OBv3/IDVC characterization fixtures is
+byte-identical to v0.10.0 (those contexts don't shift plain-string
+output under this change), and compaction is unchanged. VC stays pinned
+at `^0.1.1`.
+
 ## [0.10.0] - 2026-05-13
 
 Adds container-map compaction (`@language` / `@index` / `@id` / `@type`).
@@ -526,7 +556,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/accredifysg/php-json-ld/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/accredifysg/php-json-ld/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/accredifysg/php-json-ld/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/accredifysg/php-json-ld/compare/v0.7.0...v0.8.0

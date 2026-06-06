@@ -48,12 +48,38 @@ class TermDefinitions
     /** Active base IRI for document-relative IRI resolution, or null. */
     private ?string $base = null;
 
+    /** Default `@language` applied to plain string values, or null. */
+    private ?string $defaultLanguage = null;
+
+    /** Default `@direction` ("ltr"/"rtl") applied to plain string values, or null. */
+    private ?string $defaultDirection = null;
+
     /**
      * @param  array<string, TermDefinition|string>  $termDefinitions
      */
     public function __construct(
         public array $termDefinitions = []
     ) {}
+
+    public function setDefaultLanguage(?string $language): void
+    {
+        $this->defaultLanguage = $language;
+    }
+
+    public function getDefaultLanguage(): ?string
+    {
+        return $this->defaultLanguage;
+    }
+
+    public function setDefaultDirection(?string $direction): void
+    {
+        $this->defaultDirection = $direction;
+    }
+
+    public function getDefaultDirection(): ?string
+    {
+        return $this->defaultDirection;
+    }
 
     /**
      * Sets the active base IRI (used to resolve document-relative `@id` /

@@ -530,8 +530,42 @@ class Expansion
             ];
         }
 
-        // Plain value.
-        return [Keyword::Value->value => $value];
+        // Plain value. String values pick up @language / @direction: the
+        // term definition's mapping wins (including an explicit null, which
+        // suppresses the default), otherwise the active context's defaults
+        // apply. Non-string values never carry language/direction.
+        $result = [Keyword::Value->value => $value];
+        if (is_string($value)) {
+            $language = $this->effectiveLanguageOrDirection($termDef, Keyword::Language->value, $this->termDefinitions->getDefaultLanguage());
+            $direction = $this->effectiveLanguageOrDirection($termDef, Keyword::Direction->value, $this->termDefinitions->getDefaultDirection());
+            if (is_string($language) && $language !== '') {
+                $result[Keyword::Language->value] = $language;
+            }
+            if (is_string($direction) && $direction !== '') {
+                $result[Keyword::Direction->value] = $direction;
+            }
+            ksort($result);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Resolves the effective @language / @direction for a plain string value:
+     * a term-definition mapping (if the key is present — even as null, which
+     * suppresses the context default) takes precedence over the default.
+     *
+     * @param  array<array-key, mixed>|null  $termDef
+     */
+    private function effectiveLanguageOrDirection(?array $termDef, string $keyword, ?string $default): ?string
+    {
+        if ($termDef !== null && array_key_exists($keyword, $termDef)) {
+            $mapped = $termDef[$keyword];
+
+            return is_string($mapped) ? $mapped : null;
+        }
+
+        return $default;
     }
 
     /**

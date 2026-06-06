@@ -194,6 +194,7 @@ class ContextProcessor
             // resolution is a later PR.
             Keyword::Vocab->value => $value === null || (is_string($value) && filter_var($value, FILTER_VALIDATE_URL) !== false),
             Keyword::Language->value => $value === null || (is_string($value) && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $value) === 1),
+            Keyword::Direction->value => $value === null || $value === 'ltr' || $value === 'rtl',
             default => true,
         };
 
@@ -218,6 +219,18 @@ class ContextProcessor
                         IriResolver::resolve($this->termDefinitions->getBase(), $baseValue)
                     );
                 }
+            }
+
+            // Apply default @language / @direction (array_key_exists so an
+            // explicit null reset is honoured). These are applied to plain
+            // string values during value expansion.
+            if (array_key_exists(Keyword::Language->value, $context)) {
+                $lang = $context[Keyword::Language->value];
+                $this->termDefinitions->setDefaultLanguage(is_string($lang) ? $lang : null);
+            }
+            if (array_key_exists(Keyword::Direction->value, $context)) {
+                $dir = $context[Keyword::Direction->value];
+                $this->termDefinitions->setDefaultDirection(is_string($dir) ? $dir : null);
             }
 
             // Push any @vocab onto the term definitions' vocab stack so the

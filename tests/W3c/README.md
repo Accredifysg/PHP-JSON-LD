@@ -50,8 +50,8 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    170 passed / 215 failed (v0.10.0)
-Compaction:    95 passed / 151 failed (v0.10.0)
+Expansion:    175 passed / 210 failed (v0.11.0)
+Compaction:    95 passed / 151 failed (v0.11.0)
 toRdf:        skipped (PR 4.10 pending)
 ```
 
@@ -74,6 +74,7 @@ Each Phase 4 PR:
 | v0.8.0  |          163  |     0  | Compaction added (67 compact passes)  |
 | v0.9.0  |          170  |    +7  | Compact-IRI term keys (+5 compact too)|
 | v0.10.0 |          170  |     0  | Compaction container-maps (+23 compact)|
+| v0.11.0 |          175  |    +5  | @direction + default @language        |
 
 ### Notes on v0.4.0
 

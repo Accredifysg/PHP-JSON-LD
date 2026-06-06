@@ -118,4 +118,52 @@ describe('Expansion::expand', function () {
 
         expect($expander->expand([]))->toBe([]);
     });
+
+    it('applies context default @language and @direction to plain strings', function () {
+        $expander = makeExpansion([
+            '@context' => [
+                '@language' => 'en',
+                '@direction' => 'rtl',
+                'name' => 'https://schema.org/name',
+            ],
+            'name' => 'X',
+        ]);
+
+        $first = $expander->expand(['name' => 'Alice'])[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first['https://schema.org/name'])
+            ->toBe([['@direction' => 'rtl', '@language' => 'en', '@value' => 'Alice']]);
+    });
+
+    it('lets a term @language (incl. null) override the default', function () {
+        $expander = makeExpansion([
+            '@context' => [
+                '@language' => 'en',
+                'de' => ['@id' => 'https://example.com/de', '@language' => 'de'],
+                'none' => ['@id' => 'https://example.com/none', '@language' => null],
+            ],
+            'de' => 'x',
+        ]);
+
+        $first = $expander->expand(['de' => 'hallo', 'none' => 'plain'])[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        // term @language wins over the default
+        expect($first['https://example.com/de'])->toBe([['@language' => 'de', '@value' => 'hallo']]);
+        // term @language: null suppresses the default entirely
+        expect($first['https://example.com/none'])->toBe([['@value' => 'plain']]);
+    });
+
+    it('does not tag non-string values with @language/@direction', function () {
+        $expander = makeExpansion([
+            '@context' => ['@language' => 'en', 'n' => 'https://example.com/n'],
+            'n' => 1,
+        ]);
+
+        $first = $expander->expand(['n' => 42])[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first['https://example.com/n'])->toBe([['@value' => 42]]);
+    });
 });
