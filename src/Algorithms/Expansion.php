@@ -209,50 +209,39 @@ class Expansion
         /** @var array<string, list<mixed>> $reverseMap */
         $reverseMap = [];
 
-        // §5.5 step 12: type-scoped context activation. Collect the object's
-        // @type values, look up their term definitions in the document base,
-        // and overlay any nested `@context` onto a fresh active context.
-        // The overlay applies for this object's property resolution only —
-        // recursion into nested object values resets to documentBase so
-        // type-scoped contexts don't propagate (§4.1.10 @propagate default).
-        // Reset to documentBase: each object computes its own active context
-        // from the document level. Parent's type-scoped overlay must not leak
-        // into this nested object's expansion.
         $previousActive = $this->termDefinitions;
-        $this->termDefinitions = $this->documentBase;
 
+        // §5.5 step 7: a non-propagated (type-scoped) context is rolled back
+        // when a NEW node object is entered — unless this object is a value
+        // object or a single-@id node reference. This confines a type-scoped
+        // context to the node on which the @type appeared, while letting
+        // property-scoped / embedded contexts (which propagate) flow in.
+        $incoming = $this->termDefinitions;
+        if (
+            $incoming->getPreviousContext() !== null
+            && ! array_key_exists(Keyword::Value->value, $obj)
+            && ! $this->isSingleIdReference($obj)
+        ) {
+            $incoming = $incoming->getPreviousContext();
+        }
+        $this->termDefinitions = $incoming;
+
+        // §5.5 step 9: an embedded @context (an inline term map, or array of
+        // them) overlays onto the active context and PROPAGATES into nested
+        // objects. Applied BEFORE type-scoped so type-scoped's previous-context
+        // snapshot includes it.
+        if (isset($obj[Keyword::Context->value])) {
+            // An embedded node @context propagates into nested objects but may
+            // NOT redefine protected terms (override-protected = false).
+            $this->termDefinitions = $this->applyScopedContext($obj[Keyword::Context->value], $this->termDefinitions, overrideProtected: false);
+        }
+
+        // §5.5 step 11: type-scoped context activation. Built from the
+        // post-embedded active context, recording it as the previous context
+        // (type-scoped contexts do not propagate — @propagate = false).
         $typeScoped = $this->activateTypeScopedContexts($obj);
         if ($typeScoped !== null) {
             $this->termDefinitions = $typeScoped;
-        }
-
-        // §5.5 step 8: an embedded @context (an inline term map, or an array of
-        // them) overlays onto the active context for this object's property
-        // expansion — processed up front, regardless of where the @context key
-        // sits in the object. Remote (string) contexts nested inside a document
-        // are not yet resolved here.
-        if (isset($obj[Keyword::Context->value])) {
-            $embedded = $obj[Keyword::Context->value];
-            $layers = is_array($embedded) && array_is_list($embedded) ? $embedded : [$embedded];
-            $scoped = new TermDefinitions($this->termDefinitions->termDefinitions);
-            $vocab = $this->termDefinitions->getVocab();
-            if ($vocab !== null) {
-                $scoped->setVocab($vocab);
-            }
-            $appliedInline = false;
-            foreach ($layers as $layer) {
-                if (is_array($layer)) {
-                    // An embedded node @context is reached only after any
-                    // property-/type-scoped context (which may have reset
-                    // protection); allow it to redefine, matching the outcome
-                    // of the spec's reset-then-redefine for these documents.
-                    $this->overlayContextOnto($scoped, $layer, overrideProtected: true);
-                    $appliedInline = true;
-                }
-            }
-            if ($appliedInline) {
-                $this->termDefinitions = $scoped;
-            }
         }
 
         try {
@@ -363,20 +352,13 @@ class Expansion
                 // (which includes any type-scoped overlay), so the value
                 // sees both the typed object's terms and the property's
                 // own terms.
+                // Property-scoped context: a term's @context is active while
+                // expanding the property's value, and propagates into nested
+                // node objects. Property-scoped contexts MAY redefine protected
+                // terms (override-protected = true).
                 $beforeValue = $this->termDefinitions;
-                if ($termDef !== null && isset($termDef['@context']) && is_array($termDef['@context'])) {
-                    $propScope = new TermDefinitions($this->termDefinitions->termDefinitions);
-                    $vocab = $this->termDefinitions->getVocab();
-                    if ($vocab !== null) {
-                        $propScope->setVocab($vocab);
-                    }
-                    // Scoped @protected enforcement is conservatively skipped
-                    // (override-protected = true): correctly enforcing it
-                    // requires propagating @context:null resets into nested
-                    // value expansion (an active-context threading refactor).
-                    // Document-level @protected IS enforced (ContextProcessor).
-                    $this->overlayContextOnto($propScope, $termDef['@context'], overrideProtected: true);
-                    $this->termDefinitions = $propScope;
+                if ($termDef !== null && array_key_exists('@context', $termDef)) {
+                    $this->termDefinitions = $this->applyScopedContext($termDef['@context'], $beforeValue, overrideProtected: true);
                 }
 
                 try {
@@ -414,9 +396,25 @@ class Expansion
                 }
 
                 // Normalise to array (spec wraps property values as lists).
-                $list = array_is_list($expandedValue)
-                    ? $expandedValue
-                    : [$expandedValue];
+                // An empty result from a single node-object value is an EMPTY
+                // NODE ({}), not an empty list — PHP can't tell [] (map) from
+                // [] (list), so wrap it as [{}] when the input was a plain node
+                // object (e.g. its only term was decoupled by a @context:null
+                // reset). @set / @list / @value inputs keep list semantics.
+                if (
+                    $expandedValue === []
+                    && is_array($value)
+                    && ! array_is_list($value)
+                    && ! array_key_exists(Keyword::Set->value, $value)
+                    && ! array_key_exists(Keyword::List->value, $value)
+                    && ! array_key_exists(Keyword::Value->value, $value)
+                ) {
+                    $list = [[]];
+                } else {
+                    $list = array_is_list($expandedValue)
+                        ? $expandedValue
+                        : [$expandedValue];
+                }
 
                 $this->mergeProperty($result, $expandedKey, $list);
             }
@@ -477,8 +475,11 @@ class Expansion
             return null;
         }
 
-        // Empty object → drop.
-        if ($result === []) {
+        // An empty object is dropped only when free-floating (§5.5 step 18:
+        // active property null or @graph). As a property value it is kept as
+        // an empty node object (e.g. a node whose only term was decoupled by a
+        // scoped @context:null reset).
+        if ($result === [] && ($activeProperty === null || $activeProperty === Keyword::Graph->value)) {
             return null;
         }
 
@@ -1082,6 +1083,78 @@ class Expansion
      * type's nested `@context` onto a fresh active context derived from
      * documentBase. Returns null if no types declare a scoped context.
      *
+     * True if the object is a single node reference (its only entry expands
+     * to @id) — such an object does not trigger a type-scoped rollback.
+     *
+     * @param  array<array-key, mixed>  $obj
+     */
+    private function isSingleIdReference(array $obj): bool
+    {
+        if (count($obj) !== 1) {
+            return false;
+        }
+        $key = array_key_first($obj);
+
+        return is_string($key) && $this->expandIri($key, vocab: true) === Keyword::Id->value;
+    }
+
+    /**
+     * True if a scoped @context (a map, or array of layers) carries an
+     * explicit `@propagate: false` — meaning it must not propagate into nested
+     * node objects.
+     */
+    private function contextPropagateFalse(mixed $context): bool
+    {
+        $layers = is_array($context) && array_is_list($context) ? $context : [$context];
+        foreach ($layers as $layer) {
+            if (is_array($layer) && ($layer[Keyword::Propagate->value] ?? null) === false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Apply a scoped @context (property-scoped / embedded / type-scoped) onto a
+     * base active context and return the resulting context. Handles:
+     *  - a null / [null] layer → reset to a fresh context (the original
+     *    document base is preserved via {@see $documentBase}); when
+     *    override-protected is false, clearing protected terms is an "invalid
+     *    context nullification";
+     *  - inline map layers → overlaid (protected-aware per $overrideProtected);
+     *  - an explicit @propagate:false → records the base as the previous
+     *    context so the scope does not propagate into nested node objects.
+     */
+    private function applyScopedContext(mixed $context, TermDefinitions $base, bool $overrideProtected): TermDefinitions
+    {
+        $layers = is_array($context) && array_is_list($context) ? $context : [$context];
+
+        $active = new TermDefinitions($base->termDefinitions);
+        $vocab = $base->getVocab();
+        if ($vocab !== null) {
+            $active->setVocab($vocab);
+        }
+
+        foreach ($layers as $layer) {
+            if ($layer === null) {
+                if (! $overrideProtected && $active->hasAnyProtected()) {
+                    throw new JsonLdException('Invalid context nullification: a null context cannot clear protected terms');
+                }
+                $active = new TermDefinitions;
+            } elseif (is_array($layer)) {
+                $this->overlayContextOnto($active, $layer, $overrideProtected);
+            }
+        }
+
+        if ($this->contextPropagateFalse($context)) {
+            $active->setPreviousContext($base);
+        }
+
+        return $active;
+    }
+
+    /**
      * @param  array<array-key, mixed>  $obj
      */
     private function activateTypeScopedContexts(array $obj): ?TermDefinitions
@@ -1137,19 +1210,22 @@ class Expansion
             }
 
             if ($scoped === null) {
-                // Initialise from documentBase. Copy term definitions so the
-                // overlay doesn't mutate the base.
-                $scoped = new TermDefinitions($this->documentBase->termDefinitions);
-                $baseVocab = $this->documentBase->getVocab();
-                if ($baseVocab !== null) {
-                    $scoped->setVocab($baseVocab);
+                // Initialise from the active (rolled-back) context. Copy term
+                // definitions so the overlay doesn't mutate it, and record the
+                // pre-type-scoped context as the previous context so a nested
+                // node object rolls type-scoped terms back (§5.5 step 7;
+                // type-scoped contexts have @propagate = false).
+                $scoped = new TermDefinitions($this->termDefinitions->termDefinitions);
+                $vocab = $this->termDefinitions->getVocab();
+                if ($vocab !== null) {
+                    $scoped->setVocab($vocab);
                 }
+                $scoped->setPreviousContext($this->termDefinitions);
             }
 
-            // Scoped @protected enforcement is conservatively skipped here too
-            // (see the property-scoped note); document-level @protected is
-            // enforced in ContextProcessor.
-            $this->overlayContextOnto($scoped, $typeDef['@context'], overrideProtected: true);
+            // Type-scoped contexts may NOT redefine protected terms
+            // (override-protected = false).
+            $this->overlayContextOnto($scoped, $typeDef['@context'], overrideProtected: false);
         }
 
         return $scoped;

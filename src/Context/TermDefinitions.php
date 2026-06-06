@@ -55,11 +55,45 @@ class TermDefinitions
     private ?string $defaultDirection = null;
 
     /**
+     * The context to roll back to when this context is non-propagating
+     * (@propagate: false, e.g. a type-scoped context): on descending into a
+     * new node object the active context reverts to this snapshot. Null for a
+     * normal (propagating) context.
+     */
+    private ?TermDefinitions $previousContext = null;
+
+    /**
      * @param  array<string, TermDefinition|string>  $termDefinitions
      */
     public function __construct(
         public array $termDefinitions = []
     ) {}
+
+    public function getPreviousContext(): ?TermDefinitions
+    {
+        return $this->previousContext;
+    }
+
+    public function setPreviousContext(?TermDefinitions $previous): void
+    {
+        $this->previousContext = $previous;
+    }
+
+    /**
+     * True if any term in this context is protected — used to gate the
+     * "invalid context nullification" check when an @context:null reset is
+     * applied without override-protected.
+     */
+    public function hasAnyProtected(): bool
+    {
+        foreach ($this->termDefinitions as $definition) {
+            if (is_array($definition) && ($definition['@protected'] ?? false) === true) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public function setDefaultLanguage(?string $language): void
     {

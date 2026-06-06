@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-06-06
+
+Active-context propagation refactor — the keystone for context scoping. The
+per-object "reset to document context" is replaced by spec-faithful
+propagate semantics: property-scoped and embedded contexts now flow into
+nested node objects, type-scoped contexts are confined via a previous-context
+rollback, `@context: null` resets the active context, and `@propagate`
+overrides per-kind defaults. This turns on **scoped** `@protected` enforcement.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.18.0:      247      101      314      662
+v0.19.0:      259      101      329      689   (+12 expand, +15 toRdf)
+```
+
+### Changed / Added
+
+- **Propagate semantics (§5.5 step 7 + Context Processing step 3).** A
+  non-propagating (type-scoped, or any `@propagate: false`) context records a
+  previous-context snapshot; on descending into a new node object the active
+  context rolls back to it. Property-scoped and embedded node contexts
+  propagate (default `@propagate: true`).
+- **`@context: null` reset** in scoped contexts: clears terms / vocab
+  (original base preserved); guarded by an "invalid context nullification"
+  check when protected terms are present and override is not permitted.
+- **Scoped `@protected` enforcement.** With the active context now threaded,
+  override-protected is applied per kind — property-scoped `true`, type-scoped
+  and embedded `false` — so a scoped context redefining a protected term
+  raises (while an explicit `@protected: false` or a context reset still
+  lifts protection).
+- An empty node object as a property value is preserved (`[{}]`) rather than
+  dropped.
+
+### Known limitation
+
+`#tpr06` (toRdf): an `@context: null` reset that empties a node yields an
+empty node object, which PHP represents as `[]` — indistinguishable from an
+empty list in the RDF node-map, so its `<prop> _:bN` quad is not emitted.
+Expansion of the same input is correct. This single toRdf edge case is the
+trade for the +15 toRdf gain and needs a distinct empty-node representation
+to resolve.
+
+### Consumer impact
+
+Additive overall. Characterization fixtures byte-identical, unit suite green
+(167, with new scoped-context guards). VC stays pinned at `^0.1.1`.
+
 ## [0.18.0] - 2026-06-06
 
 `@protected` term protection — the tracking infrastructure plus

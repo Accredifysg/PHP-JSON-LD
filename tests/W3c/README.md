@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    247 passed / 138 failed (v0.18.0)
-Compaction:   101 passed / 145 failed (v0.18.0)
-toRdf:        314 passed / 153 failed (v0.18.0)
+Expansion:    259 passed / 126 failed (v0.19.0)
+Compaction:   101 passed / 145 failed (v0.19.0)
+toRdf:        329 passed / 138 failed (v0.19.0)
 ```
 
 Each Phase 4 PR:
@@ -82,6 +82,7 @@ Each Phase 4 PR:
 | v0.16.0 |          238  |   +25  | validation surface (negative tests): context + term-def + expansion error conditions|
 | v0.17.0 |          244  |    +6  | colliding keywords, value @type well-formedness, @language-map, @reverse IRI|
 | v0.18.0 |          247  |    +3  | @protected tracking + document-level redefinition enforcement|
+| v0.19.0 |          259  |   +12  | active-context propagation: scoped @protected, @context:null reset, @propagate|
 
 ### Notes on v0.4.0
 

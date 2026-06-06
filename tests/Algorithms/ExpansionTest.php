@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Accredify\JsonLd\Algorithms\Expansion;
 use Accredify\JsonLd\Context\ContextProcessor;
+use Accredify\JsonLd\Exceptions\JsonLdException;
+use Accredify\JsonLd\JsonLdProcessor;
 use Accredify\JsonLd\Tests\Context\Support\StubDocumentLoader;
 
 /*
@@ -189,5 +191,53 @@ describe('Expansion::expand', function () {
             'http://example.com/known' => [['@value' => 'should stay']],
         ]);
         expect($first)->not->toHaveKey('relativeProp');
+    });
+});
+
+describe('scoped context propagation', function () {
+    $expand = function (array $doc): array {
+        return (new JsonLdProcessor(new StubDocumentLoader))->expand($doc)->toArray();
+    };
+
+    it('does not propagate a type-scoped context into nested node objects', function () use ($expand) {
+        // `inner` is defined only inside Outer's type-scoped @context, so it
+        // resolves under Outer but NOT inside the nested node.
+        $out = $expand([
+            '@context' => [
+                '@version' => 1.1,
+                '@vocab' => 'http://example.com/',
+                'Outer' => ['@id' => 'http://example.com/Outer', '@context' => ['inner' => 'http://example.com/scoped-inner']],
+            ],
+            '@type' => 'Outer',
+            'inner' => ['inner' => 'x'],
+        ])[0];
+
+        // Outer-level `inner` uses the type-scoped term…
+        expect($out)->toHaveKey('http://example.com/scoped-inner');
+        $nested = $out['http://example.com/scoped-inner'][0];
+        // …but the nested `inner` falls back to @vocab (type-scoped not propagated).
+        expect($nested)->toHaveKey('http://example.com/inner');
+    });
+
+    it('propagates a property-scoped context into nested node objects', function () use ($expand) {
+        $out = $expand([
+            '@context' => [
+                '@version' => 1.1,
+                '@vocab' => 'http://example.com/',
+                'p' => ['@id' => 'http://example.com/p', '@context' => ['q' => 'http://example.com/scoped-q']],
+            ],
+            'p' => ['p' => ['q' => 'deep']],
+        ])[0];
+
+        // q is defined by p's property-scoped context and must apply deep inside p.
+        $deep = $out['http://example.com/p'][0]['http://example.com/p'][0];
+        expect($deep)->toHaveKey('http://example.com/scoped-q');
+    });
+
+    it('rejects redefining a protected term in an embedded node context', function () use ($expand) {
+        expect(fn () => $expand([
+            '@context' => ['@version' => 1.1, '@protected' => true, '@vocab' => 'http://example.com/', 'name' => 'http://example.com/name'],
+            'thing' => ['@context' => ['name' => 'http://example.com/other'], 'name' => 'x'],
+        ]))->toThrow(JsonLdException::class, 'Protected term redefinition');
     });
 });
