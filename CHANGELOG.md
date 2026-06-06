@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-13
+
+Adds container-map compaction (`@language` / `@index` / `@id` / `@type`).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   total
+v0.9.0:       170       72       242
+v0.10.0:      170       95       265   (+23 compact)
+```
+
+### Added
+
+- **Container-map compaction (§5.6).** A property whose term has
+  `@container: @language | @index | @id | @type` now compacts its
+  expanded array into a *map* instead of a list:
+  - `@language` → `{ lang: value | [values] }` (the bare `@value` per
+    language; repeated languages arrayify, e.g. `de: ["…", "…"]`).
+  - `@index` → `{ index: node }` with `@index` stripped from each entry.
+  - `@id` → `{ compactedId: node }` with `@id` stripped.
+  - `@type` → `{ compactedFirstType: node }` with the first `@type`
+    removed (remaining types kept).
+  All four route through a shared `mapContainerType` lookup +
+  `compactContainerMap` builder.
+
+### Deferred
+
+- `@graph` container maps (`@graph+@index`, `@graph+@id`) — graph
+  framing during compaction is a separate feature.
+
+### Consumer impact
+
+None. Expansion output unchanged (170, no regression); characterization
+fixtures byte-identical to v0.9.0. VC stays pinned at `^0.1.1`.
+
 ## [0.9.0] - 2026-05-13
 
 Allows compact-IRI / IRI-like term keys in a context — a single shared
@@ -490,7 +526,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/accredifysg/php-json-ld/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/accredifysg/php-json-ld/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/accredifysg/php-json-ld/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/accredifysg/php-json-ld/compare/v0.6.0...v0.7.0

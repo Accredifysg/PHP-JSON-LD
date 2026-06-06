@@ -84,4 +84,62 @@ describe('JsonLdProcessor::compact', function () {
 
         expect($result['list'])->toBe(['a', 'b']);
     });
+
+    it('compacts a @language container into a language map (arrayifying collisions)', function () {
+        $expanded = [[
+            'http://example.com/vocab/label' => [
+                ['@value' => 'The Queen', '@language' => 'en'],
+                ['@value' => 'Die Königin', '@language' => 'de'],
+                ['@value' => 'Ihre Majestät', '@language' => 'de'],
+            ],
+        ]];
+        $context = ['label' => ['@id' => 'http://example.com/vocab/label', '@container' => '@language']];
+
+        $result = compactWith($expanded, $context);
+
+        expect($result['label'])->toBe(['en' => 'The Queen', 'de' => ['Die Königin', 'Ihre Majestät']]);
+    });
+
+    it('compacts an @index container into an index map (stripping @index)', function () {
+        $expanded = [[
+            'http://example.com/vocab/author' => [
+                ['@id' => 'http://example.org/person/1', '@index' => 'regular'],
+                ['@id' => 'http://example.org/guest/cd', '@index' => 'guest'],
+            ],
+        ]];
+        $context = ['author' => ['@id' => 'http://example.com/vocab/author', '@container' => '@index']];
+
+        $result = compactWith($expanded, $context);
+
+        expect($result['author'])->toBe([
+            'regular' => ['@id' => 'http://example.org/person/1'],
+            'guest' => ['@id' => 'http://example.org/guest/cd'],
+        ]);
+    });
+
+    it('compacts an @id container into an id map (stripping @id)', function () {
+        $expanded = [[
+            'http://example/idmap' => [
+                ['http://example/label' => [['@value' => 'foo node']], '@id' => 'http://example.org/foo'],
+            ],
+        ]];
+        $context = ['@vocab' => 'http://example/', 'idmap' => ['@container' => '@id']];
+
+        $result = compactWith($expanded, $context);
+
+        expect($result['idmap'])->toBe(['http://example.org/foo' => ['label' => 'foo node']]);
+    });
+
+    it('compacts a @type container into a type map (stripping the first @type)', function () {
+        $expanded = [[
+            'http://example/typemap' => [
+                ['http://example/label' => [['@value' => 'foo typed']], '@type' => ['http://example.org/foo']],
+            ],
+        ]];
+        $context = ['@vocab' => 'http://example/', 'typemap' => ['@container' => '@type']];
+
+        $result = compactWith($expanded, $context);
+
+        expect($result['typemap'])->toBe(['http://example.org/foo' => ['label' => 'foo typed']]);
+    });
 });

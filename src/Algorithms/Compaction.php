@@ -210,6 +210,16 @@ class Compaction
                 continue;
             }
 
+            // Container-map coercion (§5.6): a term with @container @language
+            // / @index / @id / @type compacts its expanded array into a map
+            // keyed by language / index / @id / first-@type.
+            $mapType = $this->mapContainerType($compactedKey);
+            if ($mapType !== null && is_array($value) && array_is_list($value)) {
+                $result[$compactedKey] = $this->compactContainerMap($value, $mapType);
+
+                continue;
+            }
+
             $result[$compactedKey] = $this->compactElement($value, $compactedKey);
         }
 
@@ -265,6 +275,119 @@ class Compaction
         }
 
         return $out;
+    }
+
+    /**
+     * Returns the map-container type (@language / @index / @id / @type) of a
+     * compacted property term, or null if it has no map container. Combined
+     * containers that include @graph are excluded (graph maps are a separate,
+     * deferred feature).
+     */
+    private function mapContainerType(?string $compactedKey): ?string
+    {
+        if ($compactedKey === null || $this->hasContainer($compactedKey, Keyword::Graph->value)) {
+            return null;
+        }
+        foreach ([Keyword::Language->value, Keyword::Index->value, Keyword::Id->value, Keyword::Type->value] as $kw) {
+            if ($this->hasContainer($compactedKey, $kw)) {
+                return $kw;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Compacts an expanded array of value/node objects into a container map
+     * keyed per $mapType. Collisions on the same key arrayify (the second
+     * value turns a scalar entry into a list).
+     *
+     * @param  list<mixed>  $items
+     * @return array<string, mixed>
+     */
+    private function compactContainerMap(array $items, string $mapType): array
+    {
+        $map = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            [$key, $entry] = $this->mapKeyAndEntry($item, $mapType);
+            if ($key === null) {
+                continue;
+            }
+
+            if (array_key_exists($key, $map)) {
+                if (! is_array($map[$key]) || ! array_is_list($map[$key])) {
+                    $map[$key] = [$map[$key]];
+                }
+                $map[$key][] = $entry;
+            } else {
+                $map[$key] = $entry;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Derives the (map key, compacted entry) pair for one expanded item under
+     * a given container-map type.
+     *
+     * @param  array<array-key, mixed>  $item
+     * @return array{0: ?string, 1: mixed}
+     */
+    private function mapKeyAndEntry(array $item, string $mapType): array
+    {
+        switch ($mapType) {
+            case Keyword::Language->value:
+                $lang = isset($item[Keyword::Language->value]) && is_string($item[Keyword::Language->value])
+                    ? $item[Keyword::Language->value]
+                    : Keyword::None->value;
+
+                // Within a @language map the entry is the bare @value.
+                return [$lang, $item[Keyword::Value->value] ?? null];
+
+            case Keyword::Index->value:
+                $index = isset($item[Keyword::Index->value]) && is_string($item[Keyword::Index->value])
+                    ? $item[Keyword::Index->value]
+                    : Keyword::None->value;
+                $stripped = $item;
+                unset($stripped[Keyword::Index->value]);
+
+                return [$index, $this->compactObject($stripped, null)];
+
+            case Keyword::Id->value:
+                if (! isset($item[Keyword::Id->value]) || ! is_string($item[Keyword::Id->value])) {
+                    return [Keyword::None->value, $this->compactObject($item, null)];
+                }
+                $idKey = $this->compactIri($item[Keyword::Id->value], vocab: false);
+                $stripped = $item;
+                unset($stripped[Keyword::Id->value]);
+
+                return [$idKey, $this->compactObject($stripped, null)];
+
+            case Keyword::Type->value:
+                $types = isset($item[Keyword::Type->value]) && is_array($item[Keyword::Type->value])
+                    ? array_values($item[Keyword::Type->value])
+                    : [];
+                if ($types === [] || ! is_string($types[0])) {
+                    return [Keyword::None->value, $this->compactObject($item, null)];
+                }
+                $typeKey = $this->compactIri($types[0], vocab: true);
+                $rest = array_slice($types, 1);
+                $stripped = $item;
+                if ($rest === []) {
+                    unset($stripped[Keyword::Type->value]);
+                } else {
+                    $stripped[Keyword::Type->value] = $rest;
+                }
+
+                return [$typeKey, $this->compactObject($stripped, null)];
+        }
+
+        return [null, null];
     }
 
     /**
