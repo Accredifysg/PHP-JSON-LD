@@ -460,7 +460,7 @@ class Expansion
         switch ($expandedKey) {
             case Keyword::Id->value:
                 if (! is_string($value)) {
-                    return null;
+                    throw new JsonLdException('Invalid @id value: must be a string');
                 }
 
                 return $this->expandIri($value, documentRelative: true);
@@ -472,8 +472,20 @@ class Expansion
                 // verbatim, including null) and never reaches this method.
 
             case Keyword::Language->value:
-            case Keyword::Direction->value:
+                if (! is_string($value)) {
+                    throw new JsonLdException('Invalid language-tagged string: @language must be a string');
+                }
+
+                return $value;
+
             case Keyword::Index->value:
+                if (! is_string($value)) {
+                    throw new JsonLdException('Invalid @index value: must be a string');
+                }
+
+                return $value;
+
+            case Keyword::Direction->value:
                 return is_string($value) ? $value : null;
 
             case Keyword::List->value:
@@ -496,16 +508,29 @@ class Expansion
 
             case Keyword::Included->value:
                 // §5.5 step 13.4.14: @included contents are expanded as node
-                // objects and kept as an array.
+                // objects. The result must be a (non-empty) array of node
+                // objects — a scalar, a value object, or a list object is an
+                // "invalid @included value".
                 $expandedIncluded = $this->expandElement($value, null);
                 if ($expandedIncluded === null) {
-                    return null;
+                    throw new JsonLdException('Invalid @included value');
                 }
-                if (array_is_list($expandedIncluded)) {
-                    return $expandedIncluded;
+                $includedList = array_is_list($expandedIncluded) ? $expandedIncluded : [$expandedIncluded];
+                if ($includedList === []) {
+                    throw new JsonLdException('Invalid @included value');
+                }
+                foreach ($includedList as $includedItem) {
+                    if (
+                        ! is_array($includedItem)
+                        || array_is_list($includedItem)
+                        || array_key_exists(Keyword::Value->value, $includedItem)
+                        || array_key_exists(Keyword::List->value, $includedItem)
+                    ) {
+                        throw new JsonLdException('Invalid @included value');
+                    }
                 }
 
-                return [$expandedIncluded];
+                return $includedList;
         }
 
         // Unknown keyword — silently drop.
@@ -546,9 +571,9 @@ class Expansion
     /**
      * @type value expansion: each value is expanded as an IRI in vocab mode.
      *
-     * @return list<string>|null
+     * @return list<string>
      */
-    private function expandTypeValue(mixed $value): ?array
+    private function expandTypeValue(mixed $value): array
     {
         // @type IRIs expand with both vocab and document-relative modes
         // (§5.5): @vocab takes precedence if set, otherwise a relative @type
@@ -560,13 +585,13 @@ class Expansion
         }
 
         if (! is_array($value)) {
-            return null;
+            throw new JsonLdException('Invalid type value: @type must be a string or an array of strings');
         }
 
         $types = [];
         foreach ($value as $item) {
             if (! is_string($item)) {
-                continue;
+                throw new JsonLdException('Invalid type value: @type must be a string or an array of strings');
             }
             $expanded = $this->expandIri($item, vocab: true, documentRelative: true);
             if ($expanded !== null) {
@@ -1273,6 +1298,11 @@ class Expansion
                     if (is_array($expandedItem) && ! array_is_list($expandedItem) && $index !== Keyword::None->value) {
                         /** @var array<string, mixed> $expandedItem */
                         if ($indexProperty !== null) {
+                            // A property-valued index entry must expand to a
+                            // node object, never a value object.
+                            if (array_key_exists(Keyword::Value->value, $expandedItem)) {
+                                throw new JsonLdException('Invalid value object: a property-valued index entry must be a node object');
+                            }
                             $indexValue = $this->expandValue($indexKey, $index);
                             $existing = isset($expandedItem[$indexProperty]) && is_array($expandedItem[$indexProperty])
                                 ? $expandedItem[$indexProperty]
@@ -1395,16 +1425,27 @@ class Expansion
      */
     private function mergeNestedObject(mixed $value, array &$result): void
     {
-        // The value of an @nest key MUST be an object (or list of objects);
-        // anything else is ignored per spec.
-        if (! is_array($value)) {
-            return;
-        }
-        $items = array_is_list($value) ? $value : [$value];
+        // §5.5 step 13.4.4: the value of an @nest key MUST be a node object or
+        // an array of node objects — a scalar is an "invalid @nest value".
+        $items = is_array($value) && array_is_list($value) ? $value : [$value];
 
         foreach ($items as $nested) {
-            if (! is_array($nested) || array_is_list($nested)) {
+            // Flatten a nested array one level (an array of arrays of nests).
+            if (is_array($nested) && array_is_list($nested)) {
+                $this->mergeNestedObject($nested, $result);
+
                 continue;
+            }
+            if (! is_array($nested)) {
+                throw new JsonLdException('Invalid @nest value');
+            }
+
+            // A nest object must not be a value object: no key may expand to
+            // @value.
+            foreach (array_keys($nested) as $nestedKey) {
+                if (is_string($nestedKey) && $this->expandIri($nestedKey, vocab: true) === Keyword::Value->value) {
+                    throw new JsonLdException('Invalid @nest value');
+                }
             }
 
             // Recursively expand the nested object as if it were the parent,

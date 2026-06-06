@@ -191,6 +191,9 @@ class TermDefinitions
         // IRI-expansion algorithm already resolves such terms, so storing
         // them is correct. The only hard rule is that a term MUST NOT be a
         // JSON-LD keyword.
+        if ($term === '') {
+            throw new JsonLdException('Invalid term definition: a term may not be the empty string');
+        }
         if (Keyword::contains($term)) {
             throw new JsonLdException("Invalid term '{$term}': cannot be a keyword");
         }
@@ -220,6 +223,71 @@ class TermDefinitions
                     $repr = is_string($entry) ? $entry : gettype($entry);
                     throw new JsonLdException("Invalid @container in term '{$term}': {$repr}");
                 }
+            }
+        }
+
+        if (array_key_exists('@reverse', $definition)) {
+            // @reverse value must be a string (§4.2.2 step 13).
+            if (! is_string($definition['@reverse'])) {
+                throw new JsonLdException("Invalid reverse property in term '{$term}': @reverse must be a string");
+            }
+            // @reverse must not coexist with @id or @nest (§4.2.2 step 14).
+            if (isset($definition['@id']) || isset($definition['@nest'])) {
+                throw new JsonLdException("Invalid reverse property in term '{$term}': @reverse cannot be used with @id or @nest");
+            }
+            // A reverse term's @container is limited to @set, @index, or none.
+            if (isset($definition['@container'])) {
+                $reverseContainer = $definition['@container'];
+                if (! in_array($reverseContainer, [Keyword::Set->value, Keyword::Index->value], true)) {
+                    throw new JsonLdException("Invalid reverse property in term '{$term}': @container must be @set, @index, or absent");
+                }
+            }
+        }
+
+        // @prefix must be a boolean (§4.2.2 step 25).
+        if (array_key_exists('@prefix', $definition) && ! is_bool($definition['@prefix'])) {
+            throw new JsonLdException("Invalid @prefix value in term '{$term}': must be a boolean");
+        }
+
+        // @nest must be a string, and the only keyword it may be is @nest.
+        if (isset($definition['@nest'])) {
+            $nest = $definition['@nest'];
+            if (! is_string($nest) || (str_starts_with($nest, '@') && $nest !== Keyword::Nest->value)) {
+                throw new JsonLdException("Invalid @nest value in term '{$term}'");
+            }
+        }
+
+        if (isset($definition['@container'])) {
+            $containerEntries = is_array($definition['@container'])
+                ? $definition['@container']
+                : [$definition['@container']];
+
+            // When @container includes @type, the term's @type (if any) must be
+            // @id or @vocab (§4.2.2 step 19).
+            if (
+                in_array(Keyword::Type->value, $containerEntries, true)
+                && isset($definition['@type'])
+                && is_string($definition['@type'])
+                && $definition['@type'] !== Keyword::Id->value
+                && $definition['@type'] !== Keyword::Vocab->value
+            ) {
+                throw new JsonLdException("Invalid type mapping in term '{$term}': a @type container requires @type @id or @vocab");
+            }
+        }
+
+        // Property-valued @index: requires a @container that includes @index
+        // and a string @index value that is not itself a keyword.
+        if (array_key_exists('@index', $definition)) {
+            $containerEntries = isset($definition['@container'])
+                ? (is_array($definition['@container']) ? $definition['@container'] : [$definition['@container']])
+                : [];
+            $index = $definition['@index'];
+            if (
+                ! in_array(Keyword::Index->value, $containerEntries, true)
+                || ! is_string($index)
+                || str_starts_with($index, '@')
+            ) {
+                throw new JsonLdException("Invalid term definition '{$term}': @index requires an @index container and an IRI value");
             }
         }
 

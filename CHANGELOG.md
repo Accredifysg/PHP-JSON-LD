@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-06
+
+Validation surface — the bulk of the W3C *negative* test suite. A spec
+extraction (a workflow over the local W3C API spec) produced a per-error
+checklist of exact throw conditions plus the anti-false-positive guard for
+each (the "reverse trap": a validator must never raise on valid input).
+Each check was implemented and verified to add negative passes with zero
+positive regressions.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.15.0:      213       98      273      584
+v0.16.0:      238      100      302      640   (+25 expand, +2 compact, +29 toRdf)
+```
+
+### Added (error conditions)
+
+- **Context processing (§4.1.2):** `@version` must be exactly `1.1`;
+  `@propagate` must be boolean; `@type` may only be "redefined" with a map
+  of `{@container:@set?, @protected?}` (any other shape is keyword
+  redefinition); a term value must be a string, map, or null.
+- **Create Term Definition (§4.2.2):** empty-string term; `@reverse` must be
+  a string and must not coexist with `@id`/`@nest`; a reverse term's
+  `@container` is limited to `@set`/`@index`; `@prefix` must be boolean; a
+  `@type`-container term requires `@type` `@id`/`@vocab`; a property-valued
+  `@index` requires an `@index` container and an IRI value.
+- **Expansion (§5.5):** `@included` must expand to node objects (not a
+  scalar / value object / list object); an `@nest` value must be a node
+  object or array of them and must not be a value object; `@id` / `@index`
+  values must be strings; `@type` must be a string or array of strings; a
+  property-valued index entry must be a node object, not a value object.
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (160),
+expansion/compaction/toRdf of valid documents unchanged. VC stays pinned at
+`^0.1.1`. (Deferred, higher-risk: `@protected` redefinition, processing-mode
+gating, `@import`, and IRI-mapping term validation.)
+
 ## [0.15.0] - 2026-06-06
 
 Spec-grounded conformance grind, driven by a fix plan extracted from the

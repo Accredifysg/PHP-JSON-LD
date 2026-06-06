@@ -149,9 +149,11 @@ describe('ContextProcessor keyword validation', function () {
         return new ContextProcessor(['@context' => $context], new StubDocumentLoader);
     }
 
-    it('accepts @version 1.0 and 1.1', function () {
+    it('accepts @version 1.1 and rejects 1.0', function () {
+        // JSON-LD 1.1 is the only supported processing mode.
         expect(process(['@version' => 1.1])->getTermDefinitions())->toBeInstanceOf(TermDefinitions::class);
-        expect(process(['@version' => 1.0])->getTermDefinitions())->toBeInstanceOf(TermDefinitions::class);
+        expect(fn () => process(['@version' => 1.0]))
+            ->toThrow(JsonLdException::class, 'Invalid @version value');
     });
 
     it('rejects unknown @version', function () {

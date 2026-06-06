@@ -184,7 +184,9 @@ class ContextProcessor
     private function validateKeywordValue(string $key, mixed $value): void
     {
         $isValid = match ($key) {
-            Keyword::Version->value => in_array($value, [1.0, 1.1], true),
+            // The only supported processing mode is JSON-LD 1.1, so @version
+            // must be exactly the float 1.1 (a JSON number decodes to float).
+            Keyword::Version->value => $value === 1.1,
             // @base accepts any string (absolute, relative, or empty) or null
             // — it is resolved against the active base during merge, so the
             // strict-URL check no longer applies (paired with the resolution
@@ -196,6 +198,13 @@ class ContextProcessor
             Keyword::Vocab->value => $value === null || is_string($value),
             Keyword::Language->value => $value === null || (is_string($value) && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $value) === 1),
             Keyword::Direction->value => $value === null || $value === 'ltr' || $value === 'rtl',
+            // @propagate must be a boolean.
+            Keyword::Propagate->value => is_bool($value),
+            // @type may only be "redefined" with a map whose keys are a
+            // subset of {@container, @protected}, and @container (if present)
+            // must be @set. Anything else (a string like "@id", an array, an
+            // empty map, other keys) is a keyword redefinition error.
+            Keyword::Type->value => $this->isValidTypeRedefinition($value),
             default => true,
         };
 
@@ -203,6 +212,23 @@ class ContextProcessor
             $repr = is_scalar($value) ? (string) $value : gettype($value);
             throw new JsonLdException("Invalid {$key} value: {$repr}");
         }
+    }
+
+    private function isValidTypeRedefinition(mixed $value): bool
+    {
+        if (! is_array($value) || $value === []) {
+            return false;
+        }
+        foreach (array_keys($value) as $key) {
+            if ($key !== Keyword::Container->value && $key !== Keyword::Protected->value) {
+                return false;
+            }
+        }
+        if (array_key_exists(Keyword::Container->value, $value) && $value[Keyword::Container->value] !== Keyword::Set->value) {
+            return false;
+        }
+
+        return true;
     }
 
     private function mergeContexts(): void
@@ -257,6 +283,10 @@ class ContextProcessor
                     // NOT fall back to @vocab during IRI expansion. Record it
                     // with a null @id so expansion can drop it.
                     $this->termDefinitions->termDefinitions[$key] = [Keyword::Id->value => null];
+                } else {
+                    // A term value must be a string, a map, or null (§4.2.2
+                    // step 9). A boolean/number is an invalid term definition.
+                    throw new JsonLdException("Invalid term definition for '{$key}': value must be a string, map, or null");
                 }
             }
         }
