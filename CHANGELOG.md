@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-06-06
+
+`@import` — context sourcing at the document level.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.19.0:      259      101      329      689
+v0.20.0:      266      101      336      703   (+7 expand, +7 toRdf)
+```
+
+### Added
+
+- **`@import` (§4.1.2 step 5.6).** A context's `@import` value (a string IRI)
+  is dereferenced through the `DocumentLoader` and reverse-merged beneath the
+  containing context — the local entries override the imported ones, letting
+  a sourced (e.g. JSON-LD 1.0) context be upgraded in place. Errors: a
+  non-string `@import` (invalid `@import` value), an imported context that
+  itself contains `@import`, and an `@import` target whose `@context` is a
+  list rather than a single map (invalid remote context).
+
+### Known limitation
+
+`@import` (and remote string contexts) inside *scoped* contexts
+(type-/property-scoped, embedded) is not yet resolved — those are applied by
+the expander, which currently has no `DocumentLoader`. The deferred tests
+(`#tso05`, `#tso06`, `#tc031`, `#tc034`) need the loader threaded into
+expansion. Document-level `@import` is fully supported.
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (167).
+VC stays pinned at `^0.1.1`.
+
 ## [0.19.0] - 2026-06-06
 
 Active-context propagation refactor — the keystone for context scoping. The

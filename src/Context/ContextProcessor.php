@@ -178,7 +178,48 @@ class ContextProcessor
             $processedContext[$key] = $value;
         }
 
+        // @import: dereference a single remote context and reverse-merge it
+        // beneath this context — the local entries override the imported ones
+        // (§4.1.2 step 5.6). This lets a JSON-LD 1.0 context be sourced and
+        // upgraded in place.
+        if (array_key_exists(Keyword::Import->value, $processedContext)) {
+            $import = $processedContext[Keyword::Import->value];
+            unset($processedContext[Keyword::Import->value]);
+            if (is_string($import)) {
+                $base = $this->termDefinitions->getBase();
+                $importUrl = $base !== null && $base !== '' ? IriResolver::resolve($base, $import) : $import;
+                $imported = $this->fetchImportedContext($importUrl);
+                if (array_key_exists(Keyword::Import->value, $imported)) {
+                    throw new JsonLdException('Invalid context entry: an imported context must not contain @import');
+                }
+                $processedContext = array_merge($imported, $processedContext);
+            }
+        }
+
         $this->processedContexts[] = $processedContext;
+    }
+
+    /**
+     * Dereference an `@import` target and return its `@context`, which must be
+     * a single map (not an array of contexts).
+     *
+     * @return array<string, mixed>
+     */
+    private function fetchImportedContext(string $url): array
+    {
+        try {
+            $remote = $this->documentLoader->loadDocument($url);
+        } catch (DocumentLoaderException $e) {
+            throw new JsonLdException("Failed to load imported context from {$url}: {$e->getMessage()}", 0, $e);
+        }
+
+        $context = $remote->document['@context'] ?? null;
+        // @import may only reference a single context object, not a list.
+        if (! is_array($context) || (array_is_list($context) && $context !== [])) {
+            throw new JsonLdException('Invalid remote context: an @import target must define a single @context map');
+        }
+
+        return $this->asStringKeyed($context);
     }
 
     private function validateKeywordValue(string $key, mixed $value): void
@@ -200,6 +241,8 @@ class ContextProcessor
             Keyword::Direction->value => $value === null || $value === 'ltr' || $value === 'rtl',
             // @propagate must be a boolean.
             Keyword::Propagate->value => is_bool($value),
+            // @import must be a string (an IRI referencing a single context).
+            Keyword::Import->value => is_string($value),
             // @type may only be "redefined" with a map whose keys are a
             // subset of {@container, @protected}, and @container (if present)
             // must be @set. Anything else (a string like "@id", an array, an
