@@ -166,4 +166,28 @@ describe('Expansion::expand', function () {
         /** @var array<string, mixed> $first */
         expect($first['https://example.com/n'])->toBe([['@value' => 42]]);
     });
+
+    it('drops unmapped relative terms that do not expand to an absolute IRI', function () {
+        // §5.5 step 13: a property key that, after IRI expansion, is neither a
+        // keyword nor contains a colon is an unmapped relative term and MUST be
+        // dropped — not emitted with a relative predicate. (Regression guard for
+        // the VC drop-in: relative predicates would otherwise leak into toRdf.)
+        $expander = makeExpansion([
+            '@context' => ['known' => 'http://example.com/known'],
+        ]);
+
+        $first = $expander->expand([
+            '@id' => 'urn:subject:1',
+            'relativeProp' => 'should drop',
+            'known' => 'should stay',
+        ])[0] ?? null;
+
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first)->toBe([
+            '@id' => 'urn:subject:1',
+            'http://example.com/known' => [['@value' => 'should stay']],
+        ]);
+        expect($first)->not->toHaveKey('relativeProp');
+    });
 });

@@ -280,6 +280,13 @@ class Expansion
                     continue;
                 }
 
+                // §5.5 step 13: a property that did not expand to an absolute
+                // IRI (no colon) and is not a keyword is an unmapped relative
+                // term — it is dropped, not emitted with a relative predicate.
+                if (! str_contains($expandedKey, ':')) {
+                    continue;
+                }
+
                 // Property-scoped context: if the property's term def has
                 // a `@context`, that overlay is active during the value's
                 // expansion. We layer it on top of the current active

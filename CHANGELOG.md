@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-06
+
+Drops unmapped relative terms during expansion (§5.5 step 13). Found by
+the VC drop-in corpus check.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   total
+v0.11.0:      175       95       270
+v0.12.0:      177       95       272   (+2 expand)
+```
+
+### Fixed
+
+- **Unmapped relative property keys are now dropped (§5.5 step 13).**
+  A property key that, after IRI expansion, is neither a JSON-LD keyword
+  nor contains a colon is an *unmapped relative term*. The spec requires
+  dropping it — previously it was retained and emitted with a bare
+  relative predicate (e.g. `"relativeProp": [...]`). Relative predicates
+  are not valid RDF and would silently corrupt downstream toRdf /
+  canonicalization output.
+
+### Consumer impact
+
+This is the principal interop fix surfaced by the VC drop-in corpus
+check: VC's RDFC-10 path does not validate predicate IRIs, so a leaked
+relative predicate would have produced relative-predicate quads and
+caused cross-implementation signature verification to fail. With this
+fix, expansion no longer emits them.
+
+Expansion of the VC/OBv3/IDVC **characterization fixtures is
+byte-identical** to v0.11.0 (those documents contain no unmapped
+relative terms), and compaction is unchanged. VC stays pinned at
+`^0.1.1`.
+
+Note on `@type`: relative `@type` *values* are intentionally **not**
+dropped during expansion — IRI expansion returns relative values as-is,
+and they are filtered later at the toRdf stage (a relative IRI is not a
+valid `rdf:type` object). This asymmetry (drop relative property keys,
+keep relative `@type` values) matches the spec and jsonld.js.
+
 ## [0.11.0] - 2026-05-13
 
 Adds `@direction` and default `@language` to value expansion.
