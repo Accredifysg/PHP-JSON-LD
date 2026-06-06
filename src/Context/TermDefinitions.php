@@ -159,10 +159,12 @@ class TermDefinitions
 
     private function validateTermSyntax(string $term): void
     {
-        if (str_contains($term, ':') || str_contains($term, '/')) {
-            throw new JsonLdException("Invalid term '{$term}': cannot contain ':' or '/'");
-        }
-
+        // A term MAY be a compact IRI ("ex:date"), an absolute IRI, or
+        // otherwise contain ':' / '/' — contexts legitimately define those
+        // (e.g. to attach `@type` coercion to a compact-IRI property). The
+        // IRI-expansion algorithm already resolves such terms, so storing
+        // them is correct. The only hard rule is that a term MUST NOT be a
+        // JSON-LD keyword.
         if (Keyword::contains($term)) {
             throw new JsonLdException("Invalid term '{$term}': cannot be a keyword");
         }

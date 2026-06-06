@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-13
+
+Allows compact-IRI / IRI-like term keys in a context — a single shared
+fix that lifts both expansion and compaction.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   total
+v0.8.0:       163       67       230
+v0.9.0:       170       72       242   (+7 expand, +5 compact)
+```
+
+### Changed
+
+- `TermDefinitions::validateTermSyntax` no longer rejects terms containing
+  `:` or `/`. A context may legitimately define a compact-IRI term
+  (`"ex:date": {...}`, `"rdfs:subClassOf": ...`) to attach `@type`/`@container`
+  coercion to a compact-IRI property; the IRI-expansion algorithm already
+  resolves these, so storing them is correct. Only JSON-LD keywords remain
+  rejected as term keys. This shared context-layer fix flips ~7 expansion
+  and ~5 compaction tests.
+
+### Investigated and deliberately NOT changed (measured net-negative or no-op)
+
+A sequencing analysis proposed several other "cheap" fixes; each was
+measured in isolation against the W3C suite and rejected:
+
+- **Value-object `@type`-as-array** — *no such bug*. Value objects already
+  emit `@type` as a scalar string; "fixing" it is a no-op.
+- **Tolerating a missing `@context`** (expand context-less docs instead of
+  throwing) — measured **−17** on the suite. It removes ~17 negative-test
+  passes (documents that the suite expects to error, which currently throw
+  "Missing @context"). Reverted. Revisit only alongside real
+  JsonLdErrorCode detection.
+- **Accepting array `@container`** (`["@graph", "@id"]`) — gated: the ~23
+  affected tests then need `@graph`/`@id`/`@type` *map expansion* (medium
+  behavioral work), so the validation relaxation alone yields ~0 and risks
+  the negative-test trap. Deferred to the container-map PR.
+- **`@direction` / default `@language`** — needs context-level
+  language/direction defaults threaded through value expansion; a medium
+  Value-Expansion enhancement, not a cheap fix.
+
+### Consumer impact
+
+None. Characterization fixtures byte-identical to v0.8.0. VC stays pinned
+at `^0.1.1`.
+
 ## [0.8.0] - 2026-05-13
 
 Adds a first-pass **Compaction** algorithm (§5.6) — the first algorithm
@@ -442,7 +490,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/accredifysg/php-json-ld/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/accredifysg/php-json-ld/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/accredifysg/php-json-ld/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/accredifysg/php-json-ld/compare/v0.5.0...v0.6.0

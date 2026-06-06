@@ -24,16 +24,16 @@ describe('TermDefinitions::addTermDefinition', function () {
         ]);
     });
 
-    it('rejects terms containing a colon', function () {
+    it('accepts compact-IRI term keys (e.g. ex:date)', function () {
+        // As of v0.9.0, terms MAY contain ':' / '/' — a context can define a
+        // compact-IRI term to attach coercion (the IRI-expansion algorithm
+        // resolves them). Only keywords are rejected.
         $defs = new TermDefinitions;
-        expect(fn () => $defs->addTermDefinition('foo:bar', 'https://example.com/'))
-            ->toThrow(JsonLdException::class, "Invalid term 'foo:bar': cannot contain ':' or '/'");
-    });
+        $defs->addTermDefinition('ex:date', ['@id' => 'http://example.org/date', '@type' => '@id']);
+        $defs->addTermDefinition('rdfs:subClassOf', 'http://www.w3.org/2000/01/rdf-schema#subClassOf');
 
-    it('rejects terms containing a slash', function () {
-        $defs = new TermDefinitions;
-        expect(fn () => $defs->addTermDefinition('foo/bar', 'https://example.com/'))
-            ->toThrow(JsonLdException::class, "Invalid term 'foo/bar': cannot contain ':' or '/'");
+        expect($defs->getTermDefinition('ex:date'))->toBe(['@id' => 'http://example.org/date', '@type' => '@id']);
+        expect($defs->getTermDefinition('rdfs:subClassOf'))->toBe(['@id' => 'http://www.w3.org/2000/01/rdf-schema#subClassOf']);
     });
 
     it('rejects keywords as terms', function () {
