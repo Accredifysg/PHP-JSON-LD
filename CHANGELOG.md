@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-06-06
+
+More validation surface — the expansion-time error conditions from the
+checklist, each measured with zero positive regressions (one near-miss:
+`@reverse: "@ignoreMe"` must be *ignored*, not rejected — distinguished
+from a genuinely invalid `@reverse: "not an IRI"`).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.16.0:      238      100      302      640
+v0.17.0:      244      100      311      655   (+6 expand, +9 toRdf)
+```
+
+### Added (error conditions)
+
+- **Colliding keywords (§5.5):** two distinct properties expanding to the
+  same keyword now raise — except `@type` and `@included`, which are merged
+  across source properties (this also fixes multi-property `@type`).
+- **Value-object `@type` well-formedness:** must be a single, absolute,
+  whitespace-free IRI (or `@json`); a blank node, a relative IRI, a
+  multi-element datatype array, or whitespace is an invalid typed value.
+- **`@language` map values** must be strings.
+- **`@reverse` mapping IRI:** a term's `@reverse` that expands to a
+  non-IRI / non-blank-node (e.g. `"not an IRI"`) raises; one that expands to
+  null (a keyword-shaped value like `"@ignoreMe"`) leaves the term ignored.
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (160).
+VC stays pinned at `^0.1.1`. Remaining negative families (`@protected`
+redefinition, IRI-mapping term-definition validation, `@import`,
+processing-mode gating) are deferred — they need dedicated architectural
+work (prior-definition tracking, term-time IRI expansion).
+
 ## [0.16.0] - 2026-06-06
 
 Validation surface — the bulk of the W3C *negative* test suite. A spec

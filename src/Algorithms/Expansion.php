@@ -279,9 +279,15 @@ class Expansion
                 // reverse IRI in the @reverse map. (§5.5 step 13.7.)
                 if ($termDef !== null && isset($termDef['@reverse']) && is_string($termDef['@reverse'])) {
                     $reverseIri = $this->expandIri($termDef['@reverse'], vocab: true);
-                    if ($reverseIri !== null) {
-                        $this->collectReverseValues($reverseMap, $reverseIri, $this->expandElement($value, $key));
+                    if ($reverseIri === null) {
+                        // A keyword-shaped @reverse (e.g. "@ignoreMe") expands
+                        // to null — the term is silently ignored, not an error.
+                        continue;
                     }
+                    if (! $this->looksLikeAbsoluteIri($reverseIri) && ! str_starts_with($reverseIri, '_:')) {
+                        throw new JsonLdException('Invalid reverse property: @reverse must expand to an IRI or blank node');
+                    }
+                    $this->collectReverseValues($reverseMap, $reverseIri, $this->expandElement($value, $key));
 
                     continue;
                 }
@@ -304,6 +310,9 @@ class Expansion
                 // which finalizeValueObject uses to drop the object). It is
                 // never expanded, so it bypasses expandKeywordValue.
                 if ($expandedKey === Keyword::Value->value) {
+                    if (array_key_exists(Keyword::Value->value, $result)) {
+                        throw new JsonLdException('Colliding keywords: two properties expand to @value');
+                    }
                     $result[Keyword::Value->value] = $value;
 
                     continue;
@@ -313,7 +322,25 @@ class Expansion
                 if ($this->isKeyword($expandedKey)) {
                     $expandedValue = $this->expandKeywordValue($expandedKey, $value, $activeProperty);
                     if ($expandedValue !== null) {
-                        $result[$expandedKey] = $expandedValue;
+                        // @type and @included may be contributed by more than
+                        // one property and are merged; any other keyword
+                        // appearing twice is a colliding-keywords error (§5.5).
+                        if (
+                            ($expandedKey === Keyword::Type->value || $expandedKey === Keyword::Included->value)
+                            && array_key_exists($expandedKey, $result)
+                        ) {
+                            $existing = is_array($result[$expandedKey]) && array_is_list($result[$expandedKey])
+                                ? $result[$expandedKey]
+                                : [$result[$expandedKey]];
+                            $incoming = is_array($expandedValue) && array_is_list($expandedValue)
+                                ? $expandedValue
+                                : [$expandedValue];
+                            $result[$expandedKey] = array_merge($existing, $incoming);
+                        } elseif (array_key_exists($expandedKey, $result)) {
+                            throw new JsonLdException("Colliding keywords: two properties expand to {$expandedKey}");
+                        } else {
+                            $result[$expandedKey] = $expandedValue;
+                        }
                     }
 
                     continue;
@@ -935,6 +962,21 @@ class Expansion
             $result[Keyword::Type->value] = $result[Keyword::Type->value][0];
         }
 
+        // A value object's @type must be a single, well-formed, absolute IRI
+        // (or @json). A multi-element datatype, a blank node, a relative IRI,
+        // or an IRI containing whitespace is an "invalid typed value".
+        if (! $isJson && isset($result[Keyword::Type->value])) {
+            $typeValue = $result[Keyword::Type->value];
+            $invalid = is_array($typeValue)
+                || ! is_string($typeValue)
+                || str_starts_with($typeValue, '_:')
+                || ! $this->looksLikeAbsoluteIri($typeValue)
+                || preg_match('/\s/', $typeValue) === 1;
+            if ($invalid) {
+                throw new JsonLdException('Invalid typed value: @type must be a single absolute IRI');
+            }
+        }
+
         ksort($result);
 
         return $result;
@@ -1249,6 +1291,9 @@ class Expansion
             foreach ($items as $item) {
                 if ($item === null) {
                     continue;
+                }
+                if (! is_string($item)) {
+                    throw new JsonLdException('Invalid language map value: values must be strings');
                 }
                 $valueObject = [Keyword::Value->value => $item];
                 if ($language !== Keyword::None->value) {
