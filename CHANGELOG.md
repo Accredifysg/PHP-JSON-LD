@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-06
+
+Term-definition IRI-mapping validation (the `@type` / bare-term / keyword-alias
+negative-test subset that needs no processing-mode threading).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.21.0:      271      101      342      714
+v0.22.0:      275      101      346      722   (+4 expand, +4 toRdf)
+```
+
+### Added (error conditions)
+
+- A term-definition `@type` (type coercion) must be a keyword
+  (`@id`/`@vocab`/`@json`/`@none`) or resolve to an absolute IRI — a blank
+  node (`_:…`) or an unresolvable relative value (no `@vocab`) is an invalid
+  type mapping.
+- A bare term (no `@id`, no `@reverse`, no `:`/`/`, not a keyword) with no
+  active `@vocab` is an invalid IRI mapping (`@reverse` terms are exempt — the
+  reverse IRI supplies the mapping).
+- A term may not alias `@context` (`@id: "@context"` is an invalid keyword
+  alias).
+
+### Deferred
+
+The remaining `ter*` negatives need processing-mode (1.0/1.1) threading
+(`#ter21`/`#ter24`/`#ter42`, and `#ter43`/`#t0026` which share an input but
+differ by mode), compact-IRI consistency (`#ter44`), or cyclic-IRI detection
+(`#ter10`).
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (173).
+VC stays pinned at `^0.1.1`.
+
 ## [0.21.0] - 2026-06-06
 
 Scoped remote / `@import` contexts and relative context references.

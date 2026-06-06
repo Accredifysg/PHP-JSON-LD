@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    271 passed / 114 failed (v0.21.0)
-Compaction:   101 passed / 145 failed (v0.21.0)
-toRdf:        342 passed / 125 failed (v0.21.0)
+Expansion:    275 passed / 110 failed (v0.22.0)
+Compaction:   101 passed / 145 failed (v0.22.0)
+toRdf:        346 passed / 121 failed (v0.22.0)
 ```
 
 Each Phase 4 PR:
@@ -85,6 +85,7 @@ Each Phase 4 PR:
 | v0.19.0 |          259  |   +12  | active-context propagation: scoped @protected, @context:null reset, @propagate|
 | v0.20.0 |          266  |    +7  | @import (document-level context sourcing)|
 | v0.21.0 |          271  |    +5  | scoped remote/@import contexts + relative context refs|
+| v0.22.0 |          275  |    +4  | term-def IRI-mapping validation (@type, bare term, @context alias)|
 
 ### Notes on v0.4.0
 

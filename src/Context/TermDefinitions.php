@@ -320,9 +320,46 @@ class TermDefinitions
             throw new JsonLdException("Invalid @id in term '{$term}'");
         }
 
+        // A term may alias a keyword (e.g. type → @type) but NOT @context.
+        if (($definition['@id'] ?? null) === Keyword::Context->value) {
+            throw new JsonLdException("Invalid keyword alias in term '{$term}': @id may not be @context");
+        }
+
         if (isset($definition['@type']) && ! is_string($definition['@type'])) {
             throw new JsonLdException("Invalid @type in term '{$term}'");
         }
+
+        // A term-definition @type (type coercion) must be a keyword
+        // (@id/@vocab/@json/@none) or resolve to an absolute IRI — not a blank
+        // node, and not an unresolvable relative IRI (no @vocab to resolve a
+        // bare value).
+        if (isset($definition['@type']) && is_string($definition['@type'])) {
+            $type = $definition['@type'];
+            $typeKeywords = [Keyword::Id->value, Keyword::Vocab->value, Keyword::Json->value, Keyword::None->value];
+            if (! in_array($type, $typeKeywords, true)) {
+                if (str_starts_with($type, '_:') || (! str_contains($type, ':') && $this->getVocab() === null)) {
+                    throw new JsonLdException("Invalid type mapping in term '{$term}'");
+                }
+            }
+        }
+
+        // A bare term (no @id and no @reverse, no ':'/'/', not a keyword) can
+        // only resolve to an IRI through an active @vocab; without one it is an
+        // invalid IRI mapping. (@reverse supplies the mapping, so it is exempt.)
+        if (
+            ! isset($definition['@id'])
+            && ! isset($definition['@reverse'])
+            && ! str_contains($term, ':')
+            && ! str_contains($term, '/')
+            && ! Keyword::contains($term)
+            && $this->getVocab() === null
+        ) {
+            throw new JsonLdException("Invalid IRI mapping for term '{$term}': no @id and no @vocab");
+        }
+
+        // (@id: @type with @type: @id is invalid only in JSON-LD 1.1 — it is
+        // valid in 1.0 — so enforcing it requires processing-mode threading,
+        // deferred. #ter43 / #t0026 share an input but differ by mode.)
 
         if (isset($definition['@container'])) {
             $container = $definition['@container'];

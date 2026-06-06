@@ -143,3 +143,32 @@ describe('TermDefinitions::getTermDefinition', function () {
             ]);
     });
 });
+
+describe('TermDefinitions IRI-mapping validation', function () {
+    it('rejects a blank-node @type in a term definition', function () {
+        expect(fn () => (new TermDefinitions)->addTermDefinition('t', ['@id' => 'http://example/t', '@type' => '_:b']))
+            ->toThrow(JsonLdException::class, 'Invalid type mapping');
+    });
+
+    it('rejects a relative @type when there is no @vocab', function () {
+        expect(fn () => (new TermDefinitions)->addTermDefinition('t', ['@id' => 'http://example/t', '@type' => 'relative']))
+            ->toThrow(JsonLdException::class, 'Invalid type mapping');
+    });
+
+    it('rejects a bare term with no @id and no @vocab', function () {
+        expect(fn () => (new TermDefinitions)->addTermDefinition('term', ['@container' => '@set']))
+            ->toThrow(JsonLdException::class, 'Invalid IRI mapping');
+    });
+
+    it('rejects a term aliasing @context', function () {
+        expect(fn () => (new TermDefinitions)->addTermDefinition('term', ['@id' => '@context']))
+            ->toThrow(JsonLdException::class, 'Invalid keyword alias');
+    });
+
+    it('allows a bare term once an @vocab is set', function () {
+        $defs = new TermDefinitions;
+        $defs->setVocab('http://example.com/');
+        $defs->addTermDefinition('term', ['@container' => '@set']);
+        expect($defs->getTermDefinition('term'))->toHaveKey('@container');
+    });
+});
