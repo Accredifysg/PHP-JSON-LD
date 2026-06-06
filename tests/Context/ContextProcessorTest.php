@@ -214,3 +214,42 @@ describe('ContextProcessor::getTermDefinitions', function () {
         expect($processor->getTermDefinitions())->toBeInstanceOf(TermDefinitions::class);
     });
 });
+
+describe('@protected term enforcement', function () {
+    $make = function (array $contextLayers) {
+        return new ContextProcessor(['@context' => $contextLayers, 'id' => 'urn:1'], new StubDocumentLoader);
+    };
+
+    it('rejects redefining a protected term in a later context layer', function () use ($make) {
+        expect(fn () => $make([
+            ['@protected' => true, 'name' => 'https://schema.org/name'],
+            ['name' => 'https://example.com/other'],
+        ]))->toThrow(JsonLdException::class, 'Protected term redefinition');
+    });
+
+    it('allows an identical redefinition of a protected term (modulo @protected)', function () use ($make) {
+        $processor = $make([
+            ['@protected' => true, 'name' => 'https://schema.org/name'],
+            ['name' => 'https://schema.org/name'],
+        ]);
+        expect($processor->getTermDefinitions()->isProtected('name'))->toBeTrue();
+    });
+
+    it('allows redefining a non-protected term', function () use ($make) {
+        $processor = $make([
+            ['name' => 'https://schema.org/name'],
+            ['name' => 'https://example.com/other'],
+        ]);
+        expect($processor->getTermDefinitions()->getTermDefinition('name'))
+            ->toBe(['@id' => 'https://example.com/other']);
+    });
+
+    it('lets a term opt out of an @protected context with @protected:false', function () use ($make) {
+        $processor = $make([
+            ['@protected' => true, 'open' => ['@id' => 'https://example.com/open', '@protected' => false]],
+            ['open' => 'https://example.com/redefined'],
+        ]);
+        expect($processor->getTermDefinitions()->getTermDefinition('open'))
+            ->toBe(['@id' => 'https://example.com/redefined']);
+    });
+});

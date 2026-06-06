@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-06-06
+
+`@protected` term protection — the tracking infrastructure plus
+document-level enforcement. Built carefully against the 39 passing
+protected/scoped positives first: zero positive regressions.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.17.0:      244      100      311      655
+v0.18.0:      247      101      314      662   (+3 expand, +1 compact, +3 toRdf)
+```
+
+### Added
+
+- **Protected-term tracking** on `TermDefinitions`: a term is protected when
+  its definition (or its enclosing context's top-level `@protected`) marks it
+  so; a term's own `@protected` overrides the context default (so
+  `{"@protected": false}` opts out).
+- **Document-level protected-term redefinition enforcement
+  (§4.1.2 / §4.2.2):** redefining — or nullifying — a protected term in a
+  later document context layer raises, unless the new definition is identical
+  (ignoring `@protected`), in which case it is permitted and the term stays
+  protected.
+
+### Known limitation
+
+Protected-term enforcement inside *scoped* contexts (type-scoped,
+property-scoped, embedded node `@context`) is intentionally **not** enforced
+yet: doing so correctly requires propagating `@context: null` resets into
+nested-object expansion (an active-context threading refactor that would
+otherwise risk the scope-isolation guarantees ~39 scoped tests depend on).
+Those negative tests (`#tpr01`, `#tpr03`–`#tpr12`, `@import` `#tso*`, …)
+remain deferred. Scoped redefinitions are conservatively *allowed* (never
+wrongly rejected).
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (164).
+VC stays pinned at `^0.1.1`.
+
 ## [0.17.0] - 2026-06-06
 
 More validation surface — the expansion-time error conditions from the

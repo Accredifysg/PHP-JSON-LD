@@ -141,8 +141,15 @@ class TermDefinitions
     /**
      * @param  TermDefinition|string  $termDefinition  String values are
      *                                                 normalised to `['@id' => $value]` per JSON-LD's IRI-shorthand syntax.
+     * @param  bool  $protectedContext  True when the enclosing context is
+     *                                  `@protected`, so every term it defines
+     *                                  is protected.
+     * @param  bool  $overrideProtected  True when the active context-processing
+     *                                   step is permitted to redefine a
+     *                                   protected term (property-scoped contexts
+     *                                   and `@import`); false otherwise.
      */
-    public function addTermDefinition(string $key, array|string $termDefinition): void
+    public function addTermDefinition(string $key, array|string $termDefinition, bool $protectedContext = false, bool $overrideProtected = false): void
     {
         $this->validateTermSyntax($key);
 
@@ -151,7 +158,78 @@ class TermDefinitions
         }
 
         $this->validateTermDefinitionStructure($key, $termDefinition);
+        $this->storeProtectedAware($key, $termDefinition, $protectedContext, $overrideProtected);
+    }
+
+    /**
+     * Store a (pre-validated) term definition that came from a scoped context
+     * overlay, applying protected-term enforcement but skipping the term-syntax
+     * check (scoped overlays legitimately carry keyword-alias / compact terms).
+     *
+     * @param  TermDefinition  $termDefinition
+     */
+    public function overlayTerm(string $key, array $termDefinition, bool $protectedContext, bool $overrideProtected): void
+    {
+        $this->storeProtectedAware($key, $termDefinition, $protectedContext, $overrideProtected);
+    }
+
+    /**
+     * Returns true if the term currently carries a protected definition.
+     */
+    public function isProtected(string $key): bool
+    {
+        $existing = $this->termDefinitions[$key] ?? null;
+
+        return is_array($existing) && ($existing['@protected'] ?? false) === true;
+    }
+
+    /**
+     * Apply the JSON-LD 1.1 protected-term rule (§4.1.2 step 5.13 / §4.2.2
+     * step 5) before storing: a protected term may only be redefined when
+     * override is permitted, or when the new definition is identical to the
+     * existing one (ignoring `@protected`).
+     *
+     * @param  TermDefinition  $termDefinition
+     */
+    private function storeProtectedAware(string $key, array $termDefinition, bool $protectedContext, bool $overrideProtected): void
+    {
+        // A term's own @protected (if present) overrides the enclosing
+        // context's @protected — so {"@protected": false} opts a term out of
+        // an otherwise-protected context.
+        $explicit = array_key_exists('@protected', $termDefinition) ? ($termDefinition['@protected'] === true) : null;
+        $isProtected = $explicit ?? $protectedContext;
+
+        if (! $overrideProtected && $this->isProtected($key)) {
+            /** @var TermDefinition $existing */
+            $existing = $this->termDefinitions[$key];
+            if (! $this->sameDefinitionIgnoringProtected($existing, $termDefinition)) {
+                throw new JsonLdException("Protected term redefinition: '{$key}' is protected and cannot be redefined");
+            }
+            // An identical redefinition is permitted but keeps the term
+            // protected (§4.2.2 step 5: the protection is not lost).
+            $isProtected = true;
+        }
+
+        if ($isProtected) {
+            $termDefinition['@protected'] = true;
+        } else {
+            unset($termDefinition['@protected']);
+        }
+
         $this->termDefinitions[$key] = $termDefinition;
+    }
+
+    /**
+     * @param  TermDefinition  $a
+     * @param  TermDefinition  $b
+     */
+    private function sameDefinitionIgnoringProtected(array $a, array $b): bool
+    {
+        unset($a['@protected'], $b['@protected']);
+        ksort($a);
+        ksort($b);
+
+        return $a == $b;
     }
 
     /**

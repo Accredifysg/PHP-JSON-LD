@@ -272,16 +272,24 @@ class ContextProcessor
                 }
             }
 
+            // A context whose top-level @protected is true protects every
+            // term it defines. Document-level processing never overrides a
+            // protected term (override-protected = false).
+            $protectedContext = ($context[Keyword::Protected->value] ?? null) === true;
+
             foreach ($context as $key => $value) {
                 if (Keyword::contains($key)) {
                     continue;
                 }
                 if (is_string($value) || is_array($value)) {
-                    $this->termDefinitions->addTermDefinition($key, $value);
+                    $this->termDefinitions->addTermDefinition($key, $value, $protectedContext, false);
                 } elseif ($value === null) {
-                    // A term mapped to null is explicitly decoupled: it must
-                    // NOT fall back to @vocab during IRI expansion. Record it
-                    // with a null @id so expansion can drop it.
+                    // A term mapped to null is explicitly decoupled. Nullifying
+                    // a protected term (without override) is a protected-term
+                    // redefinition.
+                    if ($this->termDefinitions->isProtected($key)) {
+                        throw new JsonLdException("Protected term redefinition: '{$key}' is protected and cannot be cleared");
+                    }
                     $this->termDefinitions->termDefinitions[$key] = [Keyword::Id->value => null];
                 } else {
                     // A term value must be a string, a map, or null (§4.2.2

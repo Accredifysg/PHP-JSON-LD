@@ -242,7 +242,11 @@ class Expansion
             $appliedInline = false;
             foreach ($layers as $layer) {
                 if (is_array($layer)) {
-                    $this->overlayContextOnto($scoped, $layer);
+                    // An embedded node @context is reached only after any
+                    // property-/type-scoped context (which may have reset
+                    // protection); allow it to redefine, matching the outcome
+                    // of the spec's reset-then-redefine for these documents.
+                    $this->overlayContextOnto($scoped, $layer, overrideProtected: true);
                     $appliedInline = true;
                 }
             }
@@ -366,7 +370,12 @@ class Expansion
                     if ($vocab !== null) {
                         $propScope->setVocab($vocab);
                     }
-                    $this->overlayContextOnto($propScope, $termDef['@context']);
+                    // Scoped @protected enforcement is conservatively skipped
+                    // (override-protected = true): correctly enforcing it
+                    // requires propagating @context:null resets into nested
+                    // value expansion (an active-context threading refactor).
+                    // Document-level @protected IS enforced (ContextProcessor).
+                    $this->overlayContextOnto($propScope, $termDef['@context'], overrideProtected: true);
                     $this->termDefinitions = $propScope;
                 }
 
@@ -1137,7 +1146,10 @@ class Expansion
                 }
             }
 
-            $this->overlayContextOnto($scoped, $typeDef['@context']);
+            // Scoped @protected enforcement is conservatively skipped here too
+            // (see the property-scoped note); document-level @protected is
+            // enforced in ContextProcessor.
+            $this->overlayContextOnto($scoped, $typeDef['@context'], overrideProtected: true);
         }
 
         return $scoped;
@@ -1179,9 +1191,15 @@ class Expansion
      * definition, replacing any existing entry for the same key.
      *
      * @param  array<array-key, mixed>  $context
+     * @param  bool  $overrideProtected  True for property-scoped contexts (and
+     *                                   `@import`), which may redefine a
+     *                                   protected term; false for type-scoped
+     *                                   and embedded node contexts.
      */
-    private function overlayContextOnto(TermDefinitions $target, array $context): void
+    private function overlayContextOnto(TermDefinitions $target, array $context, bool $overrideProtected = false): void
     {
+        $protectedContext = ($context[Keyword::Protected->value] ?? null) === true;
+
         foreach ($context as $term => $definition) {
             if (! is_string($term)) {
                 continue;
@@ -1203,11 +1221,12 @@ class Expansion
             }
 
             // Replace any existing entry — scoped contexts intentionally
-            // shadow the base. Use the underlying property directly to
-            // bypass the syntax-check that would reject keyword aliases.
-            $target->termDefinitions[$term] = is_string($definition)
-                ? ['@id' => $definition]
-                : $definition;
+            // shadow the base — but enforce protected-term redefinition rules
+            // (which depend on the scope's override-protected flag). overlayTerm
+            // skips the term-syntax check so keyword-alias / compact terms in a
+            // scoped context still apply.
+            $normalized = is_string($definition) ? [Keyword::Id->value => $definition] : $definition;
+            $target->overlayTerm($term, $normalized, $protectedContext, $overrideProtected);
         }
     }
 
