@@ -35,13 +35,31 @@ final class PhpJsonLdAdapter implements Processor
     {
         // `base` is the effective document base — option.base if the manifest
         // entry set one, otherwise the document URL (injected by the test
-        // harness). Other options (expandContext, processingMode) are not yet
-        // threaded; they arrive with the JsonLdOptions VO in a later PR.
+        // harness).
         $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
 
         return (new JsonLdProcessor($this->loader))
-            ->expand($input, $base)
+            ->expand($input, $base, self::processingMode($options))
             ->toArray();
+    }
+
+    /**
+     * Derive the effective processing mode from a manifest entry's `option`
+     * block. `processingMode` (the API option) wins; otherwise `specVersion`
+     * (which version of the spec the test targets) selects the mode; absent
+     * both, the default is JSON-LD 1.1.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    private static function processingMode(array $options): ?string
+    {
+        foreach (['processingMode', 'specVersion'] as $key) {
+            if (isset($options[$key]) && is_string($options[$key])) {
+                return $options[$key];
+            }
+        }
+
+        return null;
     }
 
     public function compact(array $input, array $context, array $options): array
@@ -56,7 +74,7 @@ final class PhpJsonLdAdapter implements Processor
         $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
 
         return (new JsonLdProcessor($this->loader))
-            ->toRdf($input, $base)
+            ->toRdf($input, $base, self::processingMode($options))
             ->toNQuads();
     }
 }

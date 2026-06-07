@@ -194,10 +194,32 @@ class Expansion
         }
 
         if ($this->containerIs($activeProperty, Keyword::List->value) && ! $this->insideListContext($activeProperty)) {
+            $this->assertNoListOfLists($result);
+
             return [['@list' => $result]];
         }
 
         return $result;
+    }
+
+    /**
+     * §5.5: in JSON-LD 1.0 a list may not contain another list. (JSON-LD 1.1
+     * lifted this restriction, so the check is gated on the 1.0 processing
+     * mode — #ter24 / #ter32.)
+     *
+     * @param  array<mixed>  $items
+     */
+    private function assertNoListOfLists(array $items): void
+    {
+        if (! $this->termDefinitions->isJson10()) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if (is_array($item) && array_key_exists(Keyword::List->value, $item)) {
+                throw new JsonLdException('List of lists: a @list value may not contain another list in JSON-LD 1.0');
+            }
+        }
     }
 
     /**
@@ -536,13 +558,19 @@ class Expansion
                 return is_string($value) ? $value : null;
 
             case Keyword::List->value:
-            case Keyword::Set->value:
                 // §5.5: @list / @set contents expand under the *active property*
                 // (the property the value belongs to) so scalar items
                 // value-expand rather than being dropped as free-floating. Items
                 // are expanded individually so a `@container: @list` term does
                 // NOT re-wrap them — the @list keyword already establishes the
-                // list.
+                // list. A list whose members include a list object is a list of
+                // lists (rejected in JSON-LD 1.0).
+                $listItems = $this->expandKeywordItems($value, $activeProperty);
+                $this->assertNoListOfLists($listItems);
+
+                return $listItems;
+
+            case Keyword::Set->value:
                 return $this->expandKeywordItems($value, $activeProperty);
 
             case Keyword::Graph->value:

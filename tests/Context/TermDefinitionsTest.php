@@ -172,3 +172,58 @@ describe('TermDefinitions IRI-mapping validation', function () {
         expect($defs->getTermDefinition('term'))->toHaveKey('@container');
     });
 });
+
+describe('TermDefinitions processing-mode gates', function () {
+    it('rejects an array @container in JSON-LD 1.0', function () {
+        $defs = new TermDefinitions;
+        $defs->setProcessingMode('json-ld-1.0');
+        expect(fn () => $defs->addTermDefinition('term', ['@id' => 'http://example/t', '@container' => ['@set']]))
+            ->toThrow(JsonLdException::class, 'requires JSON-LD 1.1');
+    });
+
+    it('rejects an @id/@type/@graph @container in JSON-LD 1.0', function () {
+        $defs = new TermDefinitions;
+        $defs->setProcessingMode('json-ld-1.0');
+        expect(fn () => $defs->addTermDefinition('term', ['@id' => 'http://example/t', '@container' => '@id']))
+            ->toThrow(JsonLdException::class, 'Invalid @container');
+    });
+
+    it('still accepts a single 1.0 @container (@list/@set/@index/@language)', function () {
+        $defs = new TermDefinitions;
+        $defs->setProcessingMode('json-ld-1.0');
+        $defs->addTermDefinition('term', ['@id' => 'http://example/t', '@container' => '@set']);
+        expect($defs->getTermDefinition('term'))->toHaveKey('@container');
+    });
+
+    it('rejects a property-valued @index in JSON-LD 1.0', function () {
+        $defs = new TermDefinitions;
+        $defs->setProcessingMode('json-ld-1.0');
+        $defs->setVocab('http://example.com/'); // so the bare term resolves
+        expect(fn () => $defs->addTermDefinition('container', ['@container' => '@index', '@index' => 'prop']))
+            ->toThrow(JsonLdException::class, 'property-valued @index requires JSON-LD 1.1');
+    });
+
+    it('rejects an IRI-shaped term mapping to a keyword @id in JSON-LD 1.1', function () {
+        // §4.2.2: a term that is itself an IRI must expand to its @id mapping;
+        // a keyword @id (e.g. @type) can never equal an IRI term. #ter43.
+        $defs = new TermDefinitions; // defaults to json-ld-1.1
+        expect(fn () => $defs->addTermDefinition('http://www.w3.org/1999/02/22-rdf-syntax-ns#type', ['@id' => '@type', '@type' => '@id']))
+            ->toThrow(JsonLdException::class, 'Invalid IRI mapping');
+    });
+
+    it('allows the same IRI-shaped/@type term in JSON-LD 1.0', function () {
+        // #t0026: the consistency check does not apply in 1.0.
+        $defs = new TermDefinitions;
+        $defs->setProcessingMode('json-ld-1.0');
+        $defs->addTermDefinition('http://www.w3.org/1999/02/22-rdf-syntax-ns#type', ['@id' => '@type', '@type' => '@id']);
+        expect($defs->getTermDefinition('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'))->toHaveKey('@id');
+    });
+
+    it('still allows a simple term aliasing @type in JSON-LD 1.1', function () {
+        // #tc0073: term "type" has no colon/slash, so the consistency check
+        // does not fire even in 1.1.
+        $defs = new TermDefinitions;
+        $defs->addTermDefinition('type', ['@id' => '@type', '@type' => '@id']);
+        expect($defs->getTermDefinition('type'))->toBe(['@id' => '@type', '@type' => '@id']);
+    });
+});

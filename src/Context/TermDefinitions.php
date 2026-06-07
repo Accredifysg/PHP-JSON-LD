@@ -54,6 +54,9 @@ class TermDefinitions
     /** Default `@direction` ("ltr"/"rtl") applied to plain string values, or null. */
     private ?string $defaultDirection = null;
 
+    /** Effective processing mode ("json-ld-1.0" or "json-ld-1.1"). */
+    private string $processingMode = 'json-ld-1.1';
+
     /**
      * The context to roll back to when this context is non-propagating
      * (@propagate: false, e.g. a type-scoped context): on descending into a
@@ -77,6 +80,22 @@ class TermDefinitions
     public function setPreviousContext(?TermDefinitions $previous): void
     {
         $this->previousContext = $previous;
+    }
+
+    public function setProcessingMode(string $mode): void
+    {
+        $this->processingMode = $mode;
+    }
+
+    public function getProcessingMode(): string
+    {
+        return $this->processingMode;
+    }
+
+    /** True when the effective processing mode is JSON-LD 1.0. */
+    public function isJson10(): bool
+    {
+        return $this->processingMode === 'json-ld-1.0';
     }
 
     /**
@@ -295,6 +314,22 @@ class TermDefinitions
         return null;
     }
 
+    /**
+     * True when a term is itself IRI-shaped: it contains a colon anywhere but
+     * as the first or last character (a compact IRI / absolute IRI), or it
+     * contains a slash anywhere (a relative IRI reference). Per §4.2.2 such a
+     * term's IRI expansion must agree with its @id mapping.
+     */
+    private function isIriShapedTerm(string $term): bool
+    {
+        $colon = strpos($term, ':');
+        if ($colon !== false && $colon !== 0 && $colon !== strlen($term) - 1) {
+            return true;
+        }
+
+        return str_contains($term, '/');
+    }
+
     private function validateTermSyntax(string $term): void
     {
         // A term MAY be a compact IRI ("ex:date"), an absolute IRI, or
@@ -357,12 +392,37 @@ class TermDefinitions
             throw new JsonLdException("Invalid IRI mapping for term '{$term}': no @id and no @vocab");
         }
 
-        // (@id: @type with @type: @id is invalid only in JSON-LD 1.1 — it is
-        // valid in 1.0 — so enforcing it requires processing-mode threading,
-        // deferred. #ter43 / #t0026 share an input but differ by mode.)
+        // JSON-LD 1.1 only: when a term is itself IRI-shaped (contains a colon
+        // other than as the first/last character, or contains a slash), the
+        // IRI expansion of the term must equal its @id mapping (§4.2.2). A
+        // keyword @id (e.g. @type) can never equal an IRI-shaped term, so this
+        // is an invalid IRI mapping. In JSON-LD 1.0 the consistency check does
+        // not apply — #ter43 (1.1, error) and #t0026 (1.0, valid) share an
+        // input and differ only by processing mode.
+        if (
+            ! $this->isJson10()
+            && isset($definition['@id'])
+            && is_string($definition['@id'])
+            && Keyword::contains($definition['@id'])
+            && $this->isIriShapedTerm($term)
+        ) {
+            throw new JsonLdException("Invalid IRI mapping for term '{$term}': an IRI term cannot map to keyword {$definition['@id']}");
+        }
 
         if (isset($definition['@container'])) {
             $container = $definition['@container'];
+
+            // JSON-LD 1.0 only recognises a single-string @container drawn from
+            // {@list, @set, @index, @language}; array containers and the 1.1
+            // additions (@id, @type, @graph) are invalid container mappings.
+            if ($this->isJson10()) {
+                $valid10 = [Keyword::List->value, Keyword::Set->value, Keyword::Index->value, Keyword::Language->value];
+                if (! is_string($container) || ! in_array($container, $valid10, true)) {
+                    $repr = is_string($container) ? $container : gettype($container);
+                    throw new JsonLdException("Invalid @container in term '{$term}': {$repr} requires JSON-LD 1.1");
+                }
+            }
+
             // @container may be a single keyword or an array of keywords
             // (e.g. ["@graph", "@set"] or ["@index", "@set"]). Each entry must
             // be a recognised container type.
@@ -422,6 +482,12 @@ class TermDefinitions
             ) {
                 throw new JsonLdException("Invalid type mapping in term '{$term}': a @type container requires @type @id or @vocab");
             }
+        }
+
+        // Property-valued @index is a JSON-LD 1.1 feature; in 1.0 a term
+        // definition carrying @index is an invalid term definition (#tpi01).
+        if (array_key_exists('@index', $definition) && $this->isJson10()) {
+            throw new JsonLdException("Invalid term definition '{$term}': property-valued @index requires JSON-LD 1.1");
         }
 
         // Property-valued @index: requires a @container that includes @index

@@ -41,6 +41,9 @@ class ContextProcessor
 
     private TermDefinitions $termDefinitions;
 
+    /** Effective processing mode ("json-ld-1.0" or "json-ld-1.1"). */
+    private readonly string $processingMode;
+
     /** @var list<array<string, mixed>> */
     private array $processedContexts = [];
 
@@ -50,23 +53,36 @@ class ContextProcessor
     /**
      * @param  array<array-key, mixed>  $jsonLd  The full JSON-LD document.
      *                                           Must contain `@context`; the rest is ignored.
+     * @param  string|null  $processingMode  The JSON-LD processing mode
+     *                                       ("json-ld-1.0" / "json-ld-1.1").
+     *                                       Null defaults to "json-ld-1.1".
      */
     public function __construct(
         private readonly array $jsonLd,
         private readonly DocumentLoader $documentLoader,
         ?string $baseIri = null,
+        ?string $processingMode = null,
     ) {
         if (! isset($jsonLd['@context'])) {
             throw new JsonLdException('Invalid JSON-LD: Missing @context');
         }
 
+        $this->processingMode = $processingMode ?? 'json-ld-1.1';
+
         $this->termDefinitions = new TermDefinitions;
+        $this->termDefinitions->setProcessingMode($this->processingMode);
 
         // The initial base is the document location (or a caller-supplied
         // base). `@base` declarations in the context can override it.
         $this->termDefinitions->setBase($baseIri);
 
         $this->processJsonLdContext();
+    }
+
+    /** True when the effective processing mode is JSON-LD 1.0. */
+    private function isJson10(): bool
+    {
+        return $this->processingMode === 'json-ld-1.0';
     }
 
     public function getTermDefinitions(): TermDefinitions
@@ -231,6 +247,24 @@ class ContextProcessor
 
     private function validateKeywordValue(string $key, mixed $value): void
     {
+        // Processing-mode gates: JSON-LD 1.0 forbids several context entries
+        // that were introduced in 1.1.
+        if ($this->isJson10()) {
+            // @version: 1.1 under an explicit 1.0 processing mode is a
+            // conflict (§4.1.2 — "processing mode conflict").
+            if ($key === Keyword::Version->value && $value === self::DEFAULT_VERSION) {
+                throw new JsonLdException('processing mode conflict: @version 1.1 is incompatible with processingMode json-ld-1.0');
+            }
+            // @propagate and @import are 1.1-only context entries.
+            if ($key === Keyword::Propagate->value || $key === Keyword::Import->value) {
+                throw new JsonLdException("invalid context entry: {$key} is not available in JSON-LD 1.0");
+            }
+            // A keyword (e.g. @type) may not be redefined with a map in 1.0.
+            if ($key === Keyword::Type->value && is_array($value)) {
+                throw new JsonLdException('keyword redefinition: @type may not be redefined in JSON-LD 1.0');
+            }
+        }
+
         $isValid = match ($key) {
             // The only supported processing mode is JSON-LD 1.1, so @version
             // must be exactly the float 1.1 (a JSON number decodes to float).
@@ -361,6 +395,14 @@ class ContextProcessor
      */
     private function resolveVocab(string $vocab): string
     {
+        // JSON-LD 1.0 has no document-relative @vocab: the value must be an
+        // absolute IRI (or blank-node prefix). An empty string (which would
+        // resolve against the base) or a relative reference (no scheme) is an
+        // invalid vocab mapping.
+        if ($this->isJson10() && ($vocab === '' || ! str_contains($vocab, ':'))) {
+            throw new JsonLdException("invalid vocab mapping: relative @vocab '{$vocab}' is not available in JSON-LD 1.0");
+        }
+
         if ($vocab === '') {
             return $this->termDefinitions->getBase() ?? '';
         }

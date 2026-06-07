@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-06-07
+
+Processing-mode (JSON-LD 1.0 / 1.1) threading. The effective mode is now
+carried from the caller (`processingMode` / the test manifest's
+`specVersion`) through `JsonLdProcessor` → `ContextProcessor` →
+`TermDefinitions`, and the 1.0-vs-1.1 behavioural differences are gated.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.22.0:      275      101      346      722
+v0.23.0:      284      101      355      740   (+9 expand, +9 toRdf)
+```
+
+### Added
+
+- `Processor::expand()` / `Processor::toRdf()` take an optional
+  `?string $processingMode` (`"json-ld-1.0"` / `"json-ld-1.1"`, default
+  1.1). `ContextProcessor` accepts and threads it; `TermDefinitions`
+  carries it (`setProcessingMode()` / `isJson10()`).
+
+### Added (error conditions, JSON-LD 1.0)
+
+- `@version: 1.1` under an explicit `json-ld-1.0` mode is a processing mode
+  conflict (`#tep02`).
+- `@propagate` and `@import` are 1.1-only context entries — invalid in 1.0
+  (`#tc029`, `#tso01`).
+- A keyword (`@type`) may not be redefined with a map in 1.0
+  (`#ter42`).
+- `@container` in 1.0 must be a single string from
+  `{@list, @set, @index, @language}` — array containers and the 1.1
+  additions (`@id`/`@type`/`@graph`) are invalid (`#ter21`, `#tes01`).
+- A property-valued `@index` term definition requires 1.1 (`#tpi01`).
+- A document-relative or empty `@vocab` is invalid in 1.0 (`#t0115`/`#t0116`,
+  `#te115`/`#te116`).
+- A list whose members include a list object is a list of lists — rejected
+  in 1.0 (1.1 lifted the restriction) (`#ter24`, `#ter32`).
+
+### Added (error conditions, JSON-LD 1.1)
+
+- When a term is itself IRI-shaped (a colon other than first/last char, or a
+  slash), its IRI expansion must equal its `@id` mapping (§4.2.2). A keyword
+  `@id` (e.g. `@type`) can never equal an IRI term, so it is an invalid IRI
+  mapping. The check is 1.1-only: `#ter43` (1.1, error) and `#t0026` (1.0,
+  valid) share an input and differ only by mode. Simple terms (no colon/slash,
+  e.g. `type`) are unaffected, so 1.1 `@id: @type` aliases still work
+  (`#tc0073`).
+
+### Consumer impact
+
+Additive. The new parameter is optional and defaults to 1.1, so existing
+callers are unchanged. Characterization fixtures byte-identical, unit suite
+green (187). VC stays pinned at `^0.1.1`.
+
 ## [0.22.0] - 2026-06-06
 
 Term-definition IRI-mapping validation (the `@type` / bare-term / keyword-alias

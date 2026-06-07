@@ -38,9 +38,9 @@ final class JsonLdProcessor implements Processor
         private readonly DocumentLoader $documentLoader,
     ) {}
 
-    public function expand(array $document, ?string $base = null): ExpandedDocument
+    public function expand(array $document, ?string $base = null, ?string $processingMode = null): ExpandedDocument
     {
-        $contextProcessor = new ContextProcessor($document, $this->documentLoader, $base);
+        $contextProcessor = new ContextProcessor($document, $this->documentLoader, $base, $processingMode);
 
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);
@@ -78,7 +78,7 @@ final class JsonLdProcessor implements Processor
         return new CompactedDocument($compacted);
     }
 
-    public function toRdf(array $document, ?string $base = null): RdfDataset
+    public function toRdf(array $document, ?string $base = null, ?string $processingMode = null): RdfDataset
     {
         // A missing @context is tolerated for toRdf: documents that address
         // their predicates with full IRIs need no context. Inject an empty
@@ -89,7 +89,7 @@ final class JsonLdProcessor implements Processor
             $documentForContext['@context'] = [];
         }
 
-        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $base);
+        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $base, $processingMode);
 
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);

@@ -28,11 +28,17 @@ interface Processor
      *                             document's URL). `@base` in the context
      *                             overrides it. Null disables document-relative
      *                             resolution.
+     * @param  string|null  $processingMode  The JSON-LD processing mode
+     *                                       ("json-ld-1.0" or "json-ld-1.1").
+     *                                       Null defaults to "json-ld-1.1". A
+     *                                       context `@version: 1.1` under a
+     *                                       1.0 mode raises a processing mode
+     *                                       conflict.
      *
      * @throws JsonLdException When `@context` is missing or any sub-algorithm
      *                         raises.
      */
-    public function expand(array $document, ?string $base = null): ExpandedDocument;
+    public function expand(array $document, ?string $base = null, ?string $processingMode = null): ExpandedDocument;
 
     /**
      * Compact an expanded JSON-LD document against the given context.
@@ -59,8 +65,11 @@ interface Processor
      * @param  array<array-key, mixed>  $document  A JSON-LD document.
      * @param  string|null  $base  Initial base IRI for document-relative
      *                             resolution (typically the document's URL).
+     * @param  string|null  $processingMode  The JSON-LD processing mode
+     *                                       ("json-ld-1.0" or "json-ld-1.1").
+     *                                       Null defaults to "json-ld-1.1".
      *
      * @throws JsonLdException
      */
-    public function toRdf(array $document, ?string $base = null): RdfDataset;
+    public function toRdf(array $document, ?string $base = null, ?string $processingMode = null): RdfDataset;
 }

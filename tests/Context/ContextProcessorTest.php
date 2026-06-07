@@ -253,3 +253,52 @@ describe('@protected term enforcement', function () {
             ->toBe(['@id' => 'https://example.com/redefined']);
     });
 });
+
+describe('ContextProcessor processing-mode gates', function () {
+    $in10 = function (array $context) {
+        return fn () => new ContextProcessor(
+            ['@context' => $context, 'id' => 'urn:1'],
+            new StubDocumentLoader,
+            null,
+            'json-ld-1.0',
+        );
+    };
+
+    it('rejects @version: 1.1 under processingMode json-ld-1.0 (processing mode conflict)', function () use ($in10) {
+        expect($in10(['@version' => 1.1]))
+            ->toThrow(JsonLdException::class, 'processing mode conflict');
+    });
+
+    it('rejects @propagate in JSON-LD 1.0', function () use ($in10) {
+        expect($in10(['@propagate' => true]))
+            ->toThrow(JsonLdException::class, 'invalid context entry');
+    });
+
+    it('rejects @import in JSON-LD 1.0', function () use ($in10) {
+        expect($in10(['@import' => 'ctx.jsonld']))
+            ->toThrow(JsonLdException::class, 'invalid context entry');
+    });
+
+    it('rejects a @type keyword redefinition in JSON-LD 1.0', function () use ($in10) {
+        expect($in10(['@type' => ['@container' => '@set']]))
+            ->toThrow(JsonLdException::class, 'keyword redefinition');
+    });
+
+    it('rejects an empty @vocab in JSON-LD 1.0', function () use ($in10) {
+        expect($in10(['@base' => 'http://example.com/', '@vocab' => '']))
+            ->toThrow(JsonLdException::class, 'invalid vocab mapping');
+    });
+
+    it('rejects a relative @vocab in JSON-LD 1.0', function () use ($in10) {
+        expect($in10(['@vocab' => '/relative']))
+            ->toThrow(JsonLdException::class, 'invalid vocab mapping');
+    });
+
+    it('allows @version: 1.1 / @propagate / a vocab under the default 1.1 mode', function () {
+        $processor = new ContextProcessor(
+            ['@context' => ['@version' => 1.1, '@propagate' => true, '@vocab' => 'http://example.com/'], 'id' => 'urn:1'],
+            new StubDocumentLoader,
+        );
+        expect($processor->getTermDefinitions()->getProcessingMode())->toBe('json-ld-1.1');
+    });
+});
