@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-06-07
+
+Container expansion: the `@graph` container family, map-container `@none`
+handling, and tolerance of a missing `@context` on `expand()`.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.23.0:      284      101      355      740
+v0.24.0:      309      101      375      785   (+25 expand, +20 toRdf)
+```
+
+### Fixed / Added
+
+- `expand()` now tolerates a missing `@context` (the document expands
+  against an empty active context, mirroring `toRdf()`), instead of
+  throwing "Missing @context". A document without `@context` is valid.
+- Plain `@graph` container: each top-level element of the value is wrapped
+  in its OWN graph object (multiple objects produce multiple separate
+  `{@graph: […]}` objects, and an already-graph element is wrapped one
+  further level), per §5.5.
+- Combined containers `[@graph, @index]`, `[@graph, @id]`, and
+  `[@graph, @type]`: each map entry's expansion is wrapped in a graph
+  object first, then the `@index` (key) / `@id` (expanded key) / `@type`
+  (expanded key) is attached as a sibling of `@graph`. An entry that is
+  already a graph object is not re-wrapped.
+- Map-container `@none`: a map key whose IRI expansion is `@none` (the
+  literal keyword OR an alias of it) no longer attaches `@index` / `@id` /
+  `@type` / `@language` metadata — the previous code only recognised the
+  literal string `"@none"`. Applies to `@index`, `@id`, `@type`, and
+  `@language` maps.
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (192).
+VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+`@graph`/map cases needing the type-scoped "map context" step
+(`#tm008`/`#tm017`), property-valued index into a graph object (`#tpi11`),
+and `@type: @none` value coercion (`#ttn02`) remain — separate clusters.
+
 ## [0.23.0] - 2026-06-07
 
 Processing-mode (JSON-LD 1.0 / 1.1) threading. The effective mode is now

@@ -1432,11 +1432,41 @@ class Expansion
      * @param  array<array-key, mixed>|null  $termDef
      * @return list<mixed>|null
      */
+    /**
+     * §5.5 — wrap an expanded map entry in a graph object unless it already is
+     * one. Used by the combined `[@graph, @index]` / `[@graph, @id]` /
+     * `[@graph, @type]` map cases (the spec's "and item is not a graph object"
+     * guard, which prevents double-wrapping a value that is already a graph
+     * object). The plain `@graph` container (see {@see expandGraphContainer})
+     * wraps unconditionally and does NOT use this helper.
+     *
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    private function wrapAsGraphObject(array $item): array
+    {
+        if (array_key_exists(Keyword::Graph->value, $item)) {
+            return $item;
+        }
+
+        return [Keyword::Graph->value => [$item]];
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null  $termDef
+     * @return list<mixed>|null
+     */
     private function expandContainerValue(string $key, mixed $value, ?array $termDef): ?array
     {
         if ($termDef === null || ! isset($termDef['@container'])) {
             return null;
         }
+
+        // A container may combine @graph with @index / @id / @type (e.g.
+        // ["@graph", "@index"]). When @graph is present alongside a map
+        // container, each map entry's expansion is additionally wrapped in a
+        // graph object before the @index / @id / @type metadata is attached.
+        $wrapGraph = $this->hasContainer($termDef, Keyword::Graph->value);
 
         // @language map: {en: "hi", fr: "salut"} → list of value objects with @language.
         if ($this->hasContainer($termDef, Keyword::Language->value) && is_array($value) && ! array_is_list($value)) {
@@ -1445,21 +1475,22 @@ class Expansion
 
         // @index map: {first: ..., second: ...} → list of expanded nodes with @index.
         if ($this->hasContainer($termDef, Keyword::Index->value) && is_array($value) && ! array_is_list($value)) {
-            return $this->expandIndexMap($key, $value);
+            return $this->expandIndexMap($key, $value, $wrapGraph);
         }
 
         // @id map: {"urn:1": {...}, "urn:2": {...}} → list of nodes with @id set.
         if ($this->hasContainer($termDef, Keyword::Id->value) && is_array($value) && ! array_is_list($value)) {
-            return $this->expandIdMap($key, $value);
+            return $this->expandIdMap($key, $value, $wrapGraph);
         }
 
         // @type map: {Person: {...}, Animal: {...}} → list of nodes with @type set.
         if ($this->hasContainer($termDef, Keyword::Type->value) && is_array($value) && ! array_is_list($value)) {
-            return $this->expandTypeMap($key, $value);
+            return $this->expandTypeMap($key, $value, $wrapGraph);
         }
 
-        // @graph container: value is wrapped in a graph object.
-        if ($this->hasContainer($termDef, Keyword::Graph->value)) {
+        // @graph container (graph-only or [@graph, @set]): value is wrapped in
+        // a graph object, per element.
+        if ($wrapGraph) {
             return $this->expandGraphContainer($key, $value);
         }
 
@@ -1479,6 +1510,11 @@ class Expansion
             if (! is_string($language)) {
                 continue;
             }
+            // A key whose IRI expansion is @none (the literal keyword or an
+            // alias of it) produces value objects with no @language.
+            $langIsNone = $language === Keyword::None->value
+                || $this->expandIri($language, vocab: true) === Keyword::None->value;
+
             // Each entry can be a single string or a list of strings.
             $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
             foreach ($items as $item) {
@@ -1489,7 +1525,7 @@ class Expansion
                     throw new JsonLdException('Invalid language map value: values must be strings');
                 }
                 $valueObject = [Keyword::Value->value => $item];
-                if ($language !== Keyword::None->value) {
+                if (! $langIsNone) {
                     $valueObject[Keyword::Language->value] = $language;
                 }
                 ksort($valueObject);
@@ -1506,7 +1542,7 @@ class Expansion
      * @param  array<array-key, mixed>  $map
      * @return list<mixed>
      */
-    private function expandIndexMap(string $activeProperty, array $map): array
+    private function expandIndexMap(string $activeProperty, array $map, bool $wrapGraph): array
     {
         // Property-valued index (§5.5): when the active property's term sets
         // @index to a property IRI (rather than the @index keyword), each map
@@ -1516,7 +1552,9 @@ class Expansion
         $indexKey = is_array($termDef) && isset($termDef[Keyword::Index->value]) && is_string($termDef[Keyword::Index->value])
             ? $termDef[Keyword::Index->value]
             : Keyword::Index->value;
-        $indexProperty = $indexKey !== Keyword::Index->value
+        // A property-valued index does not apply when the container also wraps
+        // entries in a graph object — there is no node to carry the property.
+        $indexProperty = ($indexKey !== Keyword::Index->value && ! $wrapGraph)
             ? $this->expandIri($indexKey, vocab: true)
             : null;
 
@@ -1525,6 +1563,10 @@ class Expansion
             if (! is_string($index)) {
                 continue;
             }
+            // A key whose IRI expansion is @none (the literal keyword or an
+            // alias of it) carries no @index metadata.
+            $indexIsNone = $this->expandIri($index, vocab: true) === Keyword::None->value;
+
             $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
             foreach ($items as $item) {
                 $expanded = $this->expandElement($item, $activeProperty);
@@ -1533,22 +1575,29 @@ class Expansion
                 }
                 $list = array_is_list($expanded) ? $expanded : [$expanded];
                 foreach ($list as $expandedItem) {
-                    if (is_array($expandedItem) && ! array_is_list($expandedItem) && $index !== Keyword::None->value) {
+                    if (is_array($expandedItem) && ! array_is_list($expandedItem)) {
                         /** @var array<string, mixed> $expandedItem */
-                        if ($indexProperty !== null) {
-                            // A property-valued index entry must expand to a
-                            // node object, never a value object.
-                            if (array_key_exists(Keyword::Value->value, $expandedItem)) {
-                                throw new JsonLdException('Invalid value object: a property-valued index entry must be a node object');
+                        // Graph-wrap first (combined [@graph, @index]); the
+                        // @index metadata then lands as a sibling of @graph.
+                        if ($wrapGraph) {
+                            $expandedItem = $this->wrapAsGraphObject($expandedItem);
+                        }
+                        if (! $indexIsNone) {
+                            if ($indexProperty !== null) {
+                                // A property-valued index entry must expand to a
+                                // node object, never a value object.
+                                if (array_key_exists(Keyword::Value->value, $expandedItem)) {
+                                    throw new JsonLdException('Invalid value object: a property-valued index entry must be a node object');
+                                }
+                                $indexValue = $this->expandValue($indexKey, $index);
+                                $existing = isset($expandedItem[$indexProperty]) && is_array($expandedItem[$indexProperty])
+                                    ? $expandedItem[$indexProperty]
+                                    : [];
+                                array_unshift($existing, $indexValue);
+                                $expandedItem[$indexProperty] = $existing;
+                            } else {
+                                $expandedItem[Keyword::Index->value] = $index;
                             }
-                            $indexValue = $this->expandValue($indexKey, $index);
-                            $existing = isset($expandedItem[$indexProperty]) && is_array($expandedItem[$indexProperty])
-                                ? $expandedItem[$indexProperty]
-                                : [];
-                            array_unshift($existing, $indexValue);
-                            $expandedItem[$indexProperty] = $existing;
-                        } else {
-                            $expandedItem[Keyword::Index->value] = $index;
                         }
                         ksort($expandedItem);
                     }
@@ -1566,13 +1615,17 @@ class Expansion
      * @param  array<array-key, mixed>  $map
      * @return list<mixed>
      */
-    private function expandIdMap(string $activeProperty, array $map): array
+    private function expandIdMap(string $activeProperty, array $map, bool $wrapGraph): array
     {
         $result = [];
         foreach ($map as $id => $entry) {
             if (! is_string($id)) {
                 continue;
             }
+            // A key whose IRI expansion is @none (the literal keyword or an
+            // alias of it) carries no @id metadata.
+            $idIsNone = $this->expandIri($id, vocab: true) === Keyword::None->value;
+
             $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
             foreach ($items as $item) {
                 $expanded = $this->expandElement($item, $activeProperty);
@@ -1581,13 +1634,20 @@ class Expansion
                 }
                 $list = array_is_list($expanded) ? $expanded : [$expanded];
                 foreach ($list as $expandedItem) {
-                    if (is_array($expandedItem) && ! array_is_list($expandedItem) && $id !== Keyword::None->value) {
+                    if (is_array($expandedItem) && ! array_is_list($expandedItem)) {
                         /** @var array<string, mixed> $expandedItem */
-                        $expandedId = $this->expandIri($id, documentRelative: true);
-                        if ($expandedId !== null) {
-                            $expandedItem[Keyword::Id->value] = $expandedId;
-                            ksort($expandedItem);
+                        // Graph-wrap first (combined [@graph, @id]); the @id
+                        // then lands as a sibling of @graph.
+                        if ($wrapGraph) {
+                            $expandedItem = $this->wrapAsGraphObject($expandedItem);
                         }
+                        if (! $idIsNone) {
+                            $expandedId = $this->expandIri($id, documentRelative: true);
+                            if ($expandedId !== null) {
+                                $expandedItem[Keyword::Id->value] = $expandedId;
+                            }
+                        }
+                        ksort($expandedItem);
                     }
                     $result[] = $expandedItem;
                 }
@@ -1603,13 +1663,18 @@ class Expansion
      * @param  array<array-key, mixed>  $map
      * @return list<mixed>
      */
-    private function expandTypeMap(string $activeProperty, array $map): array
+    private function expandTypeMap(string $activeProperty, array $map, bool $wrapGraph): array
     {
         $result = [];
         foreach ($map as $type => $entry) {
             if (! is_string($type)) {
                 continue;
             }
+            // A key whose IRI expansion is @none (the literal keyword or an
+            // alias of it) carries no @type metadata.
+            $expandedType = $this->expandIri($type, vocab: true);
+            $typeIsNone = $expandedType === Keyword::None->value;
+
             $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
             foreach ($items as $item) {
                 $expanded = $this->expandElement($item, $activeProperty);
@@ -1618,17 +1683,19 @@ class Expansion
                 }
                 $list = array_is_list($expanded) ? $expanded : [$expanded];
                 foreach ($list as $expandedItem) {
-                    if (is_array($expandedItem) && ! array_is_list($expandedItem) && $type !== Keyword::None->value) {
+                    if (is_array($expandedItem) && ! array_is_list($expandedItem)) {
                         /** @var array<string, mixed> $expandedItem */
-                        $expandedType = $this->expandIri($type, vocab: true);
-                        if ($expandedType !== null) {
+                        if ($wrapGraph) {
+                            $expandedItem = $this->wrapAsGraphObject($expandedItem);
+                        }
+                        if (! $typeIsNone && $expandedType !== null) {
                             $existing = isset($expandedItem[Keyword::Type->value]) && is_array($expandedItem[Keyword::Type->value])
                                 ? $expandedItem[Keyword::Type->value]
                                 : [];
                             array_unshift($existing, $expandedType);
                             $expandedItem[Keyword::Type->value] = $existing;
-                            ksort($expandedItem);
                         }
+                        ksort($expandedItem);
                     }
                     $result[] = $expandedItem;
                 }
@@ -1650,9 +1717,18 @@ class Expansion
         if ($expanded === null) {
             return [];
         }
-        $graphContent = array_is_list($expanded) ? $expanded : [$expanded];
+        $elements = array_is_list($expanded) ? $expanded : [$expanded];
 
-        return [[Keyword::Graph->value => $graphContent]];
+        // §5.5 step 13.11: each top-level element is wrapped in its OWN graph
+        // object, unconditionally — an element that is already a graph object
+        // is wrapped one further level. (Multiple objects therefore become
+        // multiple separate {@graph: […]} objects, not one shared graph.)
+        $result = [];
+        foreach ($elements as $element) {
+            $result[] = [Keyword::Graph->value => is_array($element) && array_is_list($element) ? $element : [$element]];
+        }
+
+        return $result;
     }
 
     /**

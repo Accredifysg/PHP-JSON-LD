@@ -238,3 +238,57 @@ describe('scoped context propagation', function () {
         ]))->toThrow(JsonLdException::class, 'Protected term redefinition');
     });
 });
+
+describe('@graph and map container expansion', function () {
+    $expand = function (array $doc): array {
+        return (new JsonLdProcessor(new StubDocumentLoader))->expand($doc)->toArray();
+    };
+
+    it('wraps each element of a plain @graph container in its own graph object', function () use ($expand) {
+        // Two objects → two SEPARATE {@graph:[…]} objects (not one shared graph).
+        $result = $expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/', 'input' => ['@container' => '@graph']],
+            'input' => [['value' => 'x'], ['value' => 'y']],
+        ]);
+        $graphs = $result[0]['http://example.org/input'] ?? [];
+        expect($graphs)->toHaveCount(2);
+        expect($graphs[0])->toHaveKey('@graph');
+        expect($graphs[1])->toHaveKey('@graph');
+    });
+
+    it('combines [@graph, @index]: each entry carries @index alongside @graph', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/', 'input' => ['@container' => ['@graph', '@index']]],
+            'input' => ['g1' => ['value' => 'x']],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@index":"g1"');
+        expect($json)->toContain('"@graph"');
+    });
+
+    it('combines [@graph, @id]: each entry carries the expanded @id alongside @graph', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/', 'input' => ['@container' => ['@graph', '@id']]],
+            'input' => ['http://example.org/g1' => ['value' => 'x']],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@id":"http://example.org/g1"');
+        expect($json)->toContain('"@graph"');
+    });
+
+    it('drops the @id for a literal @none key in an @id map', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/', 'input' => ['@container' => '@id']],
+            'input' => ['@none' => ['value' => 'x']],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->not->toContain('"@id":"@none"');
+        expect($json)->toContain('http://example.org/value');
+    });
+
+    it('drops the @id for an aliased @none key in an @id map', function () use ($expand) {
+        // "none" is a term aliasing @none; the id map must not attach @id:@none.
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/', 'none' => '@none', 'input' => ['@container' => '@id']],
+            'input' => ['none' => ['value' => 'x']],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->not->toContain('@none');
+    });
+});

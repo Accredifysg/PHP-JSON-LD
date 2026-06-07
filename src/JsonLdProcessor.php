@@ -40,7 +40,17 @@ final class JsonLdProcessor implements Processor
 
     public function expand(array $document, ?string $base = null, ?string $processingMode = null): ExpandedDocument
     {
-        $contextProcessor = new ContextProcessor($document, $this->documentLoader, $base, $processingMode);
+        // A missing @context is valid: the document expands against an empty
+        // active context (full-IRI properties survive, unmapped terms drop).
+        // Inject an empty one so ContextProcessor (which requires the key)
+        // does not reject the document. (§5.1 — expand has no @context
+        // precondition; toRdf relies on the same tolerance.)
+        $documentForContext = $document;
+        if (! isset($documentForContext['@context'])) {
+            $documentForContext['@context'] = [];
+        }
+
+        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $base, $processingMode);
 
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);

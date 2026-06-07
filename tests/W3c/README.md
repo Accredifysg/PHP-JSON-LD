@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    284 passed / 101 failed (v0.23.0)
-Compaction:   101 passed / 145 failed (v0.23.0)
-toRdf:        355 passed / 112 failed (v0.23.0)
+Expansion:    309 passed /  76 failed (v0.24.0)
+Compaction:   101 passed / 145 failed (v0.24.0)
+toRdf:        375 passed /  92 failed (v0.24.0)
 ```
 
 Each Phase 4 PR:
@@ -87,6 +87,7 @@ Each Phase 4 PR:
 | v0.21.0 |          271  |    +5  | scoped remote/@import contexts + relative context refs|
 | v0.22.0 |          275  |    +4  | term-def IRI-mapping validation (@type, bare term, @context alias)|
 | v0.23.0 |          284  |    +9  | processing-mode (1.0/1.1) threading + gates (+9 toRdf too)|
+| v0.24.0 |          309  |   +25  | container expansion: @graph family, map @none, missing-@context (+20 toRdf too)|
 
 ### Notes on v0.4.0
 

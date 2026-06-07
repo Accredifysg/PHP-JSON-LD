@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Accredify\JsonLd\Documents\ExpandedDocument;
-use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\JsonLdProcessor;
 use Accredify\JsonLd\Tests\Context\Support\StubDocumentLoader;
 
@@ -38,12 +37,14 @@ describe('JsonLdProcessor::expand', function () {
         expect($result->toArray())->not->toHaveKey('@context');
     });
 
-    it('propagates JsonLdException from missing @context', function () {
+    it('tolerates a missing @context (expands against an empty active context)', function () {
+        // A document without @context is valid: it expands against an empty
+        // active context. Here "id" is unmapped (no term, no @vocab) so it
+        // drops, leaving a free-floating node that is itself dropped → [].
         $loader = new StubDocumentLoader;
         $processor = new JsonLdProcessor($loader);
 
-        expect(fn () => $processor->expand(['id' => 'urn:1']))
-            ->toThrow(JsonLdException::class, 'Missing @context');
+        expect($processor->expand(['id' => 'urn:1'])->toArray())->toBe([]);
     });
 
     it('passes the injected DocumentLoader through to ContextProcessor', function () {
