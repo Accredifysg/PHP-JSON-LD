@@ -291,4 +291,24 @@ describe('JsonLdProcessor::compact', function () {
         $result = compactWith($expanded, $context);
         expect($result['foo'])->toBe(['bar' => 'http://example/baz']);
     });
+
+    it('applies a type-scoped @context coercion to the typed node', function () {
+        $expanded = [['@type' => ['http://example/Foo'], 'http://example/ref' => [['@id' => 'http://example/x']]]];
+        $context = ['@vocab' => 'http://example/', 'Foo' => ['@context' => ['ref' => ['@type' => '@id']]]];
+        $result = compactWith($expanded, $context);
+        // Inside Foo, ref coerces to @id, so the node reference collapses to a bare IRI.
+        expect($result['ref'])->toBe('http://example/x');
+    });
+
+    it('does not propagate a type-scoped @context into nested node objects', function () {
+        // #tc009: a type-scoped @context affects the typed node, not nested nodes.
+        $expanded = [[
+            '@type' => ['http://example/Foo'],
+            'http://example/bar' => [['http://example/baz' => [['@id' => 'http://example/buzz']]]],
+        ]];
+        $context = ['@vocab' => 'http://example/', 'Foo' => ['@context' => ['baz' => ['@type' => '@vocab']]]];
+        $json = json_encode(compactWith($expanded, $context), JSON_UNESCAPED_SLASHES);
+        // baz inside the nested node is NOT @vocab-coerced (so the ref stays {@id}).
+        expect($json)->toContain('"@id":"http://example/buzz"');
+    });
 });

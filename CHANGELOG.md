@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-06-08
+
+Compaction algorithm buildout, phase 5: type-scoped contexts (with
+non-propagation).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.31.0:      310      172      386      868
+v0.32.0:      310      178      386      874   (+6 compact)
+```
+
+### Added (compaction)
+
+- Type-scoped `@context`: each of a node's `@type` values is compacted to a
+  term and, if that term carries an inline `@context`, it is activated (in
+  lexicographic order of the type IRI) before the node's keys/values compact,
+  then rolled back. This lets a type's context nullify/redefine terms for
+  just that node (`#tc006`–`#tc008`, `#tc010`, `#tc012`, `#tc020`–`#tc023`,
+  `#tc025`, `#tpr05`).
+- Non-propagation: a type-scoped context does NOT flow into nested node
+  objects (a new node object rolls back to the pre-activation context, via a
+  `previousContext` snapshot), while value objects and bare `@id` references
+  keep it (`#tc009`).
+
+### Consumer impact
+
+Additive (compaction-only). Expansion and toRdf unchanged. Characterization
+fixtures byte-identical, unit suite green (219). VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+The combined type-scoped + property-scoped cases (`#tc013`/`#tc019`/`#tc026`)
+need property-scoped contexts to propagate *through* the type-scoped
+non-propagation rollback — the full §5.5 propagate / previous-context
+mechanism — a following release.
+
 ## [0.31.0] - 2026-06-08
 
 `JsonLdOptions` value object (PR 4.5) — the canonical JSON-LD 1.1 API options

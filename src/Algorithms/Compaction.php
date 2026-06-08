@@ -57,6 +57,16 @@ class Compaction
      */
     private array $reverseInverse = [];
 
+    /**
+     * Snapshot of the active context + inverse to roll back to when entering a
+     * NEW node object — set when a non-propagating type-scoped context is
+     * activated (§5.6: type-scoped contexts do not propagate into nested node
+     * objects). Null when no rollback is pending.
+     *
+     * @var array{context: TermDefinitions, inverse: array<string, list<array{term: string, def: array<array-key, mixed>}>>, reverse: array<string, string>}|null
+     */
+    private ?array $previousContext = null;
+
     public function __construct(private TermDefinitions $activeContext)
     {
         $this->buildInverse();
@@ -254,6 +264,38 @@ class Compaction
             return [$this->compactIri(Keyword::List->value, vocab: true) => $asArray];
         }
 
+        // A new node object resets a non-propagating type-scoped context that
+        // an ancestor activated (§5.6 — type-scoped contexts do not propagate
+        // into nested node objects). Value objects / bare @id references
+        // (handled above) are NOT node objects and keep the scoped context.
+        $isNodeObject = ! array_key_exists(Keyword::Value->value, $node)
+            && ! (isset($node[Keyword::Id->value]) && count($node) === 1);
+
+        $savedPrevious = $this->previousContext;
+        if ($isNodeObject && $this->previousContext !== null) {
+            $this->activeContext = $this->previousContext['context'];
+            $this->inverse = $this->previousContext['inverse'];
+            $this->reverseInverse = $this->previousContext['reverse'];
+            $this->previousContext = null;
+        }
+
+        // Type-scoped contexts (§5.6): activate the scoped @context of each of
+        // the node's types (each type compacted to a term, in lexicographic
+        // order of the type IRI) before the node's own keys/values compact.
+        // Non-propagating: record the pre-activation context so nested node
+        // objects roll back to it.
+        $typeContexts = $this->nodeTypeScopedContexts($node);
+        $tsSavedContext = $typeContexts !== [] ? $this->activeContext : null;
+        $tsSavedInverse = $typeContexts !== [] ? $this->inverse : null;
+        $tsSavedReverse = $typeContexts !== [] ? $this->reverseInverse : null;
+        if ($typeContexts !== []) {
+            $preActivation = ['context' => $this->activeContext, 'inverse' => $this->inverse, 'reverse' => $this->reverseInverse];
+            foreach ($typeContexts as $scoped) {
+                $this->activateScopedContext($scoped);
+            }
+            $this->previousContext = $preActivation;
+        }
+
         $result = [];
         foreach ($node as $key => $value) {
             if (! is_string($key)) {
@@ -386,7 +428,46 @@ class Compaction
             }
         }
 
+        // Roll back any type-scoped context activated for this node, and
+        // restore the inherited rollback snapshot.
+        if ($tsSavedContext !== null) {
+            $this->activeContext = $tsSavedContext;
+            $this->inverse = $tsSavedInverse ?? [];
+            $this->reverseInverse = $tsSavedReverse ?? [];
+        }
+        $this->previousContext = $savedPrevious;
+
         return $result;
+    }
+
+    /**
+     * Returns the inline type-scoped `@context` maps for a node's `@type`
+     * values: each type is compacted to a term and, if that term carries an
+     * inline `@context`, it is collected — in lexicographic order of the type
+     * IRI (§5.6 / §4.3). Computed against the pre-activation context.
+     *
+     * @param  array<array-key, mixed>  $node
+     * @return list<array<array-key, mixed>>
+     */
+    private function nodeTypeScopedContexts(array $node): array
+    {
+        $types = $node[Keyword::Type->value] ?? null;
+        if ($types === null) {
+            return [];
+        }
+        $types = is_array($types) && array_is_list($types) ? $types : [$types];
+        $typeIris = array_values(array_filter($types, 'is_string'));
+        sort($typeIris, SORT_STRING);
+
+        $out = [];
+        foreach ($typeIris as $typeIri) {
+            $def = $this->activeContext->getTermDefinition($this->compactIri($typeIri, vocab: true));
+            if (is_array($def) && array_key_exists(Keyword::Context->value, $def) && is_array($def[Keyword::Context->value])) {
+                $out[] = $def[Keyword::Context->value];
+            }
+        }
+
+        return $out;
     }
 
     /**
