@@ -289,3 +289,19 @@ describe('@graph and map container expansion', function () {
         expect($json)->not->toContain('@none');
     });
 });
+
+describe('expansion validation gates', function () {
+    $expand = function (array $doc): array {
+        return (new JsonLdProcessor(new StubDocumentLoader))->expand($doc)->toArray();
+    };
+
+    it('rejects a @reverse map whose key is a keyword (#ter25)', function () use ($expand) {
+        expect(fn () => $expand(['@id' => 'http://example/foo', '@reverse' => ['@id' => 'http://example/bar']]))
+            ->toThrow(JsonLdException::class, 'Invalid reverse property map');
+    });
+
+    it('rejects a @list object carrying another key, e.g. @id (#ter41)', function () use ($expand) {
+        expect(fn () => $expand(['http://example/prop' => ['@list' => ['foo'], '@id' => 'http://example/bar']]))
+            ->toThrow(JsonLdException::class, 'Invalid set or list object');
+    });
+});

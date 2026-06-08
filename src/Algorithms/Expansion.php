@@ -488,8 +488,15 @@ class Expansion
         }
 
         // @list object: pass through as-is (the @list value itself was
-        // already expanded into a list of values).
+        // already expanded into a list of values). A @list object may only
+        // carry @list and @index; any other entry (e.g. @id) makes it an
+        // invalid set or list object (§5.5 step 13.4.4).
         if (isset($result[Keyword::List->value])) {
+            foreach (array_keys($result) as $resultKey) {
+                if ($resultKey !== Keyword::List->value && $resultKey !== Keyword::Index->value) {
+                    throw new JsonLdException('Invalid set or list object: a @list object may only contain @list and @index');
+                }
+            }
             ksort($result);
 
             return $result;
@@ -906,7 +913,18 @@ class Expansion
         }
 
         foreach ($expanded as $prop => $items) {
-            if (! is_string($prop) || ! is_array($items)) {
+            if (! is_string($prop)) {
+                continue;
+            }
+
+            // A @reverse map may only contain reverse properties (and a nested
+            // @reverse). Any other keyword (e.g. @id, @value) means the map was
+            // not a valid reverse property map (§5.5 step 13.7).
+            if (str_starts_with($prop, '@') && $prop !== Keyword::Reverse->value) {
+                throw new JsonLdException("Invalid reverse property map: '{$prop}' is not a reverse property");
+            }
+
+            if (! is_array($items)) {
                 continue;
             }
 

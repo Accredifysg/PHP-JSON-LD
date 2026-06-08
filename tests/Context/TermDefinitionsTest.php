@@ -261,3 +261,22 @@ describe('TermDefinitions @type coercion resolution', function () {
             ->toThrow(JsonLdException::class, 'Invalid type mapping');
     });
 });
+
+describe('TermDefinitions structural validation gates', function () {
+    it('rejects a non-string @language mapping (#ter22)', function () {
+        expect(fn () => (new TermDefinitions)->addTermDefinition('term', ['@id' => 'http://example/term', '@language' => true]))
+            ->toThrow(JsonLdException::class, 'Invalid language mapping');
+    });
+
+    it('rejects @container combining @list with another container (#tes02)', function () {
+        expect(fn () => (new TermDefinitions)->addTermDefinition('term', ['@id' => 'http://example/term', '@container' => ['@list', '@set']]))
+            ->toThrow(JsonLdException::class, '@list may not be combined');
+    });
+
+    it('rejects @type: @none in JSON-LD 1.0 (#ttn01)', function () {
+        $defs = new TermDefinitions;
+        $defs->setProcessingMode('json-ld-1.0');
+        expect(fn () => $defs->addTermDefinition('notype', ['@id' => 'http://example/notype', '@type' => '@none']))
+            ->toThrow(JsonLdException::class, '@type @none requires JSON-LD 1.1');
+    });
+});

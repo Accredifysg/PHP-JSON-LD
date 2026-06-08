@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-06-08
+
+Expansion / term-definition validation gates (the shared expand+toRdf tail).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.33.0:      310      178      390      878
+v0.34.0:      315      178      394      887   (+5 expand, +4 toRdf)
+```
+
+### Added (error conditions)
+
+- A term `@language` coercion must be a string or null (`#ter22`).
+- `@container` may not combine `@list` with another container — `@list` is
+  exclusive (`#tes02`).
+- `@type: @none` is a JSON-LD 1.1 feature — invalid in 1.0 (`#ttn01`).
+- A `@reverse` map may only contain reverse properties (and a nested
+  `@reverse`); any other keyword key (e.g. `@id`) is an invalid reverse
+  property map (`#ter25`).
+- A `@list` object may only carry `@list` and `@index`; any other entry
+  (e.g. `@id`) is an invalid set or list object (`#ter41`).
+
+### Consumer impact
+
+Additive (error conditions only on already-invalid input). Characterization
+fixtures byte-identical, unit suite green (226). VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+The IRI-shaped-term consistency check (`#ter44`/`#ter48` — a colon/slash term's
+IRI expansion must equal its `@id`) needs full term-IRI expansion in
+`TermDefinitions`; the type-scoped *expansion* (`tc*`) and protected-override
+(`tpr*`) clusters remain.
+
 ## [0.33.0] - 2026-06-08
 
 `rdfDirection` toRdf serialisation modes.

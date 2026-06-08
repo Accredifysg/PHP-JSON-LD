@@ -381,12 +381,25 @@ class TermDefinitions
             throw new JsonLdException("Invalid @type in term '{$term}'");
         }
 
+        // @language coercion must be a string (a BCP47 tag) or null.
+        if (
+            array_key_exists(Keyword::Language->value, $definition)
+            && $definition[Keyword::Language->value] !== null
+            && ! is_string($definition[Keyword::Language->value])
+        ) {
+            throw new JsonLdException("Invalid language mapping in term '{$term}'");
+        }
+
         // A term-definition @type (type coercion) must be a keyword
         // (@id/@vocab/@json/@none) or resolve to an absolute IRI — not a blank
         // node, and not an unresolvable relative IRI (no @vocab to resolve a
         // bare value).
         if (isset($definition['@type']) && is_string($definition['@type'])) {
             $type = $definition['@type'];
+            // @type: @none is a JSON-LD 1.1 feature — invalid in 1.0.
+            if ($this->isJson10() && $type === Keyword::None->value) {
+                throw new JsonLdException("Invalid type mapping in term '{$term}': @type @none requires JSON-LD 1.1");
+            }
             $typeKeywords = [Keyword::Id->value, Keyword::Vocab->value, Keyword::Json->value, Keyword::None->value];
             if (! in_array($type, $typeKeywords, true)) {
                 // A bare @type (no colon) resolves to an IRI through the active
@@ -455,6 +468,12 @@ class TermDefinitions
                     $repr = is_string($entry) ? $entry : gettype($entry);
                     throw new JsonLdException("Invalid @container in term '{$term}': {$repr}");
                 }
+            }
+
+            // @list is exclusive: it may not be combined with another container
+            // (e.g. ["@list", "@set"] is an invalid container mapping).
+            if (is_array($container) && in_array(Keyword::List->value, $container, true) && count($container) > 1) {
+                throw new JsonLdException("Invalid @container in term '{$term}': @list may not be combined with another container");
             }
         }
 
