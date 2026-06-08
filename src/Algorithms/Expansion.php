@@ -1582,7 +1582,7 @@ class Expansion
 
         // @language map: {en: "hi", fr: "salut"} → list of value objects with @language.
         if ($this->hasContainer($termDef, Keyword::Language->value) && is_array($value) && ! array_is_list($value)) {
-            return $this->expandLanguageMap($value);
+            return $this->expandLanguageMap($value, $termDef);
         }
 
         // @index map: {first: ..., second: ...} → list of expanded nodes with @index.
@@ -1613,10 +1613,16 @@ class Expansion
      * §5.5 step 13.4.7 — @language container.
      *
      * @param  array<array-key, mixed>  $map
+     * @param  array<array-key, mixed>|null  $termDef
      * @return list<array<string, mixed>>
      */
-    private function expandLanguageMap(array $map): array
+    private function expandLanguageMap(array $map, ?array $termDef = null): array
     {
+        // Each value object picks up the effective base @direction: the term's
+        // own @direction (an explicit null suppresses it) wins over the active
+        // context's default @direction (§5.5 step 13.4.7 / #tdi04/#tdi05/#tdi06).
+        $direction = $this->effectiveLanguageOrDirection($termDef, Keyword::Direction->value, $this->termDefinitions->getDefaultDirection());
+
         $result = [];
         foreach ($map as $language => $entry) {
             if (! is_string($language)) {
@@ -1639,6 +1645,9 @@ class Expansion
                 $valueObject = [Keyword::Value->value => $item];
                 if (! $langIsNone) {
                     $valueObject[Keyword::Language->value] = $language;
+                }
+                if (is_string($direction) && $direction !== '') {
+                    $valueObject[Keyword::Direction->value] = $direction;
                 }
                 ksort($valueObject);
                 $result[] = $valueObject;

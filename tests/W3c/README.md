@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    337 passed /  48 failed (v0.40.0)
-Compaction:   183 passed /  63 failed (v0.40.0)
-toRdf:        423 passed /  44 failed (v0.40.0)
+Expansion:    340 passed /  45 failed (v0.41.0)
+Compaction:   183 passed /  63 failed (v0.41.0)
+toRdf:        423 passed /  44 failed (v0.41.0)
 ```
 
 Each Phase 4 PR:
@@ -103,6 +103,8 @@ Each Phase 4 PR:
 | v0.37.0 |          329  |    +4  | cross-suite expansion: @type:@none, @type:@vocab doc-relative, @vocab:null reset, cyclic IRI (+4 toRdf)|
 | v0.38.0 |          330  |    +1  | RDF value canonicalization: strict node-map dedup, num≥1e21 double, null @json (+5 toRdf)|
 | v0.39.0 |          336  |    +6  | scoped-context expansion: @type pre-scoped context, propagate revert, scoped @base (+7 toRdf)|
+| v0.40.0 |          337  |    +1  | term @id materialisation from @vocab at definition time (#tc010/#tc005/#tc035) (+3 toRdf)|
+| v0.41.0 |          340  |    +3  | @direction in @language container maps (#tdi04/#tdi05/#tdi06)|
 
 ### Notes on v0.4.0
 

@@ -414,4 +414,23 @@ describe('expansion validation gates', function () {
         expect($json)->toContain('"http://example/B"')
             ->and($json)->not->toContain('http://example.com/B');
     });
+
+    it('applies the active @direction to @language-map values (#tdi04)', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@direction' => 'ltr', 'vocab' => 'http://example.com/vocab/', 'label' => ['@id' => 'vocab:label', '@container' => '@language']],
+            '@id' => 'http://example.com/queen',
+            'label' => ['en' => 'The Queen'],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@direction":"ltr"')
+            ->and($json)->toContain('"@language":"en"');
+    });
+
+    it('lets a term @direction:null suppress the default direction in a @language map (#tdi06)', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@direction' => 'ltr', 'vocab' => 'http://example.com/vocab/', 'label' => ['@id' => 'vocab:label', '@container' => '@language', '@direction' => null]],
+            '@id' => 'http://example.com/queen',
+            'label' => ['en' => 'The Queen'],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->not->toContain('@direction');
+    });
 });

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-06-09
+
+`@direction` in `@language` container maps during expansion.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.40.0:      337      183      423      943
+v0.41.0:      340      183      423      946   (+3 expand)
+```
+
+### Fixed (expansion)
+
+- Values produced from a `@language` container map now carry the effective
+  base `@direction` (`#tdi04` / `#tdi05` / `#tdi06`): the term's own
+  `@direction` (an explicit `null` suppresses it) takes precedence over the
+  active context's default `@direction`, matching how plain string values are
+  already handled.
+
+### Notes
+
+- The `[@graph, @id]` container expansion tests (`#t0085` / `#t0086` /
+  `#t0087`) were investigated and found to already pass the (key-blind) W3C
+  gate — their only difference from the expected output is `@id`/`@graph` key
+  order, which `toEqualCanonicalizing` discards. No change needed.
+
 ## [0.40.0] - 2026-06-09
 
 Term `@id` materialisation — the follow-up flagged in v0.39.0 (`#tc010`),
