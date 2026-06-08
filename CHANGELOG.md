@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-06-08
+
+Final conformance clusters: IRI-shaped-term consistency, protected-term
+override enforcement, and property/type-scoped context propagation in
+compaction. Designed from a spec + current-code + per-fixture workflow pass.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.34.0:      315      178      394      887
+v0.35.0:      324      181      403      908   (+9 expand, +3 compact, +9 toRdf)
+```
+
+### Added (error conditions)
+
+- IRI-shaped-term consistency (§4.2.2): when a term contains a colon
+  (other than first/last) or a slash and its `@id` differs from the term,
+  the term's IRI expansion must equal its `@id` mapping — else an invalid
+  IRI mapping. Subsumes the previous keyword-only check (`#ter43`/`#ter44`/
+  `#ter48`). New `localExpandIri()` helper (prefix + vocab expansion).
+- Protected-term override enforcement:
+  - `@prefix` may not be set on a keyword-alias term (`#tpr33`).
+  - a `null` term defined inside a `@protected` context retains protection,
+    so a later non-override redefinition is rejected (`#tpr28`).
+  - a type-scoped `@context` (override-protected = false), including its
+    list/`null` layers, may not clear/redefine protected terms — a `null`
+    layer over protected terms is an invalid context nullification
+    (`#tpr17`/`#tpr18`/`#tpr20`/`#tpr21`; also fixes `#tc017`).
+
+### Fixed (compaction)
+
+- Property-scoped contexts now propagate into nested node objects even when
+  a type-scoped context is active (the type-scoped non-propagation rollback
+  no longer discards the property-scoped overlay), while `@propagate:false`
+  still confines a property-scoped context and `@propagate:true` lets a
+  type-scoped one flow in (`#tc013`/`#tc019`/`#tc026`).
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (230).
+VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+`#tpr32` (protected `@type` keyword redefinition) needs un-skipping `@type`
+in `ContextProcessor::mergeContexts` — a hot-path structural change, separate
+commit. `#tc024` needs `@base`/`@vocab` application in scoped contexts during
+compaction. The VC RDFC-10 / ecdsa-sd migration (PR 3.4) remains an
+owner-sign-off, crypto-signature-regenerating change.
+
 ## [0.34.0] - 2026-06-08
 
 Expansion / term-definition validation gates (the shared expand+toRdf tail).

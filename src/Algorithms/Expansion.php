@@ -1332,15 +1332,30 @@ class Expansion
                 }
             }
 
-            // Type-scoped contexts may NOT redefine protected terms
-            // (override-protected = false). A remote / @import-bearing type
-            // context is resolved through the loader first.
-            if (is_string($typeContext) || array_key_exists(Keyword::Import->value, $typeContext)) {
-                foreach ($this->resolveRemoteContext($typeContext) as $term => $definition) {
-                    $this->overlayContextOnto($scoped, [$term => $definition], false);
+            // Type-scoped contexts may NOT redefine/clear protected terms
+            // (override-protected = false). A context may be a single map, a
+            // remote IRI, or a LIST of layers (e.g. [null, {...}]); process each
+            // layer. A remote / @import-bearing layer is resolved first.
+            $layers = is_array($typeContext) && array_is_list($typeContext) ? $typeContext : [$typeContext];
+            foreach ($layers as $layer) {
+                if ($layer === null) {
+                    // A null layer resets the context. Since override-protected
+                    // is false, nulling a context that still has protected terms
+                    // is an invalid nullification (#tpr17/#tpr18/#tpr20/#tpr21).
+                    if ($scoped->hasAnyProtected()) {
+                        throw new JsonLdException('Invalid context nullification: a type-scoped context may not clear protected terms');
+                    }
+                    $scoped = new TermDefinitions;
+
+                    continue;
                 }
-            } else {
-                $this->overlayContextOnto($scoped, $typeContext, overrideProtected: false);
+                if (is_string($layer) || (is_array($layer) && array_key_exists(Keyword::Import->value, $layer))) {
+                    foreach ($this->resolveRemoteContext($layer) as $term => $definition) {
+                        $this->overlayContextOnto($scoped, [$term => $definition], false);
+                    }
+                } elseif (is_array($layer)) {
+                    $this->overlayContextOnto($scoped, $layer, overrideProtected: false);
+                }
             }
         }
 

@@ -304,4 +304,17 @@ describe('expansion validation gates', function () {
         expect(fn () => $expand(['http://example/prop' => ['@list' => ['foo'], '@id' => 'http://example/bar']]))
             ->toThrow(JsonLdException::class, 'Invalid set or list object');
     });
+
+    it('rejects a type-scoped null context that would clear protected terms (#tpr17)', function () use ($expand) {
+        expect(fn () => $expand([
+            '@context' => [
+                '@version' => 1.1,
+                '@protected' => true,
+                'p' => 'http://example/p',
+                'P' => ['@id' => 'http://example/P', '@context' => [null]],
+            ],
+            '@type' => 'P',
+            'p' => 'x',
+        ]))->toThrow(JsonLdException::class, 'nullification');
+    });
 });

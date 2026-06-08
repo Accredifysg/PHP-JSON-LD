@@ -330,6 +330,38 @@ class TermDefinitions
         return str_contains($term, '/');
     }
 
+    /**
+     * Locally IRI-expand a value using the terms defined so far plus the active
+     * vocabulary mapping (a lightweight subset of §4.3, sufficient for the
+     * §4.2.2 term/id consistency check): a compact IRI "prefix:suffix" expands
+     * via a defined prefix term; an absolute IRI / blank node is kept; a bare
+     * term with an active vocab mapping gets it prepended; anything otherwise
+     * unresolvable is returned unchanged.
+     */
+    private function localExpandIri(string $value): string
+    {
+        if ($value === '' || Keyword::contains($value)) {
+            return $value;
+        }
+
+        if (str_contains($value, ':')) {
+            [$prefix, $suffix] = explode(':', $value, 2);
+            if ($prefix === '_' || str_starts_with($suffix, '//')) {
+                return $value; // blank node or absolute IRI
+            }
+            $prefixDef = $this->getTermDefinition($prefix);
+            if (is_array($prefixDef) && isset($prefixDef[Keyword::Id->value]) && is_string($prefixDef[Keyword::Id->value])) {
+                return $prefixDef[Keyword::Id->value].$suffix;
+            }
+
+            return $value; // undefined prefix → opaque
+        }
+
+        $vocab = $this->getVocab();
+
+        return $vocab !== null ? $vocab.$value : $value;
+    }
+
     private function validateTermSyntax(string $term): void
     {
         // A term MAY be a compact IRI ("ex:date"), an absolute IRI, or
@@ -375,6 +407,17 @@ class TermDefinitions
         // prefix (§4.2.2 step 24).
         if (array_key_exists(Keyword::Prefix->value, $definition) && $this->isIriShapedTerm($term)) {
             throw new JsonLdException("Invalid term definition '{$term}': @prefix is not allowed on a compact-IRI term");
+        }
+
+        // @prefix may not be set on a keyword-alias term (its @id is a keyword)
+        // — only IRI prefixes can be prefixes (#tpr33).
+        if (
+            ($definition[Keyword::Prefix->value] ?? false) === true
+            && isset($definition[Keyword::Id->value])
+            && is_string($definition[Keyword::Id->value])
+            && Keyword::contains($definition[Keyword::Id->value])
+        ) {
+            throw new JsonLdException("Invalid term definition '{$term}': @prefix may not be set on a keyword-alias term");
         }
 
         if (isset($definition['@type']) && ! is_string($definition['@type'])) {
@@ -429,20 +472,25 @@ class TermDefinitions
         }
 
         // JSON-LD 1.1 only: when a term is itself IRI-shaped (contains a colon
-        // other than as the first/last character, or contains a slash), the
-        // IRI expansion of the term must equal its @id mapping (§4.2.2). A
-        // keyword @id (e.g. @type) can never equal an IRI-shaped term, so this
-        // is an invalid IRI mapping. In JSON-LD 1.0 the consistency check does
-        // not apply — #ter43 (1.1, error) and #t0026 (1.0, valid) share an
-        // input and differ only by processing mode.
+        // other than as the first/last character, or contains a slash) and has
+        // an @id that differs from the term, the IRI expansion of the term
+        // must equal its @id mapping (§4.2.2). A keyword @id (e.g. @type) can
+        // never equal an IRI-shaped term; a compact-IRI / relative term whose
+        // expansion differs from @id is likewise invalid (#ter43/#ter44/#ter48).
+        // In JSON-LD 1.0 the consistency check does not apply (#t0026/#t0071).
         if (
             ! $this->isJson10()
             && isset($definition['@id'])
             && is_string($definition['@id'])
-            && Keyword::contains($definition['@id'])
+            && $definition['@id'] !== $term
             && $this->isIriShapedTerm($term)
         ) {
-            throw new JsonLdException("Invalid IRI mapping for term '{$term}': an IRI term cannot map to keyword {$definition['@id']}");
+            $mappedIri = Keyword::contains($definition['@id'])
+                ? $definition['@id']
+                : $this->localExpandIri($definition['@id']);
+            if ($this->localExpandIri($term) !== $mappedIri) {
+                throw new JsonLdException("Invalid IRI mapping for term '{$term}': its IRI expansion does not match @id");
+            }
         }
 
         if (isset($definition['@container'])) {

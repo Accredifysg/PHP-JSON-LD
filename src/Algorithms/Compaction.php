@@ -143,6 +143,49 @@ class Compaction
     }
 
     /**
+     * True when a scoped @context (a map, or a list of layers) carries an
+     * explicit `@propagate` entry equal to $value.
+     *
+     * @param  array<array-key, mixed>  $context
+     */
+    private function contextHasPropagate(array $context, bool $value): bool
+    {
+        if (array_is_list($context)) {
+            foreach ($context as $layer) {
+                if (is_array($layer) && ($layer[Keyword::Propagate->value] ?? null) === $value) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return ($context[Keyword::Propagate->value] ?? null) === $value;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $scoped
+     */
+    private function propagatesFalse(array $scoped): bool
+    {
+        return $this->contextHasPropagate($scoped, false);
+    }
+
+    /**
+     * @param  list<array<array-key, mixed>>  $typeContexts
+     */
+    private function anyPropagatesTrue(array $typeContexts): bool
+    {
+        foreach ($typeContexts as $typeContext) {
+            if ($this->contextHasPropagate($typeContext, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Overlays a property-scoped `@context` onto a clone of the active context
      * and rebuilds the inverse, so the scoped terms are selectable while the
      * property's value is compacted. A bare term's `@id` is resolved through
@@ -293,7 +336,12 @@ class Compaction
             foreach ($typeContexts as $scoped) {
                 $this->activateScopedContext($scoped);
             }
-            $this->previousContext = $preActivation;
+            // Type-scoped contexts are non-propagating by default — record the
+            // rollback snapshot so nested node objects revert. An explicit
+            // @propagate:true makes them flow in (no rollback) (#tc026).
+            if (! $this->anyPropagatesTrue($typeContexts)) {
+                $this->previousContext = $preActivation;
+            }
         }
 
         $result = [];
@@ -405,8 +453,17 @@ class Compaction
                 $savedContext = $scoped !== null ? $this->activeContext : null;
                 $savedInverse = $scoped !== null ? $this->inverse : null;
                 $savedReverse = $scoped !== null ? $this->reverseInverse : null;
+                $savedPrevious = $this->previousContext;
                 if ($scoped !== null) {
+                    $preScoped = ['context' => $this->activeContext, 'inverse' => $this->inverse, 'reverse' => $this->reverseInverse];
                     $this->activateScopedContext($scoped);
+                    // A property-scoped context PROPAGATES into the value's
+                    // nested nodes (unlike type-scoped): clear the type-scoped
+                    // rollback so the nested node keeps these terms (#tc013/
+                    // #tc019). An explicit @propagate:false confines it instead,
+                    // so the nested node rolls back to the pre-activation
+                    // context (#tc027).
+                    $this->previousContext = $this->propagatesFalse($scoped) ? $preScoped : null;
                 }
 
                 if ($this->hasContainer($term, Keyword::Graph->value)) {
@@ -422,6 +479,7 @@ class Compaction
                     $this->activeContext = $savedContext;
                     $this->inverse = $savedInverse ?? [];
                     $this->reverseInverse = $savedReverse ?? [];
+                    $this->previousContext = $savedPrevious;
                 }
 
                 $this->assignProperty($result, $term, $compactedValue);

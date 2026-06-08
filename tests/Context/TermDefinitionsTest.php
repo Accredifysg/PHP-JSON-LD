@@ -25,10 +25,12 @@ describe('TermDefinitions::addTermDefinition', function () {
     });
 
     it('accepts compact-IRI term keys (e.g. ex:date)', function () {
-        // As of v0.9.0, terms MAY contain ':' / '/' — a context can define a
-        // compact-IRI term to attach coercion (the IRI-expansion algorithm
-        // resolves them). Only keywords are rejected.
+        // A context MAY define a compact-IRI term to attach coercion, as long
+        // as the term's IRI expansion equals its @id (§4.2.2). The prefixes are
+        // defined first so the compact-IRI terms expand consistently.
         $defs = new TermDefinitions;
+        $defs->addTermDefinition('ex', 'http://example.org/');
+        $defs->addTermDefinition('rdfs', 'http://www.w3.org/2000/01/rdf-schema#');
         $defs->addTermDefinition('ex:date', ['@id' => 'http://example.org/date', '@type' => '@id']);
         $defs->addTermDefinition('rdfs:subClassOf', 'http://www.w3.org/2000/01/rdf-schema#subClassOf');
 
@@ -40,6 +42,25 @@ describe('TermDefinitions::addTermDefinition', function () {
         $defs = new TermDefinitions;
         expect(fn () => $defs->addTermDefinition('@id', 'https://example.com/'))
             ->toThrow(JsonLdException::class, "Invalid term '@id': cannot be a keyword");
+    });
+
+    it('rejects a compact-IRI term whose IRI expansion differs from @id (#ter44)', function () {
+        // §4.2.2: a colon/slash term's IRI expansion must equal its @id.
+        $defs = new TermDefinitions;
+        $defs->addTermDefinition('v', 'http://example.com/vocab#');
+        expect(fn () => $defs->addTermDefinition('v:term', 'v:somethingElse'))
+            ->toThrow(JsonLdException::class, 'Invalid IRI mapping');
+    });
+
+    it('rejects a relative-IRI term that does not match its @id (#ter48)', function () {
+        $defs = new TermDefinitions;
+        expect(fn () => $defs->addTermDefinition('./something', 'http://example.com/vocab#somethingElse'))
+            ->toThrow(JsonLdException::class, 'Invalid IRI mapping');
+    });
+
+    it('rejects @prefix on a keyword-alias term (#tpr33)', function () {
+        expect(fn () => (new TermDefinitions)->addTermDefinition('foo', ['@id' => '@type', '@prefix' => true]))
+            ->toThrow(JsonLdException::class, 'keyword-alias');
     });
 
     it('rejects non-string @id', function () {

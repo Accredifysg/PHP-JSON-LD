@@ -374,7 +374,12 @@ class ContextProcessor
                     if ($this->termDefinitions->isProtected($key)) {
                         throw new JsonLdException("Protected term redefinition: '{$key}' is protected and cannot be cleared");
                     }
-                    $this->termDefinitions->termDefinitions[$key] = [Keyword::Id->value => null];
+                    // A null term defined inside a @protected context is itself
+                    // protected, so a later (non-override) redefinition of it is
+                    // rejected (#tpr28).
+                    $this->termDefinitions->termDefinitions[$key] = $protectedContext
+                        ? [Keyword::Id->value => null, Keyword::Protected->value => true]
+                        : [Keyword::Id->value => null];
                 } else {
                     // A term value must be a string, a map, or null (§4.2.2
                     // step 9). A boolean/number is an invalid term definition.
