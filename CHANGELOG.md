@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-06-09
+
+Term `@id` materialisation — the follow-up flagged in v0.39.0 (`#tc010`),
+which also resolved `#tc005` and `#tc035` (same root cause).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.39.0:      336      183      420      939
+v0.40.0:      337      183      423      943   (+1 expand, +3 toRdf)
+```
+
+### Fixed (context processing)
+
+- A term defined without an explicit `@id` (and not via `@reverse`), that is
+  neither IRI-shaped nor a keyword, now materialises its IRI mapping from the
+  active `@vocab` AT DEFINITION TIME (§4.2.2) rather than relying on an
+  `@vocab` fallback at use time. So a term whose definition carries only an
+  `@context` keeps its original IRI even when a nested/embedded context later
+  changes `@vocab` (`#tc010` / `#tc005` / `#tc035`, expand + toRdf twins).
+  Expansion output is unchanged for documents whose `@vocab` does not change
+  between a term's definition and use (VC characterization fixtures intact).
+
 ## [0.39.0] - 2026-06-09
 
 Scoped-context expansion battery — the core type-/property-scoped context

@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    336 passed /  49 failed (v0.39.0)
-Compaction:   183 passed /  63 failed (v0.39.0)
-toRdf:        420 passed /  47 failed (v0.39.0)
+Expansion:    337 passed /  48 failed (v0.40.0)
+Compaction:   183 passed /  63 failed (v0.40.0)
+toRdf:        423 passed /  44 failed (v0.40.0)
 ```
 
 Each Phase 4 PR:

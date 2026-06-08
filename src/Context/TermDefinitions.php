@@ -211,6 +211,22 @@ class TermDefinitions
         }
 
         $this->validateTermDefinitionStructure($key, $termDefinition);
+
+        // §4.2.2: a term with no explicit @id (and no @reverse), that is not
+        // IRI-shaped and not a keyword, takes its IRI mapping from the active
+        // @vocab AT DEFINITION TIME. Materialising it now (rather than relying
+        // on an @vocab fallback at use time) means a later @vocab change does
+        // not retroactively rewrite the term's IRI (#tc010).
+        if (
+            ! array_key_exists(Keyword::Id->value, $termDefinition)
+            && ! array_key_exists(Keyword::Reverse->value, $termDefinition)
+            && ! str_contains($key, ':')
+            && ! Keyword::contains($key)
+            && $this->getVocab() !== null
+        ) {
+            $termDefinition[Keyword::Id->value] = $this->getVocab().$key;
+        }
+
         $this->storeProtectedAware($key, $termDefinition, $protectedContext, $overrideProtected);
     }
 

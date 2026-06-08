@@ -403,4 +403,15 @@ describe('expansion validation gates', function () {
         expect($json)->toContain('http://example/typed-base#typed')
             ->and($json)->toContain('http://example/base-base#nested');
     });
+
+    it('materialises a bare term @id from @vocab at definition time (#tc010)', function () use ($expand) {
+        // "B" (defined with only an @context) fixes its IRI to example/B when
+        // defined; a later embedded @vocab does not retroactively rewrite it.
+        $json = json_encode($expand([
+            '@context' => ['@vocab' => 'http://example/', 'B' => ['@context' => ['c' => 'http://example.org/c']]],
+            'a' => ['@context' => ['@vocab' => 'http://example.com/'], '@type' => 'B', 'c' => 'C'],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"http://example/B"')
+            ->and($json)->not->toContain('http://example.com/B');
+    });
 });
