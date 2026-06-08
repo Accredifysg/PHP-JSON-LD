@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-06-08
+
+Compaction algorithm buildout, phase 4: property-scoped contexts.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.28.0:      310      169      376      855
+v0.29.0:      310      172      376      858   (+3 compact)
+```
+
+### Added (compaction)
+
+- Property-scoped `@context`: a term carrying an inline `@context` activates
+  it (overlaid on a clone of the active context, inverse rebuilt) while that
+  property's value is compacted, then rolls back — so scoped terms become
+  selectable inside the value (`#tc001`, `#tc002`, `#tc004`, `#tc005`),
+  including legal protected-term overrides from a property-scoped context
+  (`#tpr04`). A bare scoped term's `@id` resolves through the inherited
+  `@vocab`; a `null` entry removes the term.
+
+### Consumer impact
+
+Additive (compaction-only). Expansion and toRdf unchanged. Characterization
+fixtures byte-identical, unit suite green (212). VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+Type-scoped contexts during compaction (`#tc011`/`#tc017`/`#tc019`/… — node
+type drives the scoped context, with nullification and `@type`-value
+compaction edges) remain the structural follow-up.
+
 ## [0.28.0] - 2026-06-08
 
 Compaction algorithm buildout, phase 3: value-aware term selection. Designed

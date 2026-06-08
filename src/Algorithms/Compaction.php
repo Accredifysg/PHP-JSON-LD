@@ -57,7 +57,7 @@ class Compaction
      */
     private array $reverseInverse = [];
 
-    public function __construct(private readonly TermDefinitions $activeContext)
+    public function __construct(private TermDefinitions $activeContext)
     {
         $this->buildInverse();
     }
@@ -92,6 +92,11 @@ class Compaction
 
     private function buildInverse(): void
     {
+        // Rebuilt from scratch each call (the active context changes when a
+        // property-scoped @context is activated mid-compaction).
+        $this->inverse = [];
+        $this->reverseInverse = [];
+
         foreach ($this->activeContext->termDefinitions as $term => $def) {
             $definition = is_string($def) ? ['@id' => $def] : $def;
             // A reverse-property term (defined via @reverse) is indexed so an
@@ -108,6 +113,61 @@ class Compaction
             $expandedIri = $this->expandTermIri($definition['@id']);
             $this->inverse[$expandedIri][] = ['term' => (string) $term, 'def' => $definition];
         }
+    }
+
+    /**
+     * Returns the inline property-scoped `@context` map attached to a term, or
+     * null. Remote/string scoped contexts are not resolved during compaction.
+     *
+     * @return array<array-key, mixed>|null
+     */
+    private function propertyScopedContext(string $term): ?array
+    {
+        $def = $this->activeContext->getTermDefinition($term);
+        if (! is_array($def) || ! array_key_exists(Keyword::Context->value, $def)) {
+            return null;
+        }
+        $ctx = $def[Keyword::Context->value];
+
+        return is_array($ctx) ? $ctx : null;
+    }
+
+    /**
+     * Overlays a property-scoped `@context` onto a clone of the active context
+     * and rebuilds the inverse, so the scoped terms are selectable while the
+     * property's value is compacted. A bare term's `@id` is resolved through
+     * the inherited `@vocab` (so it appears in the inverse); a null entry
+     * removes the term (nullification).
+     *
+     * @param  array<array-key, mixed>  $scoped
+     */
+    private function activateScopedContext(array $scoped): void
+    {
+        $ctx = clone $this->activeContext;
+        $vocab = $ctx->getVocab();
+
+        foreach ($scoped as $key => $value) {
+            if (! is_string($key) || $this->isKeyword($key)) {
+                continue; // keyword entries (@vocab/@language/…) are not applied here
+            }
+            if ($value === null) {
+                unset($ctx->termDefinitions[$key]);
+
+                continue;
+            }
+            $def = is_string($value) ? [Keyword::Id->value => $value] : (is_array($value) ? $value : null);
+            if ($def === null) {
+                continue;
+            }
+            // Resolve a bare term's @id through @vocab so the inverse keys on it.
+            if (! isset($def[Keyword::Id->value]) && ! str_contains($key, ':') && $vocab !== null) {
+                $def[Keyword::Id->value] = $vocab.$key;
+            }
+            $ctx->termDefinitions[$key] = $def;
+        }
+
+        $this->activeContext = $ctx;
+        $this->buildInverse();
     }
 
     /**
@@ -294,6 +354,19 @@ class Compaction
 
             foreach ($order as $term) {
                 $groupItems = $groups[$term];
+
+                // §5.6: a property whose term carries a property-scoped
+                // @context activates it while its value is compacted, then
+                // rolls back. The term itself was already selected against the
+                // outer context above.
+                $scoped = $this->propertyScopedContext($term);
+                $savedContext = $scoped !== null ? $this->activeContext : null;
+                $savedInverse = $scoped !== null ? $this->inverse : null;
+                $savedReverse = $scoped !== null ? $this->reverseInverse : null;
+                if ($scoped !== null) {
+                    $this->activateScopedContext($scoped);
+                }
+
                 if ($this->hasContainer($term, Keyword::Graph->value)) {
                     $compactedValue = $this->compactGraphContainer($groupItems, $term);
                 } else {
@@ -302,6 +375,13 @@ class Compaction
                         ? $this->compactContainerMap($groupItems, $mapType)
                         : $this->compactElement($groupItems, $term);
                 }
+
+                if ($scoped !== null && $savedContext !== null) {
+                    $this->activeContext = $savedContext;
+                    $this->inverse = $savedInverse ?? [];
+                    $this->reverseInverse = $savedReverse ?? [];
+                }
+
                 $this->assignProperty($result, $term, $compactedValue);
             }
         }

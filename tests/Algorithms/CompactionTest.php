@@ -277,4 +277,18 @@ describe('JsonLdProcessor::compact', function () {
         $result = compactWith($expanded, $context);
         expect($result['typed'])->toBe(['a', 'b']);
     });
+
+    it('applies a property-scoped @context while compacting the value', function () {
+        $expanded = [['http://example/foo' => [['http://example.org/bar' => [['@value' => 'baz']]]]]];
+        $context = ['@vocab' => 'http://example/', 'foo' => ['@context' => ['bar' => 'http://example.org/bar']]];
+        $result = compactWith($expanded, $context);
+        expect($result['foo'])->toBe(['bar' => 'baz']);
+    });
+
+    it('honours a property-scoped term override (bar coerced to @id inside foo)', function () {
+        $expanded = [['http://example/foo' => [['http://example/bar' => [['@id' => 'http://example/baz']]]]]];
+        $context = ['@vocab' => 'http://example/', 'foo' => ['@context' => ['bar' => ['@type' => '@id']]]];
+        $result = compactWith($expanded, $context);
+        expect($result['foo'])->toBe(['bar' => 'http://example/baz']);
+    });
 });
