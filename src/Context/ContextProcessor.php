@@ -327,7 +327,7 @@ class ContextProcessor
                     $this->termDefinitions->setBase(null);
                 } elseif (is_string($baseValue)) {
                     $this->termDefinitions->setBase(
-                        IriResolver::resolve($this->termDefinitions->getBase(), $baseValue)
+                        IriResolver::establishBase($this->termDefinitions->getBase(), $baseValue)
                     );
                 }
             }

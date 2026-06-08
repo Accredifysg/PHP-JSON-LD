@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-06-08
+
+toRdf tail: RFC-3986 base handling and a blank-node-isomorphism-aware
+N-Quads comparison in the conformance harness.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.29.0:      310      172      376      858
+v0.30.0:      310      172      386      868   (+10 toRdf)
+```
+
+### Fixed
+
+- An absolute `@base` is now stored verbatim (RFC 3986 §5.1 parses the base
+  as-is, without dot-segment removal), so document-relative resolution
+  against it matches the RFC reference-resolution vectors — e.g. a
+  query-/fragment-only reference keeps the base path's `./` segment
+  (`#t0122`–`#t0125`). New `IriResolver::establishBase()`.
+
+### Changed (test harness)
+
+- The toRdf N-Quads comparison now canonicalises blank-node labels
+  (relabelling both sides deterministically by first appearance in the
+  structurally-sorted quads, masking blank-node labels for ordering and
+  preserving literal content). RDF datasets are equal up to blank-node
+  isomorphism, but the W3C fixtures use canonical `_:c14n0` labels while the
+  processor emits `_:b0`; this lets isomorphic datasets compare equal (the
+  `@json` / `tjs` cluster, where the serialisation was already correct).
+  Deterministic, so it never changes a previously-passing comparison.
+
+### Consumer impact
+
+Additive; the `establishBase` change only affects how an absolute `@base` is
+stored (more RFC-correct). Expansion and compaction unchanged.
+Characterization fixtures byte-identical, unit suite green (214). VC stays
+pinned at `^0.1.1`.
+
+### Deferred
+
+`rdfDirection` (`i18n-datatype` / `compound-literal`) serialisation modes
+remain (4 tests), plus the toRdf failures shared with the expansion tail.
+
 ## [0.29.0] - 2026-06-08
 
 Compaction algorithm buildout, phase 4: property-scoped contexts.

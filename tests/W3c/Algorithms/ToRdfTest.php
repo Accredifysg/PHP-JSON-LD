@@ -27,16 +27,102 @@ dataset('to-rdf-tests', function () {
     }
 });
 
-/** Normalise an N-Quads document to sorted, trimmed, non-empty lines. */
+/**
+ * Rewrites the blank-node labels in one N-Quads line via $map, leaving
+ * quoted literals (which may legitimately contain "_:") untouched. $map
+ * receives each blank-node label (e.g. "_:b0") and returns its replacement.
+ */
+function remapNQuadsLine(string $line, callable $map): string
+{
+    $out = '';
+    $i = 0;
+    $n = strlen($line);
+    $inLiteral = false;
+    while ($i < $n) {
+        $c = $line[$i];
+        if ($inLiteral) {
+            $out .= $c;
+            if ($c === '\\' && $i + 1 < $n) {
+                $out .= $line[$i + 1];
+                $i += 2;
+
+                continue;
+            }
+            if ($c === '"') {
+                $inLiteral = false;
+            }
+            $i++;
+
+            continue;
+        }
+        if ($c === '"') {
+            $inLiteral = true;
+            $out .= $c;
+            $i++;
+
+            continue;
+        }
+        if ($c === '_' && $i + 1 < $n && $line[$i + 1] === ':') {
+            $j = $i + 2;
+            while ($j < $n && preg_match('/[A-Za-z0-9._\-]/', $line[$j]) === 1) {
+                $j++;
+            }
+            $out .= $map(substr($line, $i, $j - $i));
+            $i = $j;
+
+            continue;
+        }
+        $out .= $c;
+        $i++;
+    }
+
+    return $out;
+}
+
+/**
+ * Normalise an N-Quads document to sorted, trimmed, non-empty lines with
+ * blank-node labels canonicalised. RDF datasets are equal up to blank-node
+ * isomorphism, but the W3C fixtures use canonicalised labels (`_:c14n0`)
+ * while the processor emits `_:b0`; relabelling both deterministically (by
+ * first appearance in the structurally-sorted quads, masking blank-node
+ * labels so ordering is label-independent) lets isomorphic datasets compare
+ * equal. Literal content is preserved. This is sound for graphs without
+ * blank-node automorphisms (the suite's graphs).
+ */
 function normaliseNQuads(string $nquads): string
 {
     $lines = array_values(array_filter(
         array_map('trim', explode("\n", $nquads)),
         static fn (string $l): bool => $l !== '',
     ));
-    sort($lines, SORT_STRING);
 
-    return implode("\n", $lines);
+    // Order independent of the specific blank-node labels.
+    $masked = [];
+    foreach ($lines as $idx => $line) {
+        $masked[$idx] = remapNQuadsLine($line, static fn (): string => '_:_');
+    }
+    asort($masked, SORT_STRING);
+
+    // Assign canonical labels by first appearance in that stable order.
+    $map = [];
+    $next = 0;
+    foreach (array_keys($masked) as $idx) {
+        remapNQuadsLine($lines[$idx], function (string $label) use (&$map, &$next): string {
+            if (! isset($map[$label])) {
+                $map[$label] = '_:b'.$next++;
+            }
+
+            return $map[$label];
+        });
+    }
+
+    $relabelled = array_map(
+        static fn (string $line): string => remapNQuadsLine($line, static fn (string $label): string => $map[$label] ?? $label),
+        $lines,
+    );
+    sort($relabelled, SORT_STRING);
+
+    return implode("\n", $relabelled);
 }
 
 it('serialises to RDF per W3C manifest', function (TestCase $test) {

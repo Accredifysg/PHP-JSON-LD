@@ -23,6 +23,23 @@ final class IriResolver
      * reference is already an absolute IRI, the reference is returned
      * (dot-segment-normalised when it has its own scheme).
      */
+    /**
+     * Establish a base IRI from an `@base` value. An absolute IRI is stored
+     * VERBATIM — RFC 3986 §5.1 parses the base as-is, without dot-segment
+     * removal, so that later document-relative resolution against it matches
+     * the RFC reference-resolution vectors (e.g. a query-only reference keeps
+     * a `./` in the base path). A relative value is resolved against the
+     * current base.
+     */
+    public static function establishBase(?string $currentBase, string $value): string
+    {
+        if (preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*:/', $value) === 1) {
+            return $value;
+        }
+
+        return self::resolve($currentBase, $value);
+    }
+
     public static function resolve(?string $base, string $reference): string
     {
         $ref = self::parse($reference);
