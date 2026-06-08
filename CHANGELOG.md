@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-06-08
+
+Compaction algorithm buildout, phase 1: keyword-value recursion, `@nest`,
+top-level `@graph` wrapping, and value-compaction fixes (`@none` aliasing,
+`@direction`, `@type: @none`). Designed from a spec §5.6 + current-code +
+per-fixture analysis pass.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.25.0:      310      111      376      797
+v0.26.0:      310      142      376      828   (+31 compact)
+```
+
+(Compaction was 111 at the v0.25.0 tag; this release takes it to 142.)
+
+### Added (compaction)
+
+- `@graph` and `@included` values are compacted recursively — their inner
+  node objects are now compacted instead of passed through verbatim (the
+  single largest root cause of compaction failures).
+- Multiple top-level node objects are wrapped in a (possibly aliased)
+  `@graph` map (§5.6 step 7).
+- `@nest`: a property whose term defines `@nest` is grouped under the
+  (verbatim/aliased) nest term; an `@nest` value that is neither `@nest`
+  nor a term aliasing it is rejected.
+- Container-map keys synthesised as `@none` are compacted to a keyword
+  alias when the context defines one (e.g. `"none": "@none"`).
+- Value compaction now preserves `@direction`, and a `@type: @none` term
+  disables value collapsing (the value object is kept with aliased keys).
+
+### Consumer impact
+
+Additive (compaction-only). Expansion and toRdf unchanged. Characterization
+fixtures byte-identical, unit suite green (202). VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+Compaction remains partial: `@graph` container maps (`[@graph,@id]` /
+`[@graph,@index]`), `@reverse`, a value-aware inverse-context term
+selection, and property-/type-scoped contexts during compaction are the
+next tranches (the larger / structural items).
+
 ## [0.25.0] - 2026-06-08
 
 Compaction processing-mode gates, keyword-alias compaction, and a

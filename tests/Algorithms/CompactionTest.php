@@ -142,4 +142,44 @@ describe('JsonLdProcessor::compact', function () {
 
         expect($result['typemap'])->toBe(['http://example.org/foo' => ['label' => 'foo typed']]);
     });
+
+    it('recurses into @graph, compacting inner nodes', function () {
+        $expanded = [['@graph' => [['http://example/name' => [['@value' => 'Alice']]]]]];
+        $result = compactWith($expanded, ['@vocab' => 'http://example/']);
+        expect($result['@graph'])->toBe(['name' => 'Alice']);
+    });
+
+    it('recurses into @included, compacting inner nodes', function () {
+        $expanded = [['@included' => [['http://example/name' => [['@value' => 'Bob']]]]]];
+        $result = compactWith($expanded, ['@vocab' => 'http://example/']);
+        expect($result['@included'])->toBe(['name' => 'Bob']);
+    });
+
+    it('wraps multiple top-level nodes in a @graph map', function () {
+        $expanded = [['@id' => 'http://example/a'], ['@id' => 'http://example/b']];
+        $result = compactWith($expanded, []);
+        expect($result)->toHaveKey('@graph');
+        expect($result['@graph'])->toHaveCount(2);
+    });
+
+    it('groups a @nest-defined property under the (aliased) nest term', function () {
+        $expanded = [['http://example/prop' => [['@value' => 'v']]]];
+        $context = ['@vocab' => 'http://example/', 'prop' => ['@nest' => '@nest']];
+        $result = compactWith($expanded, $context);
+        expect($result['@nest'])->toBe(['prop' => 'v']);
+    });
+
+    it('uses a @none alias for an unkeyed entry in an @index map', function () {
+        $expanded = [['http://example/idx' => [['@value' => 'x']]]];
+        $context = ['@vocab' => 'http://example/', 'none' => '@none', 'idx' => ['@container' => '@index']];
+        $result = compactWith($expanded, $context);
+        expect($result['idx'])->toBe(['none' => 'x']);
+    });
+
+    it('does not compact values for a @type: @none term', function () {
+        $expanded = [['http://example/p' => [['@value' => 'x', '@type' => 'http://example/T']]]];
+        $context = ['@vocab' => 'http://example/', 'p' => ['@type' => '@none']];
+        $result = compactWith($expanded, $context);
+        expect($result['p'])->toBe(['@value' => 'x', '@type' => 'T']);
+    });
 });

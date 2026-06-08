@@ -6,6 +6,7 @@ namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Context\TermDefinitions;
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Exceptions\JsonLdException;
 
 /**
  * JSON-LD 1.1 Compaction Algorithm (§5.6) — first-pass implementation.
@@ -16,17 +17,21 @@ use Accredify\JsonLd\Enums\Keyword;
  *
  * Implemented:
  *  - IRI compaction (§5.7): exact term match (preferring type/@id-coercion
- *    matches), compact-IRI (`prefix:suffix`), `@vocab` stripping.
+ *    matches), compact-IRI (`prefix:suffix`), `@vocab` stripping, keyword
+ *    aliases.
  *  - Value compaction (§5.9): dropping coerced `@type`, `@language`
- *    defaults, `@type: @id` node references, `@value`-only scalars.
+ *    defaults, `@type: @id` node references, `@value`-only scalars,
+ *    `@direction`, and the `@type: @none` no-compaction rule.
  *  - `@list` / `@set` container coercion; array-vs-single normalisation.
- *  - `@id` / `@type` keyword compaction.
+ *  - `@id` / `@type` keyword compaction; recursion into `@graph` / `@included`.
+ *  - `@language` / `@index` / `@id` / `@type` container maps (incl. `@none`
+ *    keys, aliased) and top-level multi-node `@graph` wrapping.
+ *  - `@nest` property grouping.
  *
  * Deferred:
- *  - `@language` / `@index` / `@id` / `@type` / `@graph` container maps
- *    (the inverse-container map forms).
- *  - `@reverse`, `@nested`, property-scoped + type-scoped contexts during
- *    compaction.
+ *  - `@graph` container maps (`[@graph, @id]` / `[@graph, @index]`).
+ *  - `@reverse`, value-aware inverse-context term selection (§5.6.2 full),
+ *    and property-scoped / type-scoped contexts during compaction.
  *  - Spec-faithful "compactArrays" / "ordered" option handling beyond the
  *    defaults.
  *
@@ -58,15 +63,19 @@ class Compaction
     {
         $result = $this->compactElement($expanded, null);
 
-        // The top level is always a node object (or empty object) per the
-        // common compaction contract — unwrap a single-element list.
+        // §5.6 step 7: shape the top-level result.
         if (is_array($result) && array_is_list($result)) {
-            if (count($result) === 1 && is_array($result[0])) {
-                return $result[0];
-            }
             if ($result === []) {
                 return [];
             }
+            // A single node object is returned bare.
+            if (count($result) === 1 && is_array($result[0])) {
+                return $result[0];
+            }
+
+            // Multiple top-level nodes are wrapped in a (possibly aliased)
+            // @graph map (#t0046 "multiple objects without @context use @graph").
+            return [$this->compactIri(Keyword::Graph->value, vocab: true) => $result];
         }
 
         return is_array($result) ? $result : [];
@@ -191,6 +200,23 @@ class Compaction
                 continue;
             }
 
+            // @graph / @included carry node objects whose contents must be
+            // compacted recursively (the previous code passed them through
+            // verbatim, leaving inner nodes un-compacted). A single compacted
+            // member unwraps to an object; multiple members stay an array.
+            if (($key === Keyword::Graph->value || $key === Keyword::Included->value) && is_array($value)) {
+                $items = array_is_list($value) ? $value : [$value];
+                $compactedItems = [];
+                foreach ($items as $item) {
+                    $compactedItems[] = $this->compactElement($item, null);
+                }
+                $result[$this->compactIri($key, vocab: true)] = count($compactedItems) === 1 && is_array($compactedItems[0])
+                    ? $compactedItems[0]
+                    : $compactedItems;
+
+                continue;
+            }
+
             if ($this->isKeyword($key)) {
                 // Other keywords pass through with a compacted key.
                 $result[$this->compactIri($key, vocab: true)] = $value;
@@ -203,27 +229,55 @@ class Compaction
             // container/type coercion resolves against the right definition.
             $compactedKey = $this->compactIri($key, vocab: true);
 
-            // An empty array value must still produce the property (with []).
+            // Determine the compacted value: an empty array stays []; a
+            // container-map term builds a map; otherwise recurse normally.
             if (is_array($value) && array_is_list($value) && $value === []) {
-                $result[$compactedKey] = [];
-
-                continue;
+                $compactedValue = [];
+            } else {
+                $mapType = $this->mapContainerType($compactedKey);
+                $compactedValue = ($mapType !== null && is_array($value) && array_is_list($value))
+                    ? $this->compactContainerMap($value, $mapType)
+                    : $this->compactElement($value, $compactedKey);
             }
 
-            // Container-map coercion (§5.6): a term with @container @language
-            // / @index / @id / @type compacts its expanded array into a map
-            // keyed by language / index / @id / first-@type.
-            $mapType = $this->mapContainerType($compactedKey);
-            if ($mapType !== null && is_array($value) && array_is_list($value)) {
-                $result[$compactedKey] = $this->compactContainerMap($value, $mapType);
-
-                continue;
+            // §5.6: a property whose term defines @nest is placed under the
+            // (aliased) nest term, grouping it with sibling @nest properties.
+            $nestTerm = $this->nestTermFor($compactedKey);
+            if ($nestTerm !== null) {
+                if (! isset($result[$nestTerm]) || ! is_array($result[$nestTerm])) {
+                    $result[$nestTerm] = [];
+                }
+                $result[$nestTerm][$compactedKey] = $compactedValue;
+            } else {
+                $result[$compactedKey] = $compactedValue;
             }
-
-            $result[$compactedKey] = $this->compactElement($value, $compactedKey);
         }
 
         return $result;
+    }
+
+    /**
+     * Returns the (verbatim) nest term a property compacts under when its term
+     * definition carries `@nest`, or null. The `@nest` value must be `@nest`
+     * itself or a term that aliases `@nest`; anything else is an invalid
+     * `@nest` value (§5.6).
+     */
+    private function nestTermFor(string $compactedKey): ?string
+    {
+        $termDef = $this->activeContext->getTermDefinition($compactedKey);
+        if (! is_array($termDef) || ! isset($termDef[Keyword::Nest->value]) || ! is_string($termDef[Keyword::Nest->value])) {
+            return null;
+        }
+
+        $nest = $termDef[Keyword::Nest->value];
+        if ($nest !== Keyword::Nest->value) {
+            $nestDef = $this->activeContext->getTermDefinition($nest);
+            if (! is_array($nestDef) || ($nestDef[Keyword::Id->value] ?? null) !== Keyword::Nest->value) {
+                throw new JsonLdException("Invalid @nest value in term '{$compactedKey}'");
+            }
+        }
+
+        return $nest;
     }
 
     /**
@@ -253,25 +307,33 @@ class Compaction
         $raw = $value[Keyword::Value->value];
         $valueType = isset($value[Keyword::Type->value]) && is_string($value[Keyword::Type->value]) ? $value[Keyword::Type->value] : null;
         $valueLang = isset($value[Keyword::Language->value]) && is_string($value[Keyword::Language->value]) ? $value[Keyword::Language->value] : null;
-        $hasOther = (bool) array_diff(array_keys($value), [Keyword::Value->value, Keyword::Type->value, Keyword::Language->value]);
+        $valueDir = isset($value[Keyword::Direction->value]) && is_string($value[Keyword::Direction->value]) ? $value[Keyword::Direction->value] : null;
+        $hasOther = (bool) array_diff(array_keys($value), [Keyword::Value->value, Keyword::Type->value, Keyword::Language->value, Keyword::Direction->value]);
+
+        // A @type: @none term disables value compaction (§5.6.3): the value
+        // object is rebuilt with aliased keys, never collapsed to a scalar.
+        $typeNone = $typeMapping === Keyword::None->value;
 
         // If the term coerces to the value's @type, drop @type.
-        if ($valueType !== null && $typeMapping !== null && $this->expandedEquals($typeMapping, $valueType) && ! $hasOther && $valueLang === null) {
+        if (! $typeNone && $valueType !== null && $typeMapping !== null && $this->expandedEquals($typeMapping, $valueType) && ! $hasOther && $valueLang === null && $valueDir === null) {
             return $raw;
         }
 
-        // Plain @value with no @type / @language → the scalar itself.
-        if ($valueType === null && $valueLang === null && ! $hasOther) {
+        // Plain @value with no @type / @language / @direction → the scalar.
+        if (! $typeNone && $valueType === null && $valueLang === null && $valueDir === null && ! $hasOther) {
             return $raw;
         }
 
-        // Otherwise rebuild the value object with compacted keys + @type.
+        // Otherwise rebuild the value object with compacted keys.
         $out = [$this->compactIri(Keyword::Value->value, vocab: true) => $raw];
         if ($valueType !== null) {
             $out[$this->compactIri(Keyword::Type->value, vocab: true)] = $this->compactIri($valueType, vocab: true);
         }
         if ($valueLang !== null) {
             $out[$this->compactIri(Keyword::Language->value, vocab: true)] = $valueLang;
+        }
+        if ($valueDir !== null) {
+            $out[$this->compactIri(Keyword::Direction->value, vocab: true)] = $valueDir;
         }
 
         return $out;
@@ -340,11 +402,16 @@ class Compaction
      */
     private function mapKeyAndEntry(array $item, string $mapType): array
     {
+        // The synthetic "no key" sentinel is @none, which must itself be
+        // compacted to a keyword alias if the active context defines one
+        // (e.g. "none": "@none").
+        $none = $this->compactIri(Keyword::None->value, vocab: true);
+
         switch ($mapType) {
             case Keyword::Language->value:
                 $lang = isset($item[Keyword::Language->value]) && is_string($item[Keyword::Language->value])
                     ? $item[Keyword::Language->value]
-                    : Keyword::None->value;
+                    : $none;
 
                 // Within a @language map the entry is the bare @value.
                 return [$lang, $item[Keyword::Value->value] ?? null];
@@ -352,7 +419,7 @@ class Compaction
             case Keyword::Index->value:
                 $index = isset($item[Keyword::Index->value]) && is_string($item[Keyword::Index->value])
                     ? $item[Keyword::Index->value]
-                    : Keyword::None->value;
+                    : $none;
                 $stripped = $item;
                 unset($stripped[Keyword::Index->value]);
 
@@ -360,7 +427,7 @@ class Compaction
 
             case Keyword::Id->value:
                 if (! isset($item[Keyword::Id->value]) || ! is_string($item[Keyword::Id->value])) {
-                    return [Keyword::None->value, $this->compactObject($item, null)];
+                    return [$none, $this->compactObject($item, null)];
                 }
                 $idKey = $this->compactIri($item[Keyword::Id->value], vocab: false);
                 $stripped = $item;
@@ -373,7 +440,7 @@ class Compaction
                     ? array_values($item[Keyword::Type->value])
                     : [];
                 if ($types === [] || ! is_string($types[0])) {
-                    return [Keyword::None->value, $this->compactObject($item, null)];
+                    return [$none, $this->compactObject($item, null)];
                 }
                 $typeKey = $this->compactIri($types[0], vocab: true);
                 $rest = array_slice($types, 1);

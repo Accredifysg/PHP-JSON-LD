@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    310 passed /  75 failed (v0.25.0)
-Compaction:   111 passed / 135 failed (v0.25.0)
-toRdf:        376 passed /  91 failed (v0.25.0)
+Expansion:    310 passed /  75 failed (v0.26.0)
+Compaction:   142 passed / 104 failed (v0.26.0)
+toRdf:        376 passed /  91 failed (v0.26.0)
 ```
 
 Each Phase 4 PR:
@@ -89,6 +89,7 @@ Each Phase 4 PR:
 | v0.23.0 |          284  |    +9  | processing-mode (1.0/1.1) threading + gates (+9 toRdf too)|
 | v0.24.0 |          309  |   +25  | container expansion: @graph family, map @none, missing-@context (+20 toRdf too)|
 | v0.25.0 |          310  |    +1  | compaction 1.0 gates + keyword-alias + @type-coercion fix (+10 compact, +1 toRdf)|
+| v0.26.0 |          310  |     0  | compaction buildout p1: keyword recursion, @nest, @graph wrap, value fixes (+31 compact)|
 
 ### Notes on v0.4.0
 
