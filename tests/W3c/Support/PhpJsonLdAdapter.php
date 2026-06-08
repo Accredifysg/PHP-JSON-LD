@@ -65,7 +65,7 @@ final class PhpJsonLdAdapter implements Processor
     public function compact(array $input, array $context, array $options): array
     {
         return (new JsonLdProcessor($this->loader))
-            ->compact($input, $context)
+            ->compact($input, $context, self::processingMode($options))
             ->toArray();
     }
 

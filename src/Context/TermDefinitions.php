@@ -360,6 +360,23 @@ class TermDefinitions
             throw new JsonLdException("Invalid keyword alias in term '{$term}': @id may not be @context");
         }
 
+        // JSON-LD 1.0 has a narrower term-definition vocabulary: @prefix,
+        // @nest, and scoped @context were all introduced in 1.1.
+        if ($this->isJson10()) {
+            foreach ([Keyword::Prefix->value, Keyword::Nest->value, Keyword::Context->value] as $kw) {
+                if (array_key_exists($kw, $definition)) {
+                    throw new JsonLdException("Invalid term definition '{$term}': {$kw} is not available in JSON-LD 1.0");
+                }
+            }
+        }
+
+        // @prefix may only be set on a simple term — a compact-IRI / IRI term
+        // (containing a colon other than first/last, or a slash) may not be a
+        // prefix (§4.2.2 step 24).
+        if (array_key_exists(Keyword::Prefix->value, $definition) && $this->isIriShapedTerm($term)) {
+            throw new JsonLdException("Invalid term definition '{$term}': @prefix is not allowed on a compact-IRI term");
+        }
+
         if (isset($definition['@type']) && ! is_string($definition['@type'])) {
             throw new JsonLdException("Invalid @type in term '{$term}'");
         }
@@ -372,7 +389,13 @@ class TermDefinitions
             $type = $definition['@type'];
             $typeKeywords = [Keyword::Id->value, Keyword::Vocab->value, Keyword::Json->value, Keyword::None->value];
             if (! in_array($type, $typeKeywords, true)) {
-                if (str_starts_with($type, '_:') || (! str_contains($type, ':') && $this->getVocab() === null)) {
+                // A bare @type (no colon) resolves to an IRI through the active
+                // @vocab OR through a previously-defined term in the same
+                // context (§4.2.2 step 12 — IRI-expand the type using the local
+                // context). It is invalid only when neither resolves it, or
+                // when it is a blank-node identifier.
+                $resolvesViaTerm = $this->getTermDefinition($type) !== null;
+                if (str_starts_with($type, '_:') || (! str_contains($type, ':') && $this->getVocab() === null && ! $resolvesViaTerm)) {
                     throw new JsonLdException("Invalid type mapping in term '{$term}'");
                 }
             }

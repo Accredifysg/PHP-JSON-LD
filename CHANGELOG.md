@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-06-08
+
+Compaction processing-mode gates, keyword-alias compaction, and a
+`@type`-coercion validation fix (a latent bug that also affected
+expansion).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.24.0:      309      101      375      785
+v0.25.0:      310      111      376      797   (+1 expand, +10 compact, +1 toRdf)
+```
+
+### Fixed
+
+- A term-definition `@type` coercion may resolve through a previously-defined
+  term in the same context (e.g. `"@type": "t2"` where `t2` maps to an IRI),
+  not only through `@vocab` or as an absolute IRI / keyword (§4.2.2 step 12).
+  The v0.22.0 validator wrongly rejected this as an "Invalid type mapping" —
+  a latent bug that also rejected valid expansion contexts (`#t0015`,
+  `#t0018`, `#t0024`, `#tla01`; +1 expand, +1 toRdf).
+
+### Added
+
+- `Processor::compact()` accepts an optional `?string $processingMode`,
+  threaded through to `ContextProcessor` so the 1.0/1.1 term-definition
+  gates apply during compaction.
+- JSON-LD 1.0 term-definition gates (apply to all algorithms): `@prefix`,
+  `@nest`, and scoped `@context` are 1.1-only and invalid in 1.0
+  (`#tep07`, `#tep10`, `#tep11`); the array / `@id` / `@type` / `@graph`
+  container gates now also fire for compaction (`#tep12`–`#tep15`,
+  `#tep05`).
+- `@prefix` is rejected on a compact-IRI / IRI-shaped term in any mode —
+  only simple terms may be prefixes (§4.2.2 step 24, `#tep09`).
+- Keyword-alias compaction: a keyword (e.g. `@id`, `@type`, `@list`)
+  compacts to a defined keyword alias (`"id"`, `"type"`, …) instead of
+  emitting the bare keyword.
+
+### Consumer impact
+
+Additive. Characterization fixtures byte-identical, unit suite green (196).
+VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+Compaction is still a partial §5.6 implementation (101→111). The bulk of
+the remaining gap (free-floating-node drop, `@reverse`, `@nest`, scoped
+contexts, `@graph` containers, type/index maps, value-compaction edges) is
+a dedicated algorithm buildout for a following release.
+
 ## [0.24.0] - 2026-06-07
 
 Container expansion: the `@graph` container family, map-container `@none`

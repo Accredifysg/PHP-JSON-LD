@@ -50,10 +50,13 @@ interface Processor
      *                                                   against (a context map,
      *                                                   a `{@context: …}` wrapper,
      *                                                   or a context URL).
+     * @param  string|null  $processingMode  The JSON-LD processing mode
+     *                                       ("json-ld-1.0" or "json-ld-1.1").
+     *                                       Null defaults to "json-ld-1.1".
      *
      * @throws JsonLdException
      */
-    public function compact(array $expanded, array|string $context): CompactedDocument;
+    public function compact(array $expanded, array|string $context, ?string $processingMode = null): CompactedDocument;
 
     /**
      * Deserialize a JSON-LD document to an RDF dataset (the toRdf algorithm).

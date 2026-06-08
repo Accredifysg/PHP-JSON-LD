@@ -62,7 +62,7 @@ final class JsonLdProcessor implements Processor
         );
     }
 
-    public function compact(array $expanded, array|string $context): CompactedDocument
+    public function compact(array $expanded, array|string $context, ?string $processingMode = null): CompactedDocument
     {
         // Normalise the supplied context into a {@context: …} document for
         // ContextProcessor (which reads the @context key).
@@ -72,7 +72,7 @@ final class JsonLdProcessor implements Processor
             $contextDocument = ['@context' => $context];
         }
 
-        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader);
+        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, null, $processingMode);
         $compaction = new Compaction($contextProcessor->getTermDefinitions());
 
         $compacted = $compaction->compact($expanded);

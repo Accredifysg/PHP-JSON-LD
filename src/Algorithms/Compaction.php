@@ -414,8 +414,14 @@ class Compaction
      */
     private function compactIri(string $iri, bool $vocab): string
     {
-        // Keywords compact to themselves (alias support is a later refinement).
+        // A keyword compacts to a keyword alias when the active context
+        // defines one (a term whose @id maps to the keyword, e.g. "id": "@id"
+        // or "type": "@type"); otherwise it compacts to itself.
         if ($this->isKeyword($iri)) {
+            if ($vocab && isset($this->inverse[$iri])) {
+                return $this->selectTerm($this->inverse[$iri]);
+            }
+
             return $iri;
         }
 

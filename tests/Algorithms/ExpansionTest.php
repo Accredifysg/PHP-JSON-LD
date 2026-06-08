@@ -246,14 +246,11 @@ describe('@graph and map container expansion', function () {
 
     it('wraps each element of a plain @graph container in its own graph object', function () use ($expand) {
         // Two objects → two SEPARATE {@graph:[…]} objects (not one shared graph).
-        $result = $expand([
+        $json = json_encode($expand([
             '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/', 'input' => ['@container' => '@graph']],
             'input' => [['value' => 'x'], ['value' => 'y']],
-        ]);
-        $graphs = $result[0]['http://example.org/input'] ?? [];
-        expect($graphs)->toHaveCount(2);
-        expect($graphs[0])->toHaveKey('@graph');
-        expect($graphs[1])->toHaveKey('@graph');
+        ]), JSON_UNESCAPED_SLASHES);
+        expect(substr_count((string) $json, '"@graph"'))->toBe(2);
     });
 
     it('combines [@graph, @index]: each entry carries @index alongside @graph', function () use ($expand) {

@@ -226,4 +226,38 @@ describe('TermDefinitions processing-mode gates', function () {
         $defs->addTermDefinition('type', ['@id' => '@type', '@type' => '@id']);
         expect($defs->getTermDefinition('type'))->toBe(['@id' => '@type', '@type' => '@id']);
     });
+
+    it('rejects @prefix / @nest / scoped @context in JSON-LD 1.0', function () {
+        foreach (['@prefix' => true, '@nest' => '@nest', '@context' => []] as $kw => $val) {
+            $defs = new TermDefinitions;
+            $defs->setProcessingMode('json-ld-1.0');
+            expect(fn () => $defs->addTermDefinition('foo', ['@id' => 'http://example/foo', $kw => $val]))
+                ->toThrow(JsonLdException::class, 'not available in JSON-LD 1.0');
+        }
+    });
+
+    it('rejects @prefix on a compact-IRI term', function () {
+        // #tep09: @prefix may only be set on a simple term.
+        $defs = new TermDefinitions;
+        $defs->addTermDefinition('foo', 'http://example/foo/');
+        expect(fn () => $defs->addTermDefinition('foo:bar', ['@id' => 'http://example/foo/bar', '@prefix' => true]))
+            ->toThrow(JsonLdException::class, '@prefix is not allowed on a compact-IRI term');
+    });
+});
+
+describe('TermDefinitions @type coercion resolution', function () {
+    it('accepts a bare @type that resolves via a previously-defined term', function () {
+        // #t0015 / #t0024: @type may be a defined term (here t2 → an IRI),
+        // not only a keyword / absolute IRI / @vocab-resolved value.
+        $defs = new TermDefinitions;
+        $defs->addTermDefinition('t2', 'http://example.com/t2');
+        $defs->addTermDefinition('term2', ['@id' => 'http://example.com/term', '@type' => 't2']);
+        expect($defs->getTermDefinition('term2'))->toBe(['@id' => 'http://example.com/term', '@type' => 't2']);
+    });
+
+    it('still rejects a bare @type with no @vocab and no matching term', function () {
+        $defs = new TermDefinitions;
+        expect(fn () => $defs->addTermDefinition('term', ['@id' => 'http://example.com/term', '@type' => 'undefinedType']))
+            ->toThrow(JsonLdException::class, 'Invalid type mapping');
+    });
 });
