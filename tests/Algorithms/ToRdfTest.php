@@ -116,3 +116,25 @@ it('drops a relative-IRI predicate (no RDF representation)', function () {
 
     expect($nq)->toBe('<http://example.com/s> <http://example.com/known> "kept" .'."\n");
 });
+
+it('serialises a directional string as an i18n-datatype literal', function () {
+    $nq = (new JsonLdProcessor(new StubDocumentLoader))
+        ->toRdf(
+            ['@id' => 'http://example/s', 'http://example/p' => ['@value' => 'x', '@direction' => 'rtl', '@language' => 'en']],
+            new JsonLdOptions(rdfDirection: 'i18n-datatype'),
+        )
+        ->toNQuads();
+    expect($nq)->toContain('"x"^^<https://www.w3.org/ns/i18n#en_rtl>');
+});
+
+it('serialises a directional string as a compound literal', function () {
+    $nq = (new JsonLdProcessor(new StubDocumentLoader))
+        ->toRdf(
+            ['@id' => 'http://example/s', 'http://example/p' => ['@value' => 'x', '@direction' => 'rtl', '@language' => 'en']],
+            new JsonLdOptions(rdfDirection: 'compound-literal'),
+        )
+        ->toNQuads();
+    expect($nq)->toContain('<http://www.w3.org/1999/02/22-rdf-syntax-ns#value> "x" .');
+    expect($nq)->toContain('<http://www.w3.org/1999/02/22-rdf-syntax-ns#direction> "rtl" .');
+    expect($nq)->toContain('<http://www.w3.org/1999/02/22-rdf-syntax-ns#language> "en" .');
+});

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-06-08
+
+`rdfDirection` toRdf serialisation modes.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.32.0:      310      178      386      874
+v0.33.0:      310      178      390      878   (+4 toRdf)
+```
+
+### Added
+
+- `toRdf` honours the `rdfDirection` option (threaded via `JsonLdOptions`)
+  for base-direction-tagged strings (§9):
+  - `"i18n-datatype"` → a literal typed with
+    `https://www.w3.org/ns/i18n#{language}_{direction}` (`#tdi09`, `#tdi10`).
+  - `"compound-literal"` → a blank node with `rdf:value`, `rdf:direction`,
+    and (when present) `rdf:language` (`#tdi11`, `#tdi12`).
+  With no `rdfDirection` option the base direction is omitted, as before.
+
+### Consumer impact
+
+Additive (toRdf-only, opt-in via the option). Expansion and compaction
+unchanged. Characterization fixtures byte-identical, unit suite green (221).
+VC stays pinned at `^0.1.1`.
+
 ## [0.32.0] - 2026-06-08
 
 Compaction algorithm buildout, phase 5: type-scoped contexts (with

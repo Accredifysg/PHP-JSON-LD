@@ -23,6 +23,24 @@ use Accredify\JsonLd\Rdf\RdfTerm;
  */
 final class ToRdf
 {
+    private const I18N_BASE = 'https://www.w3.org/ns/i18n#';
+
+    private const RDF_VALUE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#value';
+
+    private const RDF_LANGUAGE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#language';
+
+    private const RDF_DIRECTION = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#direction';
+
+    /**
+     * @param  string|null  $rdfDirection  The `rdfDirection` option:
+     *                                     "i18n-datatype" or "compound-literal".
+     *                                     Null leaves base-direction information
+     *                                     out of the RDF (the default).
+     */
+    public function __construct(
+        private readonly ?string $rdfDirection = null,
+    ) {}
+
     /**
      * @param  array<mixed>  $expanded
      * @return list<RdfQuad>
@@ -120,7 +138,7 @@ final class ToRdf
         // Value object.
         if (array_key_exists(Keyword::Value->value, $item)) {
             /** @var array<string, mixed> $item */
-            return $this->valueToLiteral($item);
+            return $this->valueToLiteral($item, $listQuads, $issuer);
         }
 
         return null;
@@ -159,8 +177,11 @@ final class ToRdf
 
     /**
      * @param  array<string, mixed>  $item  A JSON-LD value object.
+     * @param  list<RdfQuad>  $listQuads  Receives any auxiliary triples (used
+     *                                    by the compound-literal rdfDirection
+     *                                    mode).
      */
-    private function valueToLiteral(array $item): RdfTerm
+    private function valueToLiteral(array $item, array &$listQuads, BlankNodeIssuer $issuer): RdfTerm
     {
         $value = $item[Keyword::Value->value];
 
@@ -175,6 +196,33 @@ final class ToRdf
         $language = isset($item[Keyword::Language->value]) && is_string($item[Keyword::Language->value])
             ? $item[Keyword::Language->value]
             : null;
+
+        $direction = isset($item[Keyword::Direction->value]) && is_string($item[Keyword::Direction->value])
+            ? $item[Keyword::Direction->value]
+            : null;
+
+        // A base-direction-tagged string under an `rdfDirection` mode (§9):
+        // either an i18n datatype IRI or a compound literal (blank node with
+        // rdf:value / rdf:language / rdf:direction). Only applies to plain
+        // strings (no explicit datatype).
+        if ($direction !== null && $this->rdfDirection !== null && $datatype === null) {
+            $stringValue = is_scalar($value) ? (string) $value : '';
+
+            if ($this->rdfDirection === 'i18n-datatype') {
+                return RdfTerm::literal($stringValue, self::I18N_BASE.strtolower($language ?? '').'_'.$direction);
+            }
+
+            if ($this->rdfDirection === 'compound-literal') {
+                $node = RdfTerm::blankNode($issuer->getId());
+                $listQuads[] = new RdfQuad($node, RdfTerm::iri(self::RDF_VALUE), RdfTerm::literal($stringValue));
+                if ($language !== null) {
+                    $listQuads[] = new RdfQuad($node, RdfTerm::iri(self::RDF_LANGUAGE), RdfTerm::literal(strtolower($language)));
+                }
+                $listQuads[] = new RdfQuad($node, RdfTerm::iri(self::RDF_DIRECTION), RdfTerm::literal($direction));
+
+                return $node;
+            }
+        }
 
         // @json literal: serialised with the JSON Canonicalization Scheme and
         // typed as rdf:JSON.

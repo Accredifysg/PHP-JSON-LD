@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    310 passed /  75 failed (v0.32.0)
-Compaction:   178 passed /  68 failed (v0.32.0)
-toRdf:        386 passed /  81 failed (v0.32.0)
+Expansion:    310 passed /  75 failed (v0.33.0)
+Compaction:   178 passed /  68 failed (v0.33.0)
+toRdf:        390 passed /  77 failed (v0.33.0)
 ```
 
 Each Phase 4 PR:
@@ -96,6 +96,7 @@ Each Phase 4 PR:
 | v0.30.0 |          310  |     0  | toRdf tail: RFC-3986 @base verbatim + blank-node-isomorphism compare (+10 toRdf)|
 | v0.31.0 |          310  |     0  | JsonLdOptions value object (refactor; scores unchanged)|
 | v0.32.0 |          310  |     0  | compaction buildout p5: type-scoped contexts + non-propagation (+6 compact)|
+| v0.33.0 |          310  |     0  | rdfDirection toRdf modes (i18n-datatype / compound-literal) (+4 toRdf)|
 
 ### Notes on v0.4.0
 

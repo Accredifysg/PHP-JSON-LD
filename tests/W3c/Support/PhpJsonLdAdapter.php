@@ -74,8 +74,10 @@ final class PhpJsonLdAdapter implements Processor
     {
         $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
 
+        $rdfDirection = isset($options['rdfDirection']) && is_string($options['rdfDirection']) ? $options['rdfDirection'] : null;
+
         return (new JsonLdProcessor($this->loader))
-            ->toRdf($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options)))
+            ->toRdf($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), rdfDirection: $rdfDirection))
             ->toNQuads();
     }
 }
