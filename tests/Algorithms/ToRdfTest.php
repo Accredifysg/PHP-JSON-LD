@@ -138,3 +138,25 @@ it('serialises a directional string as a compound literal', function () {
     expect($nq)->toContain('<http://www.w3.org/1999/02/22-rdf-syntax-ns#direction> "rtl" .');
     expect($nq)->toContain('<http://www.w3.org/1999/02/22-rdf-syntax-ns#language> "en" .');
 });
+
+it('serialises a number >= 1e21 as an xsd:double, not an integer (#trt01)', function () {
+    $nq = toNQuads([
+        '@id' => 'http://example/s',
+        'http://example/n' => ['@value' => 1.0e21],
+    ]);
+    expect($nq)->toContain('"1.0E21"^^<http://www.w3.org/2001/XMLSchema#double>')
+        ->and($nq)->not->toContain('XMLSchema#integer');
+});
+
+it('keeps native true and 1 as distinct coerced values without loose dedup (#te061)', function () {
+    // PHP's `1 == true` must NOT collapse these into one node-map value.
+    $nq = toNQuads([
+        '@id' => 'http://example/s',
+        'http://example/p' => [
+            ['@value' => 1, '@type' => 'http://example/d'],
+            ['@value' => true, '@type' => 'http://example/d'],
+        ],
+    ]);
+    expect($nq)->toContain('"1"^^<http://example/d>')
+        ->and($nq)->toContain('"true"^^<http://example/d>');
+});

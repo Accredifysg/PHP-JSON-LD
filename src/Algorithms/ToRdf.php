@@ -235,7 +235,12 @@ final class ToRdf
         }
 
         if (is_float($value) || (is_int($value) && $datatype === RdfTerm::XSD_DOUBLE)) {
-            $isIntegerValued = is_finite((float) $value) && floor((float) $value) === (float) $value;
+            // A JSON number with no fractional part is xsd:integer only when its
+            // magnitude is below 1e21; at or above that it serialises as an
+            // xsd:double in canonical form, e.g. 1.0e21 → "1.0E21" (#trt01).
+            $isIntegerValued = is_finite((float) $value)
+                && floor((float) $value) === (float) $value
+                && abs((float) $value) < 1.0e21;
             if (! $isIntegerValued || $datatype === RdfTerm::XSD_DOUBLE) {
                 return RdfTerm::literal($this->canonicalDouble((float) $value), $datatype ?? RdfTerm::XSD_DOUBLE);
             }

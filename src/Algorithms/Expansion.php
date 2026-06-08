@@ -1009,8 +1009,15 @@ class Expansion
 
         $value = $result[Keyword::Value->value];
 
-        // @value: null → the value object is dropped.
-        if ($value === null) {
+        // @json values are preserved verbatim — no further constraints (a
+        // @json literal may hold any JSON value, including null/objects/arrays).
+        $type = $hasType ? $result[Keyword::Type->value] : null;
+        $isJson = $type === Keyword::Json->value
+            || (is_array($type) && in_array(Keyword::Json->value, $type, true));
+
+        // @value: null → the value object is dropped, UNLESS it is a @json
+        // literal, where JSON null is a legitimate value to serialise (#tjs22).
+        if ($value === null && ! $isJson) {
             return null;
         }
 
@@ -1018,11 +1025,6 @@ class Expansion
         if ($hasLanguage && ! is_string($value)) {
             throw new JsonLdException('Invalid language-tagged value: @value must be a string when @language is present');
         }
-
-        // @json values are preserved verbatim — no further constraints.
-        $type = $hasType ? $result[Keyword::Type->value] : null;
-        $isJson = $type === Keyword::Json->value
-            || (is_array($type) && in_array(Keyword::Json->value, $type, true));
 
         // For non-@json value objects, @value must be a scalar.
         if (! $isJson && ! is_scalar($value)) {

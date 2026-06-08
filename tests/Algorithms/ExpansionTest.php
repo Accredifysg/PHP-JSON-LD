@@ -358,4 +358,14 @@ describe('expansion validation gates', function () {
             ->and($json)->toContain('http://example.org/embed')
             ->and($json)->not->toContain('inner');
     });
+
+    it('preserves a @json value object whose @value is null (#tjs22)', function () use ($expand) {
+        // JSON null is a legitimate @json literal value — it must NOT be
+        // dropped like a null value of an ordinary (non-@json) value object.
+        $json = json_encode($expand([
+            'http://example/p' => ['@value' => null, '@type' => '@json'],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@value":null')
+            ->and($json)->toContain('"@type":"@json"');
+    });
 });

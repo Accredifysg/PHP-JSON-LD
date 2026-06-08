@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-06-08
+
+RDF value-canonicalization fixes (toRdf + the expansion they depend on),
+found by auditing the genuinely-failing toRdf tests under a blank-node-
+isomorphism-aware gate (most apparent `@json` failures were only
+canonical-blank-node-label differences and already passed).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.37.0:      329      183      408      920
+v0.38.0:      330      183      413      926   (+1 expand, +5 toRdf)
+```
+
+### Fixed (toRdf / node map)
+
+- Node-map duplicate detection now uses strict, deep, key-order-independent
+  equality instead of PHP's loose `==` (`#te061`/`#te018`/`#te088`): loose
+  comparison wrongly collapsed distinct native values such as `1` and `true`
+  (since `1 == true`) into a single value, dropping triples.
+- A JSON number with no fractional part but magnitude ≥ 1e21 now serialises
+  as an `xsd:double` in canonical form (e.g. `1.0e21` → `"1.0E21"`) rather
+  than an `xsd:integer` with the digits expanded (`#trt01`).
+
+### Fixed (expansion)
+
+- A `@json` value object whose `@value` is `null` is preserved (and serialises
+  to the JSON literal `"null"`) instead of being dropped like an ordinary
+  null value (`#tjs22`, expand + toRdf).
+
+### Notes
+
+- `#tjs10` (structural `@json` canonicalization) is not addressed: its input
+  uses empty JSON objects (`{}`) which PHP's `json_decode($x, true)` collapses
+  to empty arrays, losing the object/array distinction the expected output
+  needs. The full JSON Canonicalization Scheme (ECMAScript number formatting,
+  `#tjs12`) is likewise deferred.
+
 ## [0.37.0] - 2026-06-08
 
 Cross-suite expansion fixes — each gains the expand test and its toRdf twin

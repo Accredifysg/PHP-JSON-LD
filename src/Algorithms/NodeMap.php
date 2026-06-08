@@ -234,7 +234,7 @@ final class NodeMap
 
         if (! $allowDuplicate) {
             foreach ($node[$property] as $existing) {
-                if ($existing == $value) {
+                if ($this->sameValue($existing, $value)) {
                     unset($node);
 
                     return;
@@ -244,5 +244,30 @@ final class NodeMap
 
         $node[$property][] = $value;
         unset($node);
+    }
+
+    /**
+     * Deep, key-order-independent equality with STRICT scalar comparison, used
+     * for node-map duplicate detection. PHP's loose `==` would treat distinct
+     * RDF values as equal (e.g. `1 == true`, `1 == "1"`), wrongly collapsing
+     * `{@value: 1}` and `{@value: true}` into one (#te061); strict comparison
+     * keeps them as separate values.
+     */
+    private function sameValue(mixed $a, mixed $b): bool
+    {
+        if (is_array($a) && is_array($b)) {
+            if (count($a) !== count($b)) {
+                return false;
+            }
+            foreach ($a as $key => $value) {
+                if (! array_key_exists($key, $b) || ! $this->sameValue($value, $b[$key])) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return $a === $b;
     }
 }
