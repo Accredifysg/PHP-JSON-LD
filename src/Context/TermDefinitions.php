@@ -493,6 +493,22 @@ class TermDefinitions
             }
         }
 
+        // Cyclic IRI mapping (§4.2.2): a term whose @id is a compact IRI whose
+        // prefix is the term itself (e.g. "term": {"@id": "term:term"}) would
+        // expand to itself forever — reject it (#ter10). Absolute IRIs
+        // (scheme://…), blank nodes (_:) and keyword @ids are not self-prefixes.
+        if (isset($definition['@id']) && is_string($definition['@id']) && ! Keyword::contains($definition['@id'])) {
+            $id = $definition['@id'];
+            $colon = strpos($id, ':');
+            if ($colon !== false) {
+                $prefix = substr($id, 0, $colon);
+                $suffix = substr($id, $colon + 1);
+                if ($prefix === $term && $prefix !== '_' && ! str_starts_with($suffix, '//')) {
+                    throw new JsonLdException("Invalid IRI mapping for term '{$term}': cyclic IRI mapping");
+                }
+            }
+        }
+
         if (isset($definition['@container'])) {
             $container = $definition['@container'];
 

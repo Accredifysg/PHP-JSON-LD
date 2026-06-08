@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-06-08
+
+Cross-suite expansion fixes — each gains the expand test and its toRdf twin
+(toRdf reuses the expansion algorithm). Designed from a parallel
+spec + code + per-fixture investigation, gated per-test against the full
+suite. (The tc016/tc017 compaction "cluster" was investigated and dropped:
+both already pass the key-blind W3C compaction gate — their output differs
+from expected only in term names, which `toEqualCanonicalizing` discards.)
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.36.0:      325      183      404      912
+v0.37.0:      329      183      408      920   (+4 expand, +4 toRdf)
+```
+
+### Fixed (expansion)
+
+- `@type: @none` no longer annotates values (`#ttn02`): a term coerced to
+  `@type: @none` suppresses type annotation, so scalar values expand to bare
+  `{@value}` objects rather than `{@value, @type: @none}`. (`#te...`/toRdf twin.)
+- `@type: @vocab` value coercion now falls back to document-relative
+  resolution against `@base` when the value is neither a defined term nor
+  `@vocab`-resolvable (`#t0057`/`#te057`) — mirroring `@id` coercion.
+- A nested `@vocab: null` now RESETS the active vocabulary instead of
+  inheriting the parent's (`#t0059`/`#te059`): a relative `@type` then
+  expands document-relative and unmapped terms are dropped.
+
+### Added (error conditions)
+
+- Cyclic IRI mapping (`#ter10`/`#te...`): a term whose `@id` is a compact IRI
+  whose prefix is the term itself (e.g. `"term": {"@id": "term:term"}`) is
+  rejected at term-definition time. Absolute IRIs, blank nodes (`_:`) and
+  keyword `@id`s are exempt.
+
+### Deferred
+
+- `#ter56` (reject `@context` defined as a term): blocked on the
+  `{"@context": {…}}` unwrapping accommodation in `ContextProcessor`
+  (a VC drop-in compatibility path) — making it throw risks the
+  byte-identical characterization fixtures; needs separate sign-off.
+
 ## [0.36.0] - 2026-06-08
 
 Two remaining non-crypto conformance items, shipped as a small measured

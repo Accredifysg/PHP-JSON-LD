@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    325 passed /  60 failed (v0.36.0)
-Compaction:   183 passed /  63 failed (v0.36.0)
-toRdf:        404 passed /  63 failed (v0.36.0)
+Expansion:    329 passed /  56 failed (v0.37.0)
+Compaction:   183 passed /  63 failed (v0.37.0)
+toRdf:        408 passed /  59 failed (v0.37.0)
 ```
 
 Each Phase 4 PR:
@@ -100,6 +100,7 @@ Each Phase 4 PR:
 | v0.34.0 |          315  |    +5  | expansion validation gates: @language/@container/@type:@none/@reverse/@list (+4 toRdf)|
 | v0.35.0 |          324  |    +9  | IRI-consistency + protected-override + scoped-context propagation (+3 compact, +9 toRdf)|
 | v0.36.0 |          325  |    +1  | protected @type redefinition (#tpr32) + scoped-@base compaction (+2 compact, +1 toRdf)|
+| v0.37.0 |          329  |    +4  | cross-suite expansion: @type:@none, @type:@vocab doc-relative, @vocab:null reset, cyclic IRI (+4 toRdf)|
 
 ### Notes on v0.4.0
 

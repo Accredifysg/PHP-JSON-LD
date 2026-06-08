@@ -300,4 +300,9 @@ describe('TermDefinitions structural validation gates', function () {
         expect(fn () => $defs->addTermDefinition('notype', ['@id' => 'http://example/notype', '@type' => '@none']))
             ->toThrow(JsonLdException::class, '@type @none requires JSON-LD 1.1');
     });
+
+    it('rejects a cyclic IRI mapping whose @id uses the term itself as prefix (#ter10)', function () {
+        expect(fn () => (new TermDefinitions)->addTermDefinition('term', ['@id' => 'term:term']))
+            ->toThrow(JsonLdException::class, 'cyclic IRI mapping');
+    });
 });

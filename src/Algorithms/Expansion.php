@@ -702,13 +702,22 @@ class Expansion
             return [Keyword::Id->value => $this->expandIri($value, documentRelative: true) ?? $value];
         }
 
-        // Coerce to @vocab — vocab-mode IRI expansion.
+        // Coerce to @vocab — vocab-mode IRI expansion, falling back to
+        // document-relative resolution when the value is neither a term nor
+        // @vocab-resolvable (mirrors @id coercion / @type expansion) (#t0057).
         if ($typeMapping === Keyword::Vocab->value && is_string($value)) {
-            return [Keyword::Id->value => $this->expandIri($value, vocab: true) ?? $value];
+            return [Keyword::Id->value => $this->expandIri($value, vocab: true, documentRelative: true) ?? $value];
         }
 
-        // Typed literal.
-        if ($typeMapping !== null && $typeMapping !== Keyword::Id->value && $typeMapping !== Keyword::Vocab->value) {
+        // Typed literal. @type:@none is NOT a datatype — it suppresses type
+        // annotation, so such values fall through to the plain-value path and
+        // expand to bare value objects without an @type member (#ttn02).
+        if (
+            $typeMapping !== null
+            && $typeMapping !== Keyword::Id->value
+            && $typeMapping !== Keyword::Vocab->value
+            && $typeMapping !== Keyword::None->value
+        ) {
             $expandedType = $this->expandIri($typeMapping, vocab: true);
             // xsd:string is the default — omit @type to avoid noise.
             if (
@@ -1412,8 +1421,11 @@ class Expansion
                 continue;
             }
 
-            if ($term === Keyword::Vocab->value && is_string($definition)) {
-                $target->pushVocab($definition);
+            if ($term === Keyword::Vocab->value && ($definition === null || is_string($definition))) {
+                // A scoped @vocab of null RESETS the active vocabulary (so a
+                // relative @type goes document-relative and unmapped terms are
+                // dropped) rather than inheriting the parent's @vocab (#t0059).
+                $definition === null ? $target->setVocab(null) : $target->pushVocab($definition);
 
                 continue;
             }

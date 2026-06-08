@@ -335,4 +335,27 @@ describe('expansion validation gates', function () {
             'p' => 'x',
         ]))->toThrow(JsonLdException::class, 'nullification');
     });
+
+    it('expands @type:@none values to plain value objects without a @type (#ttn02)', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, 'notype' => ['@id' => 'http://example/notype', '@type' => '@none']],
+            'notype' => 'plain',
+        ]), JSON_UNESCAPED_SLASHES);
+        // The value is a bare {@value} object — the @none coercion is dropped.
+        expect($json)->toContain('"@value":"plain"')
+            ->and($json)->not->toContain('@none');
+    });
+
+    it('resets @vocab to null in a nested context, dropping unmapped terms (#t0059)', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@vocab' => 'http://example.org/'],
+            'outer' => 'kept',
+            'embed' => ['@context' => ['@vocab' => null], 'inner' => 'dropped'],
+        ]), JSON_UNESCAPED_SLASHES);
+        // "outer"/"embed" expand via the outer @vocab; inside embed the @vocab
+        // is reset, so the unmapped "inner" term is dropped (not inherited).
+        expect($json)->toContain('http://example.org/outer')
+            ->and($json)->toContain('http://example.org/embed')
+            ->and($json)->not->toContain('inner');
+    });
 });
