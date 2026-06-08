@@ -311,4 +311,21 @@ describe('JsonLdProcessor::compact', function () {
         // baz inside the nested node is NOT @vocab-coerced (so the ref stays {@id}).
         expect($json)->toContain('"@id":"http://example/buzz"');
     });
+
+    it('relativises @id values against a property-scoped @base (#tc024)', function () {
+        // bar coerces values to @id and carries a property-scoped @base, so the
+        // absolute @id values relativise against it during compaction.
+        $expanded = [[
+            'http://example/bar' => [
+                ['@id' => 'http://example/a'],
+                ['@id' => 'http://example/b'],
+            ],
+        ]];
+        $context = [
+            '@vocab' => 'http://example/',
+            'bar' => ['@id' => 'http://example/bar', '@type' => '@id', '@context' => ['@base' => 'http://example/']],
+        ];
+        $result = compactWith($expanded, $context);
+        expect($result['bar'])->toBe(['a', 'b']);
+    });
 });

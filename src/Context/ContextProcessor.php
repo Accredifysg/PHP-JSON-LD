@@ -362,6 +362,16 @@ class ContextProcessor
             $protectedContext = ($context[Keyword::Protected->value] ?? null) === true;
 
             foreach ($context as $key => $value) {
+                // @type may be "redefined" (validated earlier) with a map whose
+                // keys are a subset of {@container, @protected}. Store it
+                // protected-aware so a protected @type cannot later be redefined
+                // differently (#tpr32), while an identical redefinition is
+                // allowed. All other keywords carry no term definition.
+                if ($key === Keyword::Type->value && is_array($value)) {
+                    $this->termDefinitions->overlayTerm($key, $value, $protectedContext, false);
+
+                    continue;
+                }
                 if (Keyword::contains($key)) {
                     continue;
                 }

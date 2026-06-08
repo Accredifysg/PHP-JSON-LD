@@ -7,6 +7,7 @@ namespace Accredify\JsonLd\Algorithms;
 use Accredify\JsonLd\Context\TermDefinitions;
 use Accredify\JsonLd\Enums\Keyword;
 use Accredify\JsonLd\Exceptions\JsonLdException;
+use Accredify\JsonLd\Internal\IriResolver;
 
 /**
  * JSON-LD 1.1 Compaction Algorithm (§5.6) — first-pass implementation.
@@ -200,8 +201,22 @@ class Compaction
         $vocab = $ctx->getVocab();
 
         foreach ($scoped as $key => $value) {
-            if (! is_string($key) || $this->isKeyword($key)) {
-                continue; // keyword entries (@vocab/@language/…) are not applied here
+            if (! is_string($key)) {
+                continue;
+            }
+            // A scoped @base applies to the cloned active context so that
+            // compactIri can relativise document-relative IRIs against it
+            // (e.g. #tc015 type-scoped base, #tc024 property-scoped base).
+            // @vocab is deliberately NOT applied here: a scoped @vocab must not
+            // affect compaction of the @type values that triggered it (§5.6),
+            // so naive application regresses type-scoped-vocab cases (#tc016).
+            if ($key === Keyword::Base->value && (is_string($value) || $value === null)) {
+                $ctx->setBase($value === null ? null : IriResolver::establishBase($ctx->getBase(), $value));
+
+                continue;
+            }
+            if ($this->isKeyword($key)) {
+                continue; // other keyword entries carry no term definition here
             }
             if ($value === null) {
                 unset($ctx->termDefinitions[$key]);

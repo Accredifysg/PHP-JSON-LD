@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-06-08
+
+Two remaining non-crypto conformance items, shipped as a small measured
+release: protected `@type` keyword redefinition enforcement on the
+context-merge hot path, and scoped-`@base` relativisation during compaction.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.35.0:      324      181      403      908
+v0.36.0:      325      183      404      912   (+1 expand, +2 compact, +1 toRdf)
+```
+
+### Added (error conditions)
+
+- Protected `@type` keyword redefinition (`#tpr32`): a map-valued `@type`
+  context entry is now stored protected-aware during context merging, so a
+  later context layer that redefines a protected `@type` differently is
+  rejected as a protected term redefinition. (`@type` was previously skipped
+  with the other keywords in the merge term-loop and never tracked.)
+
+### Fixed (compaction)
+
+- Scoped-context `@base` is now applied during compaction (`#tc015`
+  type-scoped base, `#tc024` property-scoped base): a `@base` carried by a
+  type- or property-scoped `@context` relativises document-relative `@id`
+  values (and node references) against it. `@vocab`/`@language` are
+  deliberately not applied here — a scoped `@vocab` must not affect
+  compaction of the `@type` values that triggered it (`#tc016`), which is a
+  deeper `@type`-compaction-ordering change left for a follow-up.
+
 ## [0.35.0] - 2026-06-08
 
 Final conformance clusters: IRI-shaped-term consistency, protected-term

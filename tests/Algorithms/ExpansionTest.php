@@ -237,6 +237,24 @@ describe('scoped context propagation', function () {
             'thing' => ['@context' => ['name' => 'http://example.com/other'], 'name' => 'x'],
         ]))->toThrow(JsonLdException::class, 'Protected term redefinition');
     });
+
+    it('rejects redefining a protected @type keyword differently across layers (#tpr32)', function () use ($expand) {
+        // Layer 1 protects @type as {@container:@set}; layer 2 redefines it
+        // without @container — a differing redefinition of a protected keyword.
+        expect(fn () => $expand([
+            '@context' => [
+                [
+                    '@version' => 1.1,
+                    'id' => ['@id' => '@id', '@protected' => true],
+                    'type' => ['@id' => '@type', '@container' => '@set', '@protected' => true],
+                    '@type' => ['@container' => '@set', '@protected' => true],
+                ],
+                ['@version' => 1.1, '@type' => ['@protected' => true]],
+            ],
+            'id' => 'http://example.com/1',
+            'type' => ['http://example.org/ns/Foo'],
+        ]))->toThrow(JsonLdException::class, 'Protected term redefinition');
+    });
 });
 
 describe('@graph and map container expansion', function () {
