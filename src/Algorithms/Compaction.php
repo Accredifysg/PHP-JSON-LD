@@ -48,6 +48,15 @@ class Compaction
      */
     private array $inverse = [];
 
+    /**
+     * Reverse inverse map: expanded reverse-IRI → the reverse-property term
+     * name (a term defined via `@reverse`), so expanded `@reverse` entries can
+     * compact back to that term.
+     *
+     * @var array<string, string>
+     */
+    private array $reverseInverse = [];
+
     public function __construct(private readonly TermDefinitions $activeContext)
     {
         $this->buildInverse();
@@ -85,6 +94,11 @@ class Compaction
     {
         foreach ($this->activeContext->termDefinitions as $term => $def) {
             $definition = is_string($def) ? ['@id' => $def] : $def;
+            // A reverse-property term (defined via @reverse) is indexed so an
+            // expanded @reverse-map property can compact back to it.
+            if (isset($definition['@reverse']) && is_string($definition['@reverse'])) {
+                $this->reverseInverse[$this->expandTermIri($definition['@reverse'])] ??= (string) $term;
+            }
             if (! isset($definition['@id']) || ! is_string($definition['@id'])) {
                 continue;
             }
@@ -217,6 +231,33 @@ class Compaction
                 continue;
             }
 
+            // @reverse map: each reverse property is compacted; a property
+            // with a reverse-coerced term (defined via @reverse) is hoisted to
+            // the top level under that term, the rest stay under (aliased)
+            // @reverse (§5.6).
+            if ($key === Keyword::Reverse->value && is_array($value)) {
+                $reverseMap = [];
+                foreach ($value as $prop => $nodes) {
+                    if (! is_string($prop)) {
+                        continue;
+                    }
+                    $nodeList = is_array($nodes) && array_is_list($nodes) ? $nodes : [$nodes];
+                    $reverseTerm = $this->reverseInverse[$prop] ?? null;
+                    $activeProp = $reverseTerm ?? $this->compactIri($prop, vocab: true);
+                    $compacted = $this->compactElement($nodeList, $activeProp);
+                    if ($reverseTerm !== null) {
+                        $result[$reverseTerm] = $compacted;
+                    } else {
+                        $reverseMap[$this->compactIri($prop, vocab: true)] = $compacted;
+                    }
+                }
+                if ($reverseMap !== []) {
+                    $result[$this->compactIri(Keyword::Reverse->value, vocab: true)] = $reverseMap;
+                }
+
+                continue;
+            }
+
             if ($this->isKeyword($key)) {
                 // Other keywords pass through with a compacted key.
                 $result[$this->compactIri($key, vocab: true)] = $value;
@@ -230,9 +271,13 @@ class Compaction
             $compactedKey = $this->compactIri($key, vocab: true);
 
             // Determine the compacted value: an empty array stays []; a
-            // container-map term builds a map; otherwise recurse normally.
+            // @graph-container term collapses graph objects (into an id/index
+            // map, an @included wrapper, or bare nodes); a container-map term
+            // builds a map; otherwise recurse normally.
             if (is_array($value) && array_is_list($value) && $value === []) {
                 $compactedValue = [];
+            } elseif ($this->hasContainer($compactedKey, Keyword::Graph->value) && is_array($value) && array_is_list($value)) {
+                $compactedValue = $this->compactGraphContainer($value, $compactedKey);
             } else {
                 $mapType = $this->mapContainerType($compactedKey);
                 $compactedValue = ($mapType !== null && is_array($value) && array_is_list($value))
@@ -357,6 +402,86 @@ class Compaction
         }
 
         return null;
+    }
+
+    /**
+     * Compacts the value of a `@graph`-container property (§5.6). Each item is
+     * a graph object `{@graph:[…], @id?, @index?}`:
+     *  - `[@graph, @id]`   → a map keyed by the (compacted) graph @id, else @none;
+     *  - `[@graph, @index]`→ a map keyed by the graph @index, else @none;
+     *  - plain `@graph`    → a simple graph unwraps to its node (single) or an
+     *                        `@included` wrapper (multiple); a *named* graph
+     *                        (has @id) is kept as `{@id , @graph}`.
+     * `@set` keeps the result (or each map entry) as an array.
+     *
+     * @param  list<mixed>  $items
+     */
+    private function compactGraphContainer(array $items, string $activeProperty): mixed
+    {
+        $hasId = $this->hasContainer($activeProperty, Keyword::Id->value);
+        $hasIndex = $this->hasContainer($activeProperty, Keyword::Index->value);
+        $asSet = $this->hasContainer($activeProperty, Keyword::Set->value);
+        $none = $this->compactIri(Keyword::None->value, vocab: true);
+
+        $map = [];
+        $list = [];
+
+        foreach ($items as $item) {
+            if (! is_array($item) || ! array_key_exists(Keyword::Graph->value, $item)) {
+                // Not a graph object (e.g. a plain node reference) — compact normally.
+                $list[] = $this->compactElement($item, $activeProperty);
+
+                continue;
+            }
+
+            $graphValue = $item[Keyword::Graph->value];
+            $graphNodes = is_array($graphValue) && array_is_list($graphValue) ? $graphValue : [$graphValue];
+            $content = $this->compactElement($graphNodes, null);
+
+            if ($hasId || $hasIndex) {
+                if ($hasId) {
+                    $key = isset($item[Keyword::Id->value]) && is_string($item[Keyword::Id->value])
+                        ? $this->compactIri($item[Keyword::Id->value], vocab: false)
+                        : $none;
+                } else {
+                    $key = isset($item[Keyword::Index->value]) && is_string($item[Keyword::Index->value])
+                        ? $item[Keyword::Index->value]
+                        : $none;
+                }
+                $entry = ($asSet && ! (is_array($content) && array_is_list($content))) ? [$content] : $content;
+                if (array_key_exists($key, $map)) {
+                    if (! is_array($map[$key]) || ! array_is_list($map[$key])) {
+                        $map[$key] = [$map[$key]];
+                    }
+                    $map[$key][] = $entry;
+                } else {
+                    $map[$key] = $entry;
+                }
+
+                continue;
+            }
+
+            // Plain @graph container.
+            if (isset($item[Keyword::Id->value]) && is_string($item[Keyword::Id->value])) {
+                // A named graph is preserved as {@id, @graph}.
+                $list[] = [
+                    $this->compactIri(Keyword::Id->value, vocab: true) => $this->compactIri($item[Keyword::Id->value], vocab: false),
+                    $this->compactIri(Keyword::Graph->value, vocab: true) => $content,
+                ];
+            } elseif (is_array($content) && array_is_list($content)) {
+                // A simple graph with multiple nodes → @included wrapper.
+                $list[] = [$this->compactIri(Keyword::Included->value, vocab: true) => $content];
+            } else {
+                // A simple graph with a single node unwraps to the bare node.
+                $list[] = $content;
+            }
+        }
+
+        if ($hasId || $hasIndex) {
+            return $map;
+        }
+
+        return (! $asSet && count($list) === 1) ? $list[0] : $list;
     }
 
     /**

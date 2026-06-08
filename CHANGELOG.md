@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-06-08
+
+Compaction algorithm buildout, phase 2: `@graph` container maps and
+`@reverse` compaction (the workflow plan's next-ranked low/medium-risk
+tranches).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.26.0:      310      142      376      828
+v0.27.0:      310      163      376      849   (+21 compact)
+```
+
+### Added (compaction)
+
+- `@graph` container compaction (§5.6):
+  - `[@graph, @id]` → a map keyed by each graph's (compacted) `@id`, else
+    `@none`;
+  - `[@graph, @index]` → a map keyed by each graph's `@index`, else `@none`;
+  - plain `@graph` → a simple graph unwraps to its node (single) or an
+    `@included` wrapper (multiple); a *named* graph (has `@id`) is kept as
+    `{@id, @graph}`;
+  - `@set` keeps the result (or each map entry) as an array.
+- `@reverse` compaction: the `@reverse` map's inner nodes are compacted, and
+  a property carrying a reverse-coerced term (`{"@reverse": "…"}`) is hoisted
+  to the top level under that term; the rest stay under the (aliased)
+  `@reverse` map.
+
+### Consumer impact
+
+Additive (compaction-only). Expansion and toRdf unchanged. Characterization
+fixtures byte-identical, unit suite green (207). VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+The remaining compaction gap is the structural work: a value-aware
+inverse-context term selection (§5.6.2 full) and property-/type-scoped
+contexts during compaction.
+
 ## [0.26.0] - 2026-06-08
 
 Compaction algorithm buildout, phase 1: keyword-value recursion, `@nest`,

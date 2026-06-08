@@ -182,4 +182,58 @@ describe('JsonLdProcessor::compact', function () {
         $result = compactWith($expanded, $context);
         expect($result['p'])->toBe(['@value' => 'x', '@type' => 'T']);
     });
+
+    it('compacts a [@graph, @id] container into an id-keyed map', function () {
+        $expanded = [['http://example.org/input' => [
+            ['@id' => 'http://example.org/gid', '@graph' => [['http://example.org/value' => [['@value' => 'x']]]]],
+        ]]];
+        $context = ['@vocab' => 'http://example.org/', 'input' => ['@container' => ['@graph', '@id']]];
+        $result = compactWith($expanded, $context);
+        expect($result['input'])->toBe(['http://example.org/gid' => ['value' => 'x']]);
+    });
+
+    it('compacts a [@graph, @index] container into an index-keyed map (or @none)', function () {
+        $expanded = [['http://example.org/input' => [
+            ['@index' => 'g1', '@graph' => [['http://example.org/value' => [['@value' => 'x']]]]],
+            ['@graph' => [['http://example.org/value' => [['@value' => 'y']]]]],
+        ]]];
+        $context = ['@vocab' => 'http://example.org/', 'none' => '@none', 'input' => ['@container' => ['@graph', '@index']]];
+        $result = compactWith($expanded, $context);
+        expect($result['input'])->toBe(['g1' => ['value' => 'x'], 'none' => ['value' => 'y']]);
+    });
+
+    it('wraps a simple @graph with multiple nodes in @included', function () {
+        $expanded = [['http://example.org/input' => [
+            ['@graph' => [['http://example.org/value' => [['@value' => 'x']]], ['http://example.org/value' => [['@value' => 'y']]]]],
+        ]]];
+        $context = ['@vocab' => 'http://example.org/', 'input' => ['@container' => '@graph']];
+        $json = json_encode(compactWith($expanded, $context), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@included"');
+        expect($json)->toContain('"value":"x"');
+        expect($json)->toContain('"value":"y"');
+    });
+
+    it('compacts the inner nodes of a @reverse map', function () {
+        $expanded = [[
+            '@id' => 'http://example.com/a',
+            '@reverse' => ['http://example.com/knows' => [
+                ['@id' => 'http://example.com/b', 'http://example.com/name' => [['@value' => 'Bee']]],
+            ]],
+        ]];
+        $json = json_encode(compactWith($expanded, ['name' => 'http://example.com/name']), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@reverse"');
+        expect($json)->toContain('"name":"Bee"');
+    });
+
+    it('hoists a reverse-coerced term out of the @reverse map', function () {
+        $expanded = [[
+            '@id' => 'http://example.com/a',
+            '@reverse' => ['http://example.com/knows' => [['@id' => 'http://example.com/b']]],
+        ]];
+        $context = ['knownBy' => ['@reverse' => 'http://example.com/knows']];
+        $result = compactWith($expanded, $context);
+        expect($result)->toHaveKey('knownBy');
+        expect($result)->not->toHaveKey('@reverse');
+        expect($result['knownBy'])->toBe(['@id' => 'http://example.com/b']);
+    });
 });
