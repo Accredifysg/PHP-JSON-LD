@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\JsonLdProcessor;
 use Accredify\JsonLd\Tests\Context\Support\StubDocumentLoader;
 
@@ -20,7 +21,7 @@ use Accredify\JsonLd\Tests\Context\Support\StubDocumentLoader;
 function toNQuads(array $document, ?string $base = null): string
 {
     return (new JsonLdProcessor(new StubDocumentLoader))
-        ->toRdf($document, $base)
+        ->toRdf($document, $base !== null ? new JsonLdOptions(base: $base) : null)
         ->toNQuads();
 }
 

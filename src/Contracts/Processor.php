@@ -8,6 +8,7 @@ use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Exceptions\JsonLdException;
+use Accredify\JsonLd\JsonLdOptions;
 
 /**
  * Public entry point for the package's algorithms.
@@ -23,22 +24,14 @@ interface Processor
     /**
      * @param  array<array-key, mixed>  $document  A JSON-LD document with at
      *                                             least an `@context` key.
-     * @param  string|null  $base  Initial base IRI for document-relative
-     *                             `@id` / `@type` resolution (typically the
-     *                             document's URL). `@base` in the context
-     *                             overrides it. Null disables document-relative
-     *                             resolution.
-     * @param  string|null  $processingMode  The JSON-LD processing mode
-     *                                       ("json-ld-1.0" or "json-ld-1.1").
-     *                                       Null defaults to "json-ld-1.1". A
-     *                                       context `@version: 1.1` under a
-     *                                       1.0 mode raises a processing mode
-     *                                       conflict.
+     * @param  JsonLdOptions|null  $options  API options (base IRI, processing
+     *                                       mode, …). Null uses the defaults
+     *                                       (no base, JSON-LD 1.1).
      *
      * @throws JsonLdException When `@context` is missing or any sub-algorithm
      *                         raises.
      */
-    public function expand(array $document, ?string $base = null, ?string $processingMode = null): ExpandedDocument;
+    public function expand(array $document, ?JsonLdOptions $options = null): ExpandedDocument;
 
     /**
      * Compact an expanded JSON-LD document against the given context.
@@ -50,13 +43,12 @@ interface Processor
      *                                                   against (a context map,
      *                                                   a `{@context: …}` wrapper,
      *                                                   or a context URL).
-     * @param  string|null  $processingMode  The JSON-LD processing mode
-     *                                       ("json-ld-1.0" or "json-ld-1.1").
-     *                                       Null defaults to "json-ld-1.1".
+     * @param  JsonLdOptions|null  $options  API options (processing mode, …).
+     *                                       Null uses the defaults.
      *
      * @throws JsonLdException
      */
-    public function compact(array $expanded, array|string $context, ?string $processingMode = null): CompactedDocument;
+    public function compact(array $expanded, array|string $context, ?JsonLdOptions $options = null): CompactedDocument;
 
     /**
      * Deserialize a JSON-LD document to an RDF dataset (the toRdf algorithm).
@@ -66,13 +58,10 @@ interface Processor
      * documents address their predicates with full IRIs.
      *
      * @param  array<array-key, mixed>  $document  A JSON-LD document.
-     * @param  string|null  $base  Initial base IRI for document-relative
-     *                             resolution (typically the document's URL).
-     * @param  string|null  $processingMode  The JSON-LD processing mode
-     *                                       ("json-ld-1.0" or "json-ld-1.1").
-     *                                       Null defaults to "json-ld-1.1".
+     * @param  JsonLdOptions|null  $options  API options (base IRI, processing
+     *                                       mode, …). Null uses the defaults.
      *
      * @throws JsonLdException
      */
-    public function toRdf(array $document, ?string $base = null, ?string $processingMode = null): RdfDataset;
+    public function toRdf(array $document, ?JsonLdOptions $options = null): RdfDataset;
 }

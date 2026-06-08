@@ -38,7 +38,7 @@ final class JsonLdProcessor implements Processor
         private readonly DocumentLoader $documentLoader,
     ) {}
 
-    public function expand(array $document, ?string $base = null, ?string $processingMode = null): ExpandedDocument
+    public function expand(array $document, ?JsonLdOptions $options = null): ExpandedDocument
     {
         // A missing @context is valid: the document expands against an empty
         // active context (full-IRI properties survive, unmapped terms drop).
@@ -50,7 +50,7 @@ final class JsonLdProcessor implements Processor
             $documentForContext['@context'] = [];
         }
 
-        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $base, $processingMode);
+        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode);
 
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);
@@ -62,7 +62,7 @@ final class JsonLdProcessor implements Processor
         );
     }
 
-    public function compact(array $expanded, array|string $context, ?string $processingMode = null): CompactedDocument
+    public function compact(array $expanded, array|string $context, ?JsonLdOptions $options = null): CompactedDocument
     {
         // Normalise the supplied context into a {@context: …} document for
         // ContextProcessor (which reads the @context key).
@@ -72,7 +72,7 @@ final class JsonLdProcessor implements Processor
             $contextDocument = ['@context' => $context];
         }
 
-        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, null, $processingMode);
+        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, null, $options?->processingMode);
         $compaction = new Compaction($contextProcessor->getTermDefinitions());
 
         $compacted = $compaction->compact($expanded);
@@ -88,7 +88,7 @@ final class JsonLdProcessor implements Processor
         return new CompactedDocument($compacted);
     }
 
-    public function toRdf(array $document, ?string $base = null, ?string $processingMode = null): RdfDataset
+    public function toRdf(array $document, ?JsonLdOptions $options = null): RdfDataset
     {
         // A missing @context is tolerated for toRdf: documents that address
         // their predicates with full IRIs need no context. Inject an empty
@@ -99,7 +99,7 @@ final class JsonLdProcessor implements Processor
             $documentForContext['@context'] = [];
         }
 
-        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $base, $processingMode);
+        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode);
 
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);

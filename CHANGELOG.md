@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-06-08
+
+`JsonLdOptions` value object (PR 4.5) — the canonical JSON-LD 1.1 API options
+shape, replacing the per-method `base` / `processingMode` scalar parameters.
+
+### Added
+
+- `Accredify\JsonLd\JsonLdOptions` — an immutable value object holding the
+  API options (`base`, `processingMode`, and the reserved-but-not-yet-wired
+  `rdfDirection`, `produceGeneralizedRdf`), with a `with()` deriver. It
+  mirrors the spec's `JsonLdOptions` interface and gives a single home for
+  forthcoming options.
+
+### Changed
+
+- `Processor::expand()` / `compact()` / `toRdf()` (and `JsonLdProcessor`) now
+  take an optional `?JsonLdOptions $options` instead of positional
+  `?string $base` / `?string $processingMode`. Callers passing no options are
+  unaffected; the W3C harness adapter builds a `JsonLdOptions` from each
+  manifest entry. Pure refactor — W3C scores unchanged (expand 310,
+  compact 172, toRdf 386).
+
+### Consumer impact
+
+The package is pre-1.0; VC pins `^0.1.1` and calls `expand($document)` with no
+options, so it is unaffected. Characterization fixtures byte-identical, unit
+suite green (217).
+
+### Note on PR 3.4 (delete duplicated JSON-LD code in the VC repo)
+
+Investigated and intentionally NOT performed: the VC repo's
+`Canonicalization\RDFC10\JsonLdToQuadsProcessor` (the RDFC-10 /
+canonicalization consumer) still uses the original
+`Processors\JsonLdProcessor`, and four unit tests still exercise the original
+classes. Deleting them would break a crypto-critical consumer; migrating
+RDFC-10 to the (now spec-compliant, different-output) package expander is a
+deliberate, signature-fixture-regenerating change, not a mechanical cleanup.
+Tracked for a dedicated, risk-managed VC-repo PR.
+
 ## [0.30.0] - 2026-06-08
 
 toRdf tail: RFC-3986 base handling and a blank-node-isomorphism-aware

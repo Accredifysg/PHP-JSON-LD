@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Accredify\JsonLd\Tests\W3c\Support;
 
 use Accredify\JsonLd\Contracts\DocumentLoader;
+use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\JsonLdProcessor;
 use Accredify\JsonLd\Tests\W3c\NotImplementedException;
 use Accredify\JsonLd\Tests\W3c\Processor;
@@ -39,7 +40,7 @@ final class PhpJsonLdAdapter implements Processor
         $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
 
         return (new JsonLdProcessor($this->loader))
-            ->expand($input, $base, self::processingMode($options))
+            ->expand($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options)))
             ->toArray();
     }
 
@@ -65,7 +66,7 @@ final class PhpJsonLdAdapter implements Processor
     public function compact(array $input, array $context, array $options): array
     {
         return (new JsonLdProcessor($this->loader))
-            ->compact($input, $context, self::processingMode($options))
+            ->compact($input, $context, new JsonLdOptions(processingMode: self::processingMode($options)))
             ->toArray();
     }
 
@@ -74,7 +75,7 @@ final class PhpJsonLdAdapter implements Processor
         $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
 
         return (new JsonLdProcessor($this->loader))
-            ->toRdf($input, $base, self::processingMode($options))
+            ->toRdf($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options)))
             ->toNQuads();
     }
 }
