@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    330 passed /  55 failed (v0.38.0)
-Compaction:   183 passed /  63 failed (v0.38.0)
-toRdf:        413 passed /  54 failed (v0.38.0)
+Expansion:    336 passed /  49 failed (v0.39.0)
+Compaction:   183 passed /  63 failed (v0.39.0)
+toRdf:        420 passed /  47 failed (v0.39.0)
 ```
 
 Each Phase 4 PR:
@@ -102,6 +102,7 @@ Each Phase 4 PR:
 | v0.36.0 |          325  |    +1  | protected @type redefinition (#tpr32) + scoped-@base compaction (+2 compact, +1 toRdf)|
 | v0.37.0 |          329  |    +4  | cross-suite expansion: @type:@none, @type:@vocab doc-relative, @vocab:null reset, cyclic IRI (+4 toRdf)|
 | v0.38.0 |          330  |    +1  | RDF value canonicalization: strict node-map dedup, num≥1e21 double, null @json (+5 toRdf)|
+| v0.39.0 |          336  |    +6  | scoped-context expansion: @type pre-scoped context, propagate revert, scoped @base (+7 toRdf)|
 
 ### Notes on v0.4.0
 

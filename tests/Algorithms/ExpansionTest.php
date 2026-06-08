@@ -368,4 +368,39 @@ describe('expansion validation gates', function () {
         expect($json)->toContain('"@value":null')
             ->and($json)->toContain('"@type":"@json"');
     });
+
+    it('expands @type values against the pre-type-scoped context (#tc016)', function () use ($expand) {
+        // @type "Type" expands via the OUTER @vocab, not Type's own scoped
+        // @vocab — a type cannot rename itself via the context it introduces.
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/', 'Type' => ['@context' => ['@vocab' => 'http://example.com/']]],
+            '@type' => 'Type',
+            'foo' => 'com',
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"http://example.org/Type"')   // @type via outer vocab
+            ->and($json)->toContain('http://example.com/foo');  // properties via scoped vocab
+    });
+
+    it('keeps a type-scoped value:@value mapping active for the typed node values (#tc020)', function () use ($expand) {
+        // The nested value {value:"val"} has a key expanding to @value under the
+        // type-scoped context, so it stays a value object instead of reverting.
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example/', 'type' => '@type', 'Type' => ['@context' => ['value' => '@value']]],
+            'type' => 'Type',
+            'v' => ['value' => 'val'],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@value":"val"');
+    });
+
+    it('applies a type-scoped @base to @id, not propagating into nested nodes (#tc015)', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@base' => 'http://example/base-base', '@vocab' => 'http://example/', 'Type' => ['@context' => ['@base' => 'http://example/typed-base']]],
+            '@id' => '#root',
+            'p' => ['@id' => '#typed', '@type' => 'Type', 'nestedNode' => ['@id' => '#nested', 'foo' => 'bar']],
+        ]), JSON_UNESCAPED_SLASHES);
+        // The typed node's own @id uses the type-scoped base; the nested node
+        // object (not a bare @id ref) reverts to the outer document base.
+        expect($json)->toContain('http://example/typed-base#typed')
+            ->and($json)->toContain('http://example/base-base#nested');
+    });
 });

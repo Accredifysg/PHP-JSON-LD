@@ -251,7 +251,7 @@ class Expansion
         $incoming = $this->termDefinitions;
         if (
             $incoming->getPreviousContext() !== null
-            && ! array_key_exists(Keyword::Value->value, $obj)
+            && ! $this->objectHasKeyExpandingToValue($obj, $incoming)
             && ! $this->isSingleIdReference($obj)
         ) {
             $incoming = $incoming->getPreviousContext();
@@ -267,6 +267,14 @@ class Expansion
             // NOT redefine protected terms (override-protected = false).
             $this->termDefinitions = $this->applyScopedContext($obj[Keyword::Context->value], $this->termDefinitions, overrideProtected: false);
         }
+
+        // The active context as it stands after the node's embedded @context
+        // but BEFORE per-type type-scoped contexts are applied. Per §5.5 the
+        // node's @type VALUES are IRI-expanded against THIS context, so a
+        // type-scoped @vocab / null-reset / term change introduced by a type
+        // does not affect how that type is itself expressed (#tc010 / #tc014 /
+        // #tc016 / #tc018).
+        $preTypeScoped = $this->termDefinitions;
 
         // §5.5 step 11: type-scoped context activation. Built from the
         // post-embedded active context, recording it as the previous context
@@ -343,9 +351,21 @@ class Expansion
                     continue;
                 }
 
-                // JSON-LD keyword keys get special handling.
+                // JSON-LD keyword keys get special handling. @type VALUES are
+                // expanded against the pre-type-scoped context (see above), so
+                // a type's own scoped @vocab/null/term changes don't alter how
+                // that type expands.
                 if ($this->isKeyword($expandedKey)) {
-                    $expandedValue = $this->expandKeywordValue($expandedKey, $value, $activeProperty);
+                    $savedForKeyword = $this->termDefinitions;
+                    if ($expandedKey === Keyword::Type->value) {
+                        $this->termDefinitions = $preTypeScoped;
+                    }
+
+                    try {
+                        $expandedValue = $this->expandKeywordValue($expandedKey, $value, $activeProperty);
+                    } finally {
+                        $this->termDefinitions = $savedForKeyword;
+                    }
                     if ($expandedValue !== null) {
                         // @type and @included may be contributed by more than
                         // one property and are merged; any other keyword
@@ -888,10 +908,11 @@ class Expansion
         }
 
         // Step 8: document-relative resolution against the active @base
-        // (RFC 3986 §5). The base lives on documentBase — @base is a
-        // document-level setting, so scoped overlays don't carry it.
+        // (RFC 3986 §5). A type-/property-scoped @context may override the base
+        // for its scope (#tc015/#tc024); the active context carries it, falling
+        // back to the document-level base when no scoped @base is in effect.
         if ($documentRelative) {
-            $base = $this->documentBase->getBase();
+            $base = $this->termDefinitions->getBase() ?? $this->documentBase->getBase();
             if ($base !== null && $base !== '') {
                 return IriResolver::resolve($base, $value);
             }
@@ -1166,6 +1187,34 @@ class Expansion
     }
 
     /**
+     * True if any key of $obj IRI-expands to `@value` under $context. Used to
+     * decide whether a non-propagating (type-scoped) context is rolled back
+     * when entering a nested object (§5.5 step 7): the rollback is skipped when
+     * the object is a value object, which the spec detects by "an entry
+     * expanding to @value" — NOT merely a literal `@value` key, so a
+     * type-scoped term aliasing `@value` (e.g. `value: "@value"`) keeps the
+     * context active and makes the nested object a value object (#tc020/#tc021).
+     *
+     * @param  array<array-key, mixed>  $obj
+     */
+    private function objectHasKeyExpandingToValue(array $obj, TermDefinitions $context): bool
+    {
+        $saved = $this->termDefinitions;
+        $this->termDefinitions = $context;
+        try {
+            foreach ($obj as $key => $ignored) {
+                if (is_string($key) && $this->expandIri($key, vocab: true) === Keyword::Value->value) {
+                    return true;
+                }
+            }
+        } finally {
+            $this->termDefinitions = $saved;
+        }
+
+        return false;
+    }
+
+    /**
      * True if a scoped @context (a map, or array of layers) carries an
      * explicit `@propagate: false` — meaning it must not propagate into nested
      * node objects.
@@ -1217,6 +1266,13 @@ class Expansion
         $vocab = $base->getVocab();
         if ($vocab !== null) {
             $active->setVocab($vocab);
+        }
+        // Carry the parent's active @base so a scoped context that does NOT set
+        // @base keeps resolving document-relative IRIs against the inherited
+        // base, and one that DOES set @base (#tc015/#tc024) overlays onto it.
+        $parentBase = $base->getBase();
+        if ($parentBase !== null) {
+            $active->setBase($parentBase);
         }
 
         foreach ($layers as $layer) {
@@ -1431,9 +1487,18 @@ class Expansion
 
                 continue;
             }
+            if ($term === Keyword::Base->value && ($definition === null || is_string($definition))) {
+                // A scoped @base sets the document-relative resolution base for
+                // @id values within this context's scope (#tc015 type-scoped,
+                // #tc024 property-scoped). A null resets it; a relative @base
+                // resolves against the currently-active base.
+                $target->setBase($definition === null ? null : IriResolver::establishBase($target->getBase(), $definition));
+
+                continue;
+            }
             if (str_starts_with($term, '@')) {
-                // Other keyword overrides (@base, @language, @direction, etc.)
-                // are out of scope for this PR.
+                // Other keyword overrides (@language, @direction, etc.) are out
+                // of scope for this PR.
                 continue;
             }
 

@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-06-09
+
+Scoped-context expansion battery — the core type-/property-scoped context
+machinery in the Expansion algorithm. Three independent root causes, each
+designed from a spec + code + per-fixture investigation and landed/measured
+one at a time (every fix gains the expand test and its toRdf twin, since
+toRdf reuses expansion).
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.38.0:      330      183      413      926
+v0.39.0:      336      183      420      939   (+6 expand, +7 toRdf)
+```
+
+### Fixed (expansion — scoped contexts)
+
+- `@type` VALUES are now IRI-expanded against the active context as it stood
+  after the node's embedded `@context` but BEFORE the per-type type-scoped
+  contexts are applied (`#tc014` / `#tc016` / `#tc018`). A type-scoped
+  `@vocab`, `null` reset, or term change no longer leaks into how the type
+  that introduced it is itself expressed.
+- A non-propagating (type-scoped) context is now reverted on entering a nested
+  object only when no key of that object EXPANDS to `@value` (previously it
+  tested for a literal `@value` key). So a type-scoped term aliasing `@value`
+  (e.g. `value: "@value"`) correctly keeps the nested object a value object
+  (`#tc020` / `#tc021`).
+- A `@base` entry in a type- or property-scoped `@context` is now applied to
+  `@id` resolution within its scope (`#tc015` type-scoped, `#tc024`
+  property-scoped). Type-scoped `@base` does not propagate into nested node
+  objects (it reverts with the rest of the type-scoped context), while a bare
+  `@id` reference keeps it.
+
+### Known remaining
+
+- `#tc010` (scoped context layers on intermediate contexts) is still failing:
+  a term defined with only an `@context` (no explicit `@id`) does not get its
+  `@id` materialised from `@vocab` at definition time, so a later `@type`
+  referencing it falls back to the active `@vocab`. This is a Create Term
+  Definition (§4.2.2) `@id`-defaulting gap, separate from this cluster.
+
 ## [0.38.0] - 2026-06-08
 
 RDF value-canonicalization fixes (toRdf + the expansion they depend on),
