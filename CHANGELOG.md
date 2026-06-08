@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-06-08
+
+Compaction algorithm buildout, phase 3: value-aware term selection. Designed
+from a §5.6.2 spec + current-code + per-fixture workflow pass whose key
+finding — the W3C compaction gate is *key-blind* (it compares with
+`toEqualCanonicalizing`, which discards associative keys) — meant the real
+wins are in VALUE SHAPE, not term names. Implemented as a surgical value-aware
+selection over the existing flat inverse (no nested-table rewrite), gated by a
+full per-test before/after diff against both the W3C and the key-sensitive
+unit compaction suites.
+
+W3C JSON-LD 1.1 test suite:
+
+```
+            expand   compact   toRdf   total
+v0.27.0:      310      163      376      849
+v0.28.0:      310      169      376      855   (+6 compact)
+```
+
+### Added (compaction)
+
+- Per-value term selection (§5.6.2): each expanded item in a property's value
+  may select a DIFFERENT term, so one property can split across terms — e.g. a
+  node reference whose `@id` round-trips to a vocab term compacts under a
+  `@type: @vocab` term while another compacts under `@type: @id`; lists with
+  different common `@type` / `@language` route to different `@list` terms.
+- Value-aware term scoring: among terms mapping to the same IRI, prefer one
+  whose coercion matches the value (`@type: @vocab`/`@id` for node refs,
+  `@type: T` / `@language: L` for matching value objects, a `@container: @list`
+  term with matching common type/language for lists). A non-matching coerced
+  term never displaces a plain term.
+- `@language` collapse (§5.6.3): a language-tagged value whose language matches
+  the term's `@language` coercion — or, absent one, the active default
+  `@language` — drops `@language` and becomes the bare scalar.
+- A term-definition `@type` now resolves through a defined term (e.g.
+  `@type: "type1"` where `type1` maps to an IRI) when matching the value's
+  `@type`, fixing a latent `expandedEquals` gap.
+
+### Consumer impact
+
+Additive (compaction-only). Expansion and toRdf unchanged. Characterization
+fixtures byte-identical, unit suite green (210). VC stays pinned at `^0.1.1`.
+
+### Deferred
+
+The remaining compaction tail (`#t0018`, `#t0089` language-container routing,
+and tests entangled with not-fully-expanded inputs) needs per-value routing
+into `@language`-container maps and input pre-expansion — a following release.
+
 ## [0.27.0] - 2026-06-08
 
 Compaction algorithm buildout, phase 2: `@graph` container maps and

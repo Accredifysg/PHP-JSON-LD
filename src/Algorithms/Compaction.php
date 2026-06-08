@@ -265,40 +265,68 @@ class Compaction
                 continue;
             }
 
-            // Regular property: compact the key to a term, then compact the
-            // value using THAT term as the active property — so the value's
-            // container/type coercion resolves against the right definition.
-            $compactedKey = $this->compactIri($key, vocab: true);
-
-            // Determine the compacted value: an empty array stays []; a
-            // @graph-container term collapses graph objects (into an id/index
-            // map, an @included wrapper, or bare nodes); a container-map term
-            // builds a map; otherwise recurse normally.
+            // An empty array still produces the property (under its
+            // value-agnostic term).
             if (is_array($value) && array_is_list($value) && $value === []) {
-                $compactedValue = [];
-            } elseif ($this->hasContainer($compactedKey, Keyword::Graph->value) && is_array($value) && array_is_list($value)) {
-                $compactedValue = $this->compactGraphContainer($value, $compactedKey);
-            } else {
-                $mapType = $this->mapContainerType($compactedKey);
-                $compactedValue = ($mapType !== null && is_array($value) && array_is_list($value))
-                    ? $this->compactContainerMap($value, $mapType)
-                    : $this->compactElement($value, $compactedKey);
+                $this->assignProperty($result, $this->compactIri($key, vocab: true), []);
+
+                continue;
             }
 
-            // §5.6: a property whose term defines @nest is placed under the
-            // (aliased) nest term, grouping it with sibling @nest properties.
-            $nestTerm = $this->nestTermFor($compactedKey);
-            if ($nestTerm !== null) {
-                if (! isset($result[$nestTerm]) || ! is_array($result[$nestTerm])) {
-                    $result[$nestTerm] = [];
+            // §5.6.2: each expanded item may select a DIFFERENT term (e.g. one
+            // node ref whose @id round-trips picks a @type:@vocab term while
+            // another picks @type:@id; lists with different common type /
+            // language pick different @list terms). Group the value's items by
+            // their per-item term, then compact each group under its term. For
+            // single-valued / uniform properties this collapses to one group
+            // (identical to non-grouped behaviour).
+            $items = is_array($value) && array_is_list($value) ? $value : [$value];
+            $groups = [];
+            $order = [];
+            foreach ($items as $item) {
+                $term = $this->compactIri($key, vocab: true, value: [$item]);
+                if (! array_key_exists($term, $groups)) {
+                    $groups[$term] = [];
+                    $order[] = $term;
                 }
-                $result[$nestTerm][$compactedKey] = $compactedValue;
-            } else {
-                $result[$compactedKey] = $compactedValue;
+                $groups[$term][] = $item;
+            }
+
+            foreach ($order as $term) {
+                $groupItems = $groups[$term];
+                if ($this->hasContainer($term, Keyword::Graph->value)) {
+                    $compactedValue = $this->compactGraphContainer($groupItems, $term);
+                } else {
+                    $mapType = $this->mapContainerType($term);
+                    $compactedValue = $mapType !== null
+                        ? $this->compactContainerMap($groupItems, $mapType)
+                        : $this->compactElement($groupItems, $term);
+                }
+                $this->assignProperty($result, $term, $compactedValue);
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Assigns a compacted property value into the result, routing it under the
+     * (aliased) nest term when the property's term definition carries `@nest`
+     * (§5.6), otherwise placing it at the top level.
+     *
+     * @param  array<string, mixed>  $result  modified in place
+     */
+    private function assignProperty(array &$result, string $term, mixed $value): void
+    {
+        $nestTerm = $this->nestTermFor($term);
+        if ($nestTerm !== null) {
+            if (! isset($result[$nestTerm]) || ! is_array($result[$nestTerm])) {
+                $result[$nestTerm] = [];
+            }
+            $result[$nestTerm][$term] = $value;
+        } else {
+            $result[$term] = $value;
+        }
     }
 
     /**
@@ -366,6 +394,26 @@ class Compaction
 
         // Plain @value with no @type / @language / @direction → the scalar.
         if (! $typeNone && $valueType === null && $valueLang === null && $valueDir === null && ! $hasOther) {
+            return $raw;
+        }
+
+        // @language collapse (§5.6.3): a language-tagged value whose language
+        // matches the term's @language coercion — or, absent one, the active
+        // default @language — drops @language and becomes the bare scalar.
+        // Skipped when a default @direction is active (direction would be lost).
+        $termHasLang = is_array($termDef) && array_key_exists(Keyword::Language->value, $termDef);
+        $termLang = $termHasLang && is_string($termDef[Keyword::Language->value]) ? $termDef[Keyword::Language->value] : null;
+        $effectiveLang = $termHasLang ? $termLang : $this->activeContext->getDefaultLanguage();
+        if (
+            ! $typeNone
+            && $valueType === null
+            && $valueDir === null
+            && ! $hasOther
+            && $valueLang !== null
+            && $effectiveLang !== null
+            && $this->activeContext->getDefaultDirection() === null
+            && strtolower($valueLang) === strtolower($effectiveLang)
+        ) {
             return $raw;
         }
 
@@ -604,11 +652,12 @@ class Compaction
     /**
      * §5.7 IRI Compaction.
      */
-    private function compactIri(string $iri, bool $vocab): string
+    private function compactIri(string $iri, bool $vocab, mixed $value = null): string
     {
         // A keyword compacts to a keyword alias when the active context
         // defines one (a term whose @id maps to the keyword, e.g. "id": "@id"
-        // or "type": "@type"); otherwise it compacts to itself.
+        // or "type": "@type"); otherwise it compacts to itself. Keyword
+        // selection is value-agnostic.
         if ($this->isKeyword($iri)) {
             if ($vocab && isset($this->inverse[$iri])) {
                 return $this->selectTerm($this->inverse[$iri]);
@@ -617,11 +666,12 @@ class Compaction
             return $iri;
         }
 
-        // Exact term match. Prefer a term whose coercion is least surprising:
-        // a plain term wins over one with @type/@container so round-tripping
-        // is stable, but any exact match beats a compact IRI.
+        // Exact term match. When the value being compacted is known, prefer a
+        // term whose coercion (@type / @language) matches it, so value
+        // compaction collapses the value; otherwise a plain term wins (stable
+        // round-trip). Any exact match beats a compact IRI.
         if ($vocab && isset($this->inverse[$iri])) {
-            return $this->selectTerm($this->inverse[$iri]);
+            return $this->selectTerm($this->inverse[$iri], $value);
         }
 
         // Compact IRI: find the longest prefix term whose @id is a strict
@@ -670,19 +720,35 @@ class Compaction
     }
 
     /**
-     * Pick the best term among candidates mapping to the same IRI. Prefers a
-     * term with no `@type`/`@container` coercion (so it round-trips), then
-     * the shortest term name for determinism.
+     * Pick the best term among candidates mapping to the same IRI.
+     *
+     * When the value being compacted is known ($value !== null) the term whose
+     * coercion best matches the value wins, so value compaction can collapse
+     * the value (e.g. a `@type: @vocab` term for a node reference, a
+     * `@type: T` / `@language: L` term for matching value objects). When the
+     * coercion does not match — or no value is supplied (keyword / @id
+     * compaction) — a plain term (no `@type`/`@container`/`@language`) wins for
+     * a stable round-trip, then the shortest / lexicographically-first name.
      *
      * @param  list<array{term: string, def: array<array-key, mixed>}>  $candidates
      */
-    private function selectTerm(array $candidates): string
+    private function selectTerm(array $candidates, mixed $value = null): string
     {
-        usort($candidates, function (array $a, array $b) {
-            $aPlain = ! isset($a['def']['@type']) && ! isset($a['def']['@container']);
-            $bPlain = ! isset($b['def']['@type']) && ! isset($b['def']['@container']);
-            if ($aPlain !== $bPlain) {
-                return $aPlain ? -1 : 1;
+        $sig = $value !== null ? $this->valueSignature($value) : null;
+
+        usort($candidates, function (array $a, array $b) use ($sig, $value) {
+            if ($sig !== null) {
+                $sa = $this->scoreCandidate($a['def'], $sig, $value);
+                $sb = $this->scoreCandidate($b['def'], $sig, $value);
+                if ($sa !== $sb) {
+                    return $sb <=> $sa; // higher score first
+                }
+            } else {
+                $aPlain = ! isset($a['def']['@type']) && ! isset($a['def']['@container']);
+                $bPlain = ! isset($b['def']['@type']) && ! isset($b['def']['@container']);
+                if ($aPlain !== $bPlain) {
+                    return $aPlain ? -1 : 1;
+                }
             }
             $lenCmp = strlen($a['term']) <=> strlen($b['term']);
 
@@ -690,6 +756,207 @@ class Compaction
         });
 
         return $candidates[0]['term'];
+    }
+
+    /**
+     * Summarise an expanded property value (a list of value/node objects, or a
+     * single `@list` object) for value-aware term selection. A lone `@list` is
+     * summarised by its CONTENTS with `isList` set, so a `@container: @list`
+     * term is required.
+     *
+     * @return array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}
+     */
+    private function valueSignature(mixed $value): array
+    {
+        $items = is_array($value) && array_is_list($value) ? $value : [$value];
+
+        // A single @list object → select against the list's contents.
+        if (count($items) === 1 && is_array($items[0]) && array_key_exists(Keyword::List->value, $items[0]) && is_array($items[0][Keyword::List->value])) {
+            $sig = $this->valueSignature(array_values($items[0][Keyword::List->value]));
+            $sig['isList'] = true;
+
+            return $sig;
+        }
+
+        $sig = ['allNodeRefs' => true, 'allValueObjects' => true, 'commonType' => null, 'commonLang' => null, 'noTypeNoLang' => true, 'empty' => $items === [], 'isList' => false];
+
+        $types = [];
+        $langs = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                // A bare scalar is a value with neither @type nor @language.
+                $sig['allNodeRefs'] = false;
+                $types["\0"] = null;
+                $langs["\0"] = null;
+
+                continue;
+            }
+            if (! (isset($item[Keyword::Id->value]) && count($item) === 1)) {
+                $sig['allNodeRefs'] = false;
+            }
+            if (array_key_exists(Keyword::Value->value, $item)) {
+                $t = isset($item[Keyword::Type->value]) && is_string($item[Keyword::Type->value]) ? $item[Keyword::Type->value] : null;
+                $l = isset($item[Keyword::Language->value]) && is_string($item[Keyword::Language->value]) ? $item[Keyword::Language->value] : null;
+                $types[$t ?? "\0"] = $t;
+                $langs[$l ?? "\0"] = $l;
+                if ($t !== null || $l !== null) {
+                    $sig['noTypeNoLang'] = false;
+                }
+            } else {
+                $sig['allValueObjects'] = false;
+                $sig['noTypeNoLang'] = false;
+            }
+        }
+
+        if ($sig['allValueObjects'] && count($types) === 1) {
+            $sig['commonType'] = reset($types);
+        }
+        if ($sig['allValueObjects'] && count($langs) === 1) {
+            $sig['commonLang'] = reset($langs);
+        }
+
+        return $sig;
+    }
+
+    /**
+     * Score how well a term definition's coercion matches a value signature.
+     * Higher is better; a non-matching coerced term scores 0 (below the plain
+     * baseline of 1) so it never displaces a plain term unless it genuinely
+     * matches.
+     *
+     * @param  array<array-key, mixed>  $def
+     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}  $sig
+     */
+    private function scoreCandidate(array $def, array $sig, mixed $value): int
+    {
+        $type = isset($def[Keyword::Type->value]) && is_string($def[Keyword::Type->value]) ? $def[Keyword::Type->value] : null;
+        $typeIri = $type !== null ? $this->resolveTypeMapping($type) : null;
+        $hasLang = array_key_exists(Keyword::Language->value, $def);
+        $lang = $hasLang && is_string($def[Keyword::Language->value]) ? $def[Keyword::Language->value] : null;
+        $coerced = $type !== null || $hasLang || isset($def[Keyword::Container->value]);
+        $baseline = $coerced ? 0 : 1;
+
+        if ($sig['empty']) {
+            return $baseline;
+        }
+
+        $langMatches = $hasLang && $lang !== null && $sig['commonLang'] !== null && strtolower($lang) === strtolower($sig['commonLang']);
+        // A term's @type matches the value's common @type whether the value
+        // carries the literal term ("type1") or the resolved IRI.
+        $typeMatches = $sig['commonType'] !== null && ($type === $sig['commonType'] || $typeIri === $sig['commonType']);
+
+        // A @list value requires a @container: @list term; among those the most
+        // specific (common @type, common @language, plain-string @language:null)
+        // wins, else a plain @list term carries a mixed list.
+        if ($sig['isList']) {
+            if (! ($this->defHasContainer($def, Keyword::List->value))) {
+                return $baseline;
+            }
+            if ($typeMatches) {
+                return 6;
+            }
+            if ($sig['commonType'] === null && $langMatches) {
+                return 6;
+            }
+            if ($sig['allValueObjects'] && $sig['noTypeNoLang'] && $hasLang && $lang === null) {
+                return 6;
+            }
+            if ($type === null && ! $hasLang) {
+                return 4; // plain @list term — the mixed-list fallback
+            }
+
+            return 0;
+        }
+
+        // Node references → prefer @type: @vocab when every @id round-trips to
+        // a vocab term/relative, else @type: @id.
+        if ($sig['allNodeRefs'] && $type !== null) {
+            if ($type === Keyword::Vocab->value) {
+                return $this->allIdsRoundTripVocab($value) ? 5 : $baseline;
+            }
+            if ($type === Keyword::Id->value) {
+                return 3;
+            }
+
+            return $baseline;
+        }
+
+        // Value objects sharing a single @type → prefer the @type-coerced term.
+        if ($typeMatches) {
+            return 4;
+        }
+
+        // Value objects sharing a single @language (and no @type) → prefer the
+        // @language-coerced term.
+        if ($sig['commonType'] === null && $langMatches) {
+            return 4;
+        }
+
+        // Plain strings (value objects with neither @type nor @language) →
+        // prefer a @language: null term (language reset).
+        if ($sig['allValueObjects'] && $sig['noTypeNoLang'] && $hasLang && $lang === null) {
+            return 4;
+        }
+
+        return $baseline;
+    }
+
+    /**
+     * Resolve a term-definition `@type` value to the IRI it coerces to: a
+     * keyword stays itself; a term resolves through its `@id`; otherwise the
+     * value is expanded as a (compact) IRI.
+     */
+    private function resolveTypeMapping(string $type): string
+    {
+        if ($this->isKeyword($type)) {
+            return $type;
+        }
+        $def = $this->activeContext->getTermDefinition($type);
+        if (is_array($def) && isset($def[Keyword::Id->value]) && is_string($def[Keyword::Id->value])) {
+            return $this->expandTermIri($def[Keyword::Id->value]);
+        }
+
+        return $this->expandTermIri($type);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $def
+     */
+    private function defHasContainer(array $def, string $keyword): bool
+    {
+        $container = $def[Keyword::Container->value] ?? null;
+        if (is_string($container)) {
+            return $container === $keyword;
+        }
+        if (is_array($container)) {
+            return in_array($keyword, $container, true);
+        }
+
+        return false;
+    }
+
+    /**
+     * True when every node reference in $value has an @id that compacts to a
+     * vocab term / @vocab-relative form (so a @type: @vocab term round-trips).
+     */
+    private function allIdsRoundTripVocab(mixed $value): bool
+    {
+        $items = is_array($value) && array_is_list($value) ? $value : [$value];
+        if ($items === []) {
+            return false;
+        }
+        foreach ($items as $item) {
+            if (! is_array($item) || ! isset($item[Keyword::Id->value]) || ! is_string($item[Keyword::Id->value])) {
+                return false;
+            }
+            $id = $item[Keyword::Id->value];
+            $compacted = $this->compactIri($id, vocab: true);
+            if ($compacted === $id || str_contains($compacted, '://')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function isListContainer(?string $activeProperty): bool
@@ -729,9 +996,9 @@ class Compaction
             return true;
         }
 
-        // The term's @type may be a compact IRI ("ex:datatype") or a term;
-        // resolve it to a full IRI before comparing.
-        return $this->expandTermIri($termType) === $valueType;
+        // The term's @type may be a compact IRI ("ex:datatype") or a defined
+        // term ("type1"); resolve it to a full IRI before comparing.
+        return $this->resolveTypeMapping($termType) === $valueType;
     }
 
     private function isKeyword(string $value): bool

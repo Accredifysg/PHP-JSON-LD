@@ -236,4 +236,45 @@ describe('JsonLdProcessor::compact', function () {
         expect($result)->not->toHaveKey('@reverse');
         expect($result['knownBy'])->toBe(['@id' => 'http://example.com/b']);
     });
+
+    it('selects a @type: @vocab term for a node ref that round-trips to a vocab term', function () {
+        $expanded = [['http://example.org/term' => [['@id' => 'http://example.org/enum']]]];
+        $context = [
+            'term' => ['@id' => 'http://example.org/term', '@type' => '@vocab'],
+            'doNotSelect' => ['@id' => 'http://example.org/term'],
+            'enum' => ['@id' => 'http://example.org/enum'],
+        ];
+        $result = compactWith($expanded, $context);
+        expect($result)->toHaveKey('term');
+        expect($result['term'])->toBe('enum');
+    });
+
+    it('splits a property across @type:@vocab and @type:@id terms per value', function () {
+        $expanded = [['http://example.com/vocab#foo' => [
+            ['@id' => 'http://example.com/vocab#Bar'],
+            ['@id' => 'http://example.com/vocab#Baz'],
+        ]]];
+        $context = [
+            'Bar' => 'http://example.com/vocab#Bar',
+            'fooI' => ['@id' => 'http://example.com/vocab#foo', '@type' => '@id'],
+            'fooV' => ['@id' => 'http://example.com/vocab#foo', '@type' => '@vocab'],
+        ];
+        $result = compactWith($expanded, $context);
+        expect($result['fooV'])->toBe('Bar');                          // Bar round-trips → @vocab
+        expect($result['fooI'])->toBe('http://example.com/vocab#Baz'); // Baz does not → @id (full IRI)
+    });
+
+    it('selects a @type-coerced @list term for a uniformly-typed list', function () {
+        $expanded = [['http://example.com/term' => [['@list' => [
+            ['@value' => 'a', '@type' => 'http://example.com/t1'],
+            ['@value' => 'b', '@type' => 'http://example.com/t1'],
+        ]]]]];
+        $context = [
+            'type1' => 'http://example.com/t1',
+            'plain' => ['@id' => 'http://example.com/term', '@container' => '@list'],
+            'typed' => ['@id' => 'http://example.com/term', '@container' => '@list', '@type' => 'type1'],
+        ];
+        $result = compactWith($expanded, $context);
+        expect($result['typed'])->toBe(['a', 'b']);
+    });
 });
