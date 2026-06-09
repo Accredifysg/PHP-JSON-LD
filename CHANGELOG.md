@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-06-09
+
+Compaction: `@index` on value objects + `@included` `@set`.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.54.0:      370      218      435
+v0.55.0:      370      220      435   (+2 compact)
+```
+
+### Fixed (compaction)
+
+- A value object's `@index` is now preserved when its property is NOT an
+  `@index` container (an index container consumes `@index` as the map key
+  before value compaction); previously the rebuild dropped it (`#t0030`).
+- An `@included` entry whose term carries `@container: @set` now stays an array
+  instead of unwrapping a single member (`#tin01`).
+
 ## [0.54.0] - 2026-06-09
 
 Compaction: `@type`-map key scoped context + `@index` on `@list` objects.

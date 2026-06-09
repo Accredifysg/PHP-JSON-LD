@@ -476,4 +476,17 @@ describe('JsonLdProcessor::compact', function () {
         $result = compactWith($expanded, $context);
         expect($result['http://example.com/p'])->toBe(['listAlias' => ['one'], 'indexAlias' => 'an index']);
     });
+
+    it('preserves @index on a value object under a non-index-container property (#t0030)', function () {
+        $expanded = [['http://example.com/p' => [['@value' => 'v', '@index' => 'idx']]]];
+        $result = compactWith($expanded, ['p' => 'http://example.com/p']);
+        expect($result['p'])->toBe(['@value' => 'v', '@index' => 'idx']);
+    });
+
+    it('keeps @included an array when its term has @container:@set (#tin01)', function () {
+        $expanded = [['http://example.org/prop' => [['@value' => 'value']], '@included' => [['http://example.org/prop' => [['@value' => 'value2']]]]]];
+        $context = ['@version' => 1.1, '@vocab' => 'http://example.org/', 'included' => ['@id' => '@included', '@container' => '@set']];
+        $result = compactWith($expanded, $context);
+        expect($result['included'])->toBe([['prop' => 'value2']]);
+    });
 });

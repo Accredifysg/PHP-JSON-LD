@@ -438,9 +438,12 @@ class Compaction
                 // A NAMED graph (the node also has an @id) keeps @graph as an
                 // array (#t0039/#t0016); a SIMPLE graph (only @graph) and
                 // @included unwrap a single member to a bare object (#t0090/
-                // #t0092).
+                // #t0092) — UNLESS the (aliased) key's term carries
+                // @container:@set, which keeps the array (#tin01).
+                $compactedKey = $this->compactIri($key, vocab: true);
                 $isNamedGraph = $key === Keyword::Graph->value && isset($node[Keyword::Id->value]);
-                $result[$this->compactIri($key, vocab: true)] = (! $isNamedGraph && count($compactedItems) === 1 && is_array($compactedItems[0]))
+                $keepArray = $isNamedGraph || $this->hasContainer($compactedKey, Keyword::Set->value);
+                $result[$compactedKey] = (! $keepArray && count($compactedItems) === 1 && is_array($compactedItems[0]))
                     ? $compactedItems[0]
                     : $compactedItems;
 
@@ -721,6 +724,12 @@ class Compaction
         }
         if ($valueDir !== null) {
             $out[$this->compactIri(Keyword::Direction->value, vocab: true)] = $valueDir;
+        }
+        // Preserve @index on a value object whose property is NOT an @index
+        // container (an index container consumes @index as the map key before
+        // this point); dropping it would lose the index on round-trip (#t0030).
+        if (isset($value[Keyword::Index->value]) && is_string($value[Keyword::Index->value])) {
+            $out[$this->compactIri(Keyword::Index->value, vocab: true)] = $value[Keyword::Index->value];
         }
 
         return $out;
