@@ -284,6 +284,10 @@ class Expansion
             $this->termDefinitions = $typeScoped;
         }
 
+        // @nest values are collected here and merged in a SECOND pass after all
+        // base properties, so colliding arrays read [base, …, nested] (§5.5).
+        $deferredNestValues = [];
+
         try {
             foreach ($obj as $key => $value) {
                 if (! is_string($key)) {
@@ -301,7 +305,8 @@ class Expansion
                     || ($termDef !== null && ($termDef['@id'] ?? null) === Keyword::Nest->value)
                     || $this->hasContainer($termDef, Keyword::Nest->value);
                 if ($isNestKey) {
-                    $this->mergeNestedObject($value, $result);
+                    // Defer to the second pass (#tn003/#tn005/#tn006/#tn007).
+                    $deferredNestValues[] = $value;
 
                     continue;
                 }
@@ -469,6 +474,13 @@ class Expansion
                 }
 
                 $this->mergeProperty($result, $expandedKey, $list);
+            }
+
+            // Second pass: merge @nest values now that every base property is in
+            // $result, so a property contributed by both reads [base, nested]
+            // rather than [nested, base] (§5.5 step 13.4.4 / #tn003).
+            foreach ($deferredNestValues as $deferredNest) {
+                $this->mergeNestedObject($deferredNest, $result);
             }
         } finally {
             $this->termDefinitions = $previousActive;
@@ -1623,6 +1635,10 @@ class Expansion
         // context's default @direction (§5.5 step 13.4.7 / #tdi04/#tdi05/#tdi06).
         $direction = $this->effectiveLanguageOrDirection($termDef, Keyword::Direction->value, $this->termDefinitions->getDefaultDirection());
 
+        // §5.5: container-map entries are emitted in lexicographic (code-point)
+        // order of the RAW map key, independent of input order — the expanded
+        // output is deterministically ordered (#tdi04–#tdi07, #t0030).
+        ksort($map, SORT_STRING);
         $result = [];
         foreach ($map as $language => $entry) {
             if (! is_string($language)) {
@@ -1679,6 +1695,9 @@ class Expansion
             ? $this->expandIri($indexKey, vocab: true)
             : null;
 
+        // §5.5: index-map entries are emitted in lexicographic key order (#tpi06–
+        // #tpi09); SORT_STRING so numeric-looking keys sort by code point.
+        ksort($map, SORT_STRING);
         $result = [];
         foreach ($map as $index => $entry) {
             if (! is_string($index)) {
@@ -1738,6 +1757,8 @@ class Expansion
      */
     private function expandIdMap(string $activeProperty, array $map, bool $wrapGraph): array
     {
+        // §5.5: @id-map entries are emitted in lexicographic key order.
+        ksort($map, SORT_STRING);
         $result = [];
         foreach ($map as $id => $entry) {
             if (! is_string($id)) {
@@ -1786,6 +1807,9 @@ class Expansion
      */
     private function expandTypeMap(string $activeProperty, array $map, bool $wrapGraph): array
     {
+        // §5.5: @type-map entries are emitted in lexicographic key order
+        // (#tm004/#tm009/#tm010); e.g. "_:bar" (0x5F) before "http://…" (0x68).
+        ksort($map, SORT_STRING);
         $result = [];
         foreach ($map as $type => $entry) {
             if (! is_string($type)) {

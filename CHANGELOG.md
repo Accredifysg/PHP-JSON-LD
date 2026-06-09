@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-06-09
+
+**Conformance-gate correction** + lexicographic container-map ordering in
+expansion. This release changes how the W3C harness compares results, which
+recalibrates the reported numbers (see below) — the recalibration is a
+measurement fix, not a code regression.
+
+### Changed (test harness — measurement methodology)
+
+- The expand and compact W3C suites now compare with `toEqual` (PHPUnit
+  `assertEquals`) instead of `toEqualCanonicalizing`. JSON-LD output compares
+  with **object-key order insignificant but array order significant** (the
+  algorithms produce arrays in a deterministic order); `toEqual` has exactly
+  those semantics. `toEqualCanonicalizing` was wrong in both directions: it
+  sorted arrays (masking real ordering bugs) yet compared object keys strictly
+  (failing correct output that differed only in key order, e.g. our `ksort`ed
+  value objects vs the suite's `@value`-first ordering). toRdf is unaffected
+  (it compares canonicalised N-Quads).
+- Net effect of the gate correction alone: it correctly PASSES ~14 expand
+  tests previously failed on key order, and correctly FAILS ~26 expand + ~10
+  compact tests previously passed by array-sorting that masked ordering /
+  term-selection bugs.
+
+### Fixed (expansion — lexicographic ordering, §5.5)
+
+- Container maps (`@type`, `@index`, `@id`, `@language`) now emit their entries
+  in lexicographic (code-point) order of the raw map key, independent of input
+  order (`#tm004/#tm009/#tm010`, `#tpi06`–`#tpi09`, `#tdi04`–`#tdi07`,
+  `#t0030`). `ksort($map, SORT_STRING)` per map.
+- `@nest` values are now merged in a second pass, AFTER all base properties, so
+  a property contributed by both reads `[base, nested]` rather than
+  `[nested, base]` (`#tn003/#tn005/#tn006/#tn007`).
+
+W3C JSON-LD 1.1 test suite (numbers under the corrected `toEqual` gate; the
+v0.41.0 column is the old `toEqualCanonicalizing` gate and is not directly
+comparable):
+
+```
+            expand   compact   toRdf
+v0.41.0:      340      183      423    (old gate — inflated)
+v0.42.0:      352      174      423    (corrected gate)
+```
+
+Expansion is a genuine improvement (+18 from ordering, net higher than the old
+inflated 340). Compaction's honest count under the corrected gate is 174: the
+old 183 included ~10 tests that only passed because the key-blind comparison
+hid wrong term names. Those ~10 are real term-selection / scoped-`@vocab`
+compaction bugs (e.g. `#t0006`, `#tc016`, `#tm007`) — queued as the next
+cluster, NOT list-ordering.
+
 ## [0.41.0] - 2026-06-09
 
 `@direction` in `@language` container maps during expansion.

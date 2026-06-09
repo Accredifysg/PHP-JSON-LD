@@ -60,7 +60,14 @@ it('expands per W3C manifest', function (TestCase $test) {
     }
 
     if ($test->isPositive) {
-        expect($actual)->toEqualCanonicalizing($test->loadExpected());
+        // JSON-LD expansion output is compared with object-key order
+        // INSIGNIFICANT but array order SIGNIFICANT (§5.5 produces arrays in a
+        // deterministic order). `toEqual` (assertEquals) has exactly those
+        // semantics. `toEqualCanonicalizing` is wrong here: it sorts arrays
+        // (masking real ordering bugs) while comparing object keys strictly
+        // (failing correct output that differs only in key order — e.g. our
+        // ksorted value objects vs the suite's @value-first ordering).
+        expect($actual)->toEqual($test->loadExpected());
     } else {
         $this->fail('Negative tests should throw, but the processor returned a result');
     }

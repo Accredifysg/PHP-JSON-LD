@@ -47,7 +47,11 @@ it('compacts per W3C manifest', function (TestCase $test) {
     }
 
     if ($test->isPositive) {
-        expect($actual)->toEqualCanonicalizing($test->loadExpected());
+        // Object-key order is INSIGNIFICANT but array order is SIGNIFICANT in
+        // JSON-LD compaction output, so `toEqual` (assertEquals) is the correct
+        // comparison; `toEqualCanonicalizing` would sort arrays (hiding ordering
+        // bugs) and compare keys strictly (failing key-order-only differences).
+        expect($actual)->toEqual($test->loadExpected());
     } else {
         $this->fail('Negative tests should throw, but the processor returned a result');
     }

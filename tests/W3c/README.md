@@ -50,10 +50,15 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    340 passed /  45 failed (v0.41.0)
-Compaction:   183 passed /  63 failed (v0.41.0)
-toRdf:        423 passed /  44 failed (v0.41.0)
+Expansion:    352 passed /  33 failed (v0.42.0)
+Compaction:   174 passed /  72 failed (v0.42.0)
+toRdf:        423 passed /  44 failed (v0.42.0)
 ```
+
+> v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
+> to `toEqual` (spec-accurate: object-key order insignificant, array order
+> significant). Counts from v0.42.0 onward are not directly comparable to
+> earlier rows, which used the looser (gate-inflated) comparison.
 
 Each Phase 4 PR:
 1. Re-runs `composer test:w3c`.
@@ -105,6 +110,7 @@ Each Phase 4 PR:
 | v0.39.0 |          336  |    +6  | scoped-context expansion: @type pre-scoped context, propagate revert, scoped @base (+7 toRdf)|
 | v0.40.0 |          337  |    +1  | term @id materialisation from @vocab at definition time (#tc010/#tc005/#tc035) (+3 toRdf)|
 | v0.41.0 |          340  |    +3  | @direction in @language container maps (#tdi04/#tdi05/#tdi06)|
+| v0.42.0 |          352  |   gate | gate→toEqual (spec-correct) + lexicographic container-map ordering + @nest two-pass; compact recalibrated 183→174 (honest)|
 
 ### Notes on v0.4.0
 

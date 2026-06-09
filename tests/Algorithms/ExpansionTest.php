@@ -433,4 +433,28 @@ describe('expansion validation gates', function () {
         ]), JSON_UNESCAPED_SLASHES);
         expect($json)->not->toContain('@direction');
     });
+
+    it('emits container-map entries in lexicographic key order, not input order (#tm/#tdi/#t0030)', function () use ($expand) {
+        // @language map given en-before-de must expand de-before-en (code-point order).
+        $json = (string) json_encode($expand([
+            '@context' => ['@version' => 1.1, 'label' => ['@id' => 'http://example/label', '@container' => '@language']],
+            'label' => ['en' => 'E', 'de' => 'D'],
+        ]), JSON_UNESCAPED_SLASHES);
+        $d = strpos($json, '"D"');
+        $e = strpos($json, '"E"');
+        expect(is_int($d) && is_int($e) && $d < $e)->toBeTrue();
+    });
+
+    it('merges @nest values after base properties, preserving [base, nested] order (#tn003)', function () use ($expand) {
+        // "p" is contributed by both the base node and the nested object; the
+        // base value must precede the nested one.
+        $json = (string) json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example/', 'nest' => '@nest'],
+            'p' => 'base',
+            'nest' => ['p' => 'nested'],
+        ]), JSON_UNESCAPED_SLASHES);
+        $base = strpos($json, '"base"');
+        $nested = strpos($json, '"nested"');
+        expect(is_int($base) && is_int($nested) && $base < $nested)->toBeTrue();
+    });
 });
