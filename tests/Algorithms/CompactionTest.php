@@ -462,4 +462,18 @@ describe('JsonLdProcessor::compact', function () {
         expect($result['prop'])->toBe('foo')
             ->and($result)->not->toHaveKey('foo-prop');
     });
+
+    it('applies a @type-map key term\'s scoped @context when compacting the entry (#tm007)', function () {
+        $expanded = [['http://example/typemap' => [['http://example.org/a' => [['@value' => 'v']], '@type' => ['http://example/Type']]]]];
+        $context = ['@version' => 1.1, '@vocab' => 'http://example/', 'typemap' => ['@container' => '@type'], 'Type' => ['@context' => ['a' => 'http://example.org/a']]];
+        $result = compactWith($expanded, $context);
+        expect($result['typemap'])->toBe(['Type' => ['a' => 'v']]);
+    });
+
+    it('keeps @index as a sibling of an aliased @list object (#t0042)', function () {
+        $expanded = [['@id' => 'http://example.com/node', 'http://example.com/p' => [['@list' => [['@value' => 'one']], '@index' => 'an index']]]];
+        $context = ['listAlias' => '@list', 'indexAlias' => '@index'];
+        $result = compactWith($expanded, $context);
+        expect($result['http://example.com/p'])->toBe(['listAlias' => ['one'], 'indexAlias' => 'an index']);
+    });
 });

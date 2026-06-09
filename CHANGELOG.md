@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-06-09
+
+Compaction: `@type`-map key scoped context + `@index` on `@list` objects.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.53.0:      370      216      435
+v0.54.0:      370      218      435   (+2 compact)
+```
+
+### Fixed (compaction)
+
+- A `@type`-container map entry is now compacted with the map-key type term's
+  type-scoped `@context` active, so the entry's properties compact through the
+  scoped term definitions (`#tm007` — the compaction twin of expansion's
+  `#tm008`).
+- A `@list` object that also carries an `@index` (and whose term is not a
+  `@container: @index`) now keeps the index as a sibling of the (aliased)
+  `@list` key, instead of dropping it (`#t0042`).
+
 ## [0.53.0] - 2026-06-09
 
 Compaction: type-scoped `@context` activation (scoped `@vocab` + list-form

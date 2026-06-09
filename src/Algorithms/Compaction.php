@@ -348,7 +348,16 @@ class Compaction
                 return $asArray;
             }
 
-            return [$this->compactIri(Keyword::List->value, vocab: true) => $asArray];
+            // §5.6.3: a @list object that also carries an @index (and whose term
+            // is not a @container:@index) keeps the index as a sibling of the
+            // (aliased) @list key (#t0042).
+            $listResult = [$this->compactIri(Keyword::List->value, vocab: true) => $asArray];
+            if (isset($node[Keyword::Index->value]) && is_string($node[Keyword::Index->value])
+                && ! $this->hasContainer($activeProperty, Keyword::Index->value)) {
+                $listResult[$this->compactIri(Keyword::Index->value, vocab: true)] = $node[Keyword::Index->value];
+            }
+
+            return $listResult;
         }
 
         // A new node object resets a non-propagating type-scoped context that
@@ -953,7 +962,27 @@ class Compaction
                     $stripped[Keyword::Type->value] = $rest;
                 }
 
-                return [$typeKey, $this->typeMapEntry($stripped, $activeProperty)];
+                // §5.6: the type (map key) term may carry a type-scoped @context
+                // that must be active while the entry is compacted, so the
+                // entry's properties compact through the scoped term defs
+                // (#tm007). Save/restore the active context + inverse around it.
+                $typeDef = $this->activeContext->getTermDefinition($typeKey);
+                $scoped = is_array($typeDef) && isset($typeDef[Keyword::Context->value]) && is_array($typeDef[Keyword::Context->value])
+                    ? $typeDef[Keyword::Context->value]
+                    : null;
+                if ($scoped === null) {
+                    return [$typeKey, $this->typeMapEntry($stripped, $activeProperty)];
+                }
+                $savedCtx = $this->activeContext;
+                $savedInverse = $this->inverse;
+                $savedReverse = $this->reverseInverse;
+                $this->activateScopedContext($scoped);
+                $entry = $this->typeMapEntry($stripped, $activeProperty);
+                $this->activeContext = $savedCtx;
+                $this->inverse = $savedInverse;
+                $this->reverseInverse = $savedReverse;
+
+                return [$typeKey, $entry];
         }
 
         return [null, null];
