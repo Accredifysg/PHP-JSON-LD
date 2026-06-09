@@ -72,7 +72,7 @@ final class JsonLdProcessor implements Processor
             $contextDocument = ['@context' => $context];
         }
 
-        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, null, $options?->processingMode);
+        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, $options?->base, $options?->processingMode);
         $compaction = new Compaction($contextProcessor->getTermDefinitions());
 
         $compacted = $compaction->compact($expanded);

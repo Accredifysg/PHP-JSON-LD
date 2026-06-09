@@ -54,4 +54,23 @@ describe('IriResolver::establishBase', function () {
         expect(IriResolver::establishBase('http://a/bb/ccc/d', 'e/f'))
             ->toBe('http://a/bb/ccc/e/f');
     });
+
+    it('relativises an IRI against a base (#t0066)', function () {
+        $base = 'https://example.com/json-ld-api/tests/compact/0066-in.jsonld';
+        expect(IriResolver::relativize($base, 'https://example.com/json-ld-api/tests/compact/link'))->toBe('link');
+        expect(IriResolver::relativize($base, 'https://example.com/json-ld-api/tests/compact/0066-in.jsonld#frag'))->toBe('#frag');
+        expect(IriResolver::relativize($base, 'https://example.com/json-ld-api/tests/compact/0066-in.jsonld?q=1'))->toBe('?q=1');
+        expect(IriResolver::relativize($base, 'https://example.com/json-ld-api/tests/'))->toBe('../');
+        expect(IriResolver::relativize($base, 'https://example.com/json-ld-api/'))->toBe('../../');
+        expect(IriResolver::relativize($base, 'https://example.com/json-ld-api/parent'))->toBe('../../parent');
+    });
+
+    it('keeps a differing scheme/authority absolute, and disambiguates keyword-like refs', function () {
+        // Different authority → cannot relativise.
+        expect(IriResolver::relativize('https://a.example/x', 'http://b.example/scheme-relative'))
+            ->toBe('http://b.example/scheme-relative');
+        // A keyword-like leading segment is prefixed with "./" (#t0111).
+        expect(IriResolver::relativize('http://localhost/', 'http://localhost/@special'))
+            ->toBe('./@special');
+    });
 });

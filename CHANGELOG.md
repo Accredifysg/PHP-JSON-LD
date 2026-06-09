@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-06-09
+
+IRI relativisation in compaction — `@id` values are now expressed as relative
+references against the document base.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.44.0:      352      193      423
+v0.45.0:      352      197      423   (+4 compact)
+```
+
+### Added
+
+- `IriResolver::relativize($base, $iri)` — the inverse of `resolve`: produces
+  the shortest relative reference (RFC 3986), e.g. `../parent`, `#frag`,
+  `?query`. Returns the IRI unchanged when it can't be relativised (no base, or
+  a differing scheme/authority). A leading segment that could be misread as a
+  keyword (`@…`) or a scheme/compact IRI (`x:…`) is prefixed with `./`.
+
+### Fixed (compaction, §5.6)
+
+- Non-vocab IRI compaction (`@id`, `@type:@id` values) now relativises against
+  the document base instead of only stripping a literal prefix (`#t0045`,
+  `#t0066`, `#t0111`, `#t0037`).
+- The document base (`JsonLdOptions::$base`) is now threaded into compaction
+  (`JsonLdProcessor::compact` previously passed `null`), and the W3C compaction
+  harness defaults it to the test document URL — matching expansion / toRdf.
+
 ## [0.44.0] - 2026-06-09
 
 Four compaction container/value features, designed via a workflow and each

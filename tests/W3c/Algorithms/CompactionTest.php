@@ -29,11 +29,18 @@ dataset('compaction-tests', function () {
 it('compacts per W3C manifest', function (TestCase $test) {
     $processor = PhpJsonLdAdapter::default();
 
+    // Compaction relativises @id against the document base; default it to the
+    // test document URL when the manifest entry doesn't set base explicitly.
+    $options = $test->options;
+    if (! isset($options['base']) && $test->documentUrl !== null) {
+        $options['base'] = $test->documentUrl;
+    }
+
     try {
         $actual = $processor->compact(
             $test->loadInput(),
             $test->contextPath !== null ? $test->loadContext() : [],
-            $test->options,
+            $options,
         );
     } catch (NotImplementedException) {
         $this->markTestSkipped('Compaction not yet implemented');

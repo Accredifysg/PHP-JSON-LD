@@ -1026,14 +1026,14 @@ class Compaction
             }
         }
 
-        // Document-relative compaction against @base for non-vocab IRIs.
+        // Document-relative compaction against @base for non-vocab IRIs: a full
+        // relative reference (RFC 3986), e.g. "../parent", "#frag" (#t0045/
+        // #t0066/#t0111). relativize() returns the IRI unchanged when it cannot
+        // be relativised (no base, or a differing scheme/authority).
         if (! $vocab) {
             $base = $this->activeContext->getBase();
-            if ($base !== null && $base !== '' && str_starts_with($iri, $base)) {
-                $suffix = substr($iri, strlen($base));
-                if ($suffix !== '') {
-                    return $suffix;
-                }
+            if ($base !== null && $base !== '') {
+                return IriResolver::relativize($base, $iri);
             }
         }
 

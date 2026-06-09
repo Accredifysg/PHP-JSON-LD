@@ -91,6 +91,69 @@ final class IriResolver
     }
 
     /**
+     * Produce a relative reference for $iri against $base (the inverse of
+     * {@see resolve}), as used by compaction to express `@id` document-relative
+     * (§5.6). Returns $iri unchanged when it cannot be relativised (no base, or
+     * a differing scheme/authority). A leading segment that could be misread as
+     * a keyword (`@…`) or a scheme/compact-IRI (`x:…`) is prefixed with `./`.
+     */
+    public static function relativize(?string $base, string $iri): string
+    {
+        if ($base === null || $base === '') {
+            return $iri;
+        }
+        $b = self::parse($base);
+        $i = self::parse($iri);
+        // A different scheme or authority cannot be expressed relatively.
+        if ($i['scheme'] === null || $i['scheme'] !== $b['scheme'] || $i['authority'] !== $b['authority']) {
+            return $iri;
+        }
+
+        $relPath = self::relativePath($b['path'], $i['path']);
+        if ($relPath !== '') {
+            $firstSeg = explode('/', $relPath, 2)[0];
+            if (str_starts_with($relPath, '@') || str_contains($firstSeg, ':')) {
+                $relPath = './'.$relPath;
+            }
+        }
+
+        $rel = $relPath;
+        if ($i['query'] !== null) {
+            $rel .= '?'.$i['query'];
+        }
+        if ($i['fragment'] !== null) {
+            $rel .= '#'.$i['fragment'];
+        }
+
+        return $rel === '' ? './' : $rel;
+    }
+
+    /**
+     * Relative path from $basePath to $iriPath (RFC 3986 §5.3 reverse).
+     * Returns '' when the paths are identical (a same-document reference).
+     */
+    private static function relativePath(string $basePath, string $iriPath): string
+    {
+        if ($basePath === $iriPath) {
+            return '';
+        }
+        $baseSegs = explode('/', $basePath);
+        array_pop($baseSegs); // drop the base's "file" segment
+        $iriSegs = explode('/', $iriPath);
+
+        $common = 0;
+        $max = min(count($baseSegs), count($iriSegs));
+        while ($common < $max && $baseSegs[$common] === $iriSegs[$common]) {
+            $common++;
+        }
+
+        $up = count($baseSegs) - $common;
+        $down = array_slice($iriSegs, $common);
+
+        return str_repeat('../', $up).implode('/', $down);
+    }
+
+    /**
      * Split a URI reference into its five components, preserving the
      * empty-vs-absent distinction for query and fragment (`x?` has an empty
      * query; `x` has none — the difference matters for §5.2.2).
