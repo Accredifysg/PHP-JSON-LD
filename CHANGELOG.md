@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-06-09
+
+Compaction term-selection / value-coercion fixes — part of the cluster the
+v0.42.0 gate correction exposed.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.42.0:      352      174      423
+v0.43.0:      352      178      423   (+4 compact)
+```
+
+### Fixed (compaction, §5.6.2 / §5.6.3)
+
+- `@vocab`-stripping no longer produces a name that collides with a defined
+  term mapping to a *different* IRI — using it would not round-trip, so the
+  full IRI is emitted instead (`#t0043`/`#tc011`).
+- A term's `@vocab`-relative `@type` coercion (a value with no `:` that is not
+  itself a defined term) is now expanded via `@vocab` before being compared to
+  a value's `@type`, so value compaction can match and drop the coerced `@type`
+  (`#t0021`).
+- A value-destroying term is no longer selected during IRI compaction: when the
+  best candidate term's `@type` coercion cannot represent the value (e.g. a
+  `@type: @id` term for a plain-string value), `selectTerm` declines and
+  compaction falls through to a compact IRI / `@vocab` / full IRI (`#t0006`).
+  Carve-outs (`@type: @none`, `@container` terms, `@list` values, and `@id`/
+  `@vocab` terms for all-node-ref values) keep legitimate coercions intact.
+
+### Deferred (higher-risk-low-gain, separate gated work)
+
+- `@vocab`-vs-compact-IRI precedence (`#t0023`), scoped-term override
+  (`#tc003`), `@type:@vocab` reverse-map (`#t0044`) — reordering compaction's
+  term-preference is the highest-blast-radius change (shared by all passing
+  tests) for ~1 test each.
+- Type-scoped `@vocab` applied during compaction (`#tc016`/`#tc017`/`#tm007`) —
+  couples `activateScopedContext` with `@type`-value compaction ordering;
+  a prior naive attempt regressed, so it needs its own isolated measurement.
+
 ## [0.42.0] - 2026-06-09
 
 **Conformance-gate correction** + lexicographic container-map ordering in

@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    352 passed /  33 failed (v0.42.0)
-Compaction:   174 passed /  72 failed (v0.42.0)
-toRdf:        423 passed /  44 failed (v0.42.0)
+Expansion:    352 passed /  33 failed (v0.43.0)
+Compaction:   178 passed /  68 failed (v0.43.0)
+toRdf:        423 passed /  44 failed (v0.43.0)
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -111,6 +111,7 @@ Each Phase 4 PR:
 | v0.40.0 |          337  |    +1  | term @id materialisation from @vocab at definition time (#tc010/#tc005/#tc035) (+3 toRdf)|
 | v0.41.0 |          340  |    +3  | @direction in @language container maps (#tdi04/#tdi05/#tdi06)|
 | v0.42.0 |          352  |   gate | gate→toEqual (spec-correct) + lexicographic container-map ordering + @nest two-pass; compact recalibrated 183→174 (honest)|
+| v0.43.0 |          352  |    +0  | compaction term-selection: @vocab-collision, @vocab-relative @type, destructive-coercion guard (+4 compact)|
 
 ### Notes on v0.4.0
 

@@ -905,7 +905,13 @@ class Compaction
         // compaction collapses the value; otherwise a plain term wins (stable
         // round-trip). Any exact match beats a compact IRI.
         if ($vocab && isset($this->inverse[$iri])) {
-            return $this->selectTerm($this->inverse[$iri], $value);
+            $term = $this->selectTerm($this->inverse[$iri], $value);
+            if ($term !== '') {
+                return $term;
+            }
+            // selectTerm declined: the only matching term would destroy the
+            // value (e.g. a @type:@id term for a plain string) — fall through
+            // to a compact IRI / @vocab / full IRI (#t0006).
         }
 
         // Compact IRI: find the longest prefix term whose @id is a strict
@@ -931,11 +937,21 @@ class Compaction
             return $best;
         }
 
-        // @vocab stripping for vocab-mode IRIs.
+        // @vocab stripping for vocab-mode IRIs. The stripped name is rejected
+        // when it is itself a defined term mapping to a DIFFERENT IRI — using it
+        // would not round-trip (#t0043/#tc011); fall through to the full IRI.
         if ($vocab) {
             $vocabIri = $this->activeContext->getVocab();
             if ($vocabIri !== null && str_starts_with($iri, $vocabIri) && $iri !== $vocabIri) {
-                return substr($iri, strlen($vocabIri));
+                $stripped = substr($iri, strlen($vocabIri));
+                $strippedDef = $this->activeContext->getTermDefinition($stripped);
+                $collides = is_array($strippedDef)
+                    && isset($strippedDef[Keyword::Id->value])
+                    && is_string($strippedDef[Keyword::Id->value])
+                    && $this->expandTermIri($strippedDef[Keyword::Id->value]) !== $iri;
+                if (! $collides) {
+                    return $stripped;
+                }
             }
         }
 
@@ -989,7 +1005,45 @@ class Compaction
             return $lenCmp !== 0 ? $lenCmp : strcmp($a['term'], $b['term']);
         });
 
+        // If even the best candidate's @type coercion would destroy the value,
+        // decline (return '') so the caller falls through to a compact IRI /
+        // @vocab / full IRI rather than emit under a lossy term (#t0006).
+        if ($sig !== null && ! $sig['empty'] && $this->isDestructiveTypeCoercion($candidates[0]['def'], $sig)) {
+            return '';
+        }
+
         return $candidates[0]['term'];
+    }
+
+    /**
+     * True when selecting $def (the best candidate) would DESTROY the value:
+     * its `@type` coercion cannot represent the value, so emitting under this
+     * term would drop or mangle data. The carve-outs are load-bearing:
+     * `@type: @none`, `@container` terms, and `@list` values are never
+     * destructive, and an `@id`/`@vocab` term is fine when every value is a
+     * node reference.
+     *
+     * @param  array<array-key, mixed>  $def
+     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}  $sig
+     */
+    private function isDestructiveTypeCoercion(array $def, array $sig): bool
+    {
+        $type = isset($def[Keyword::Type->value]) && is_string($def[Keyword::Type->value])
+            ? $def[Keyword::Type->value]
+            : null;
+
+        if ($type === null || $type === Keyword::None->value || $sig['isList'] || isset($def[Keyword::Container->value])) {
+            return false;
+        }
+        if ($type === Keyword::Id->value || $type === Keyword::Vocab->value) {
+            return ! $sig['allNodeRefs'];
+        }
+        if (! $sig['allValueObjects']) {
+            return true;
+        }
+        $typeIri = $this->resolveTypeMapping($type);
+
+        return ! ($sig['commonType'] !== null && ($type === $sig['commonType'] || $typeIri === $sig['commonType']));
     }
 
     /**
@@ -1148,6 +1202,15 @@ class Compaction
         $def = $this->activeContext->getTermDefinition($type);
         if (is_array($def) && isset($def[Keyword::Id->value]) && is_string($def[Keyword::Id->value])) {
             return $this->expandTermIri($def[Keyword::Id->value]);
+        }
+        // A @vocab-relative @type (no ':' and not a defined term) coerces to
+        // @vocab + value — mirroring vocab-mode IRI expansion — so the term's
+        // coercion can be matched against a value's full @type IRI (#t0021).
+        if (! str_contains($type, ':')) {
+            $vocab = $this->activeContext->getVocab();
+            if ($vocab !== null && $vocab !== '') {
+                return $vocab.$type;
+            }
         }
 
         return $this->expandTermIri($type);

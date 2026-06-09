@@ -328,4 +328,33 @@ describe('JsonLdProcessor::compact', function () {
         $result = compactWith($expanded, $context);
         expect($result['bar'])->toBe(['a', 'b']);
     });
+
+    it('does not @vocab-strip an IRI to a term name mapping elsewhere (#t0043)', function () {
+        // "http://example.com/name" must NOT become "name" — the term "name"
+        // maps to foaf/name, a different IRI — so the full IRI is used.
+        $expanded = [['@id' => 'http://example.com/node', 'http://example.com/name' => [['@value' => 'Markus']]]];
+        $context = ['@vocab' => 'http://example.com/', 'name' => 'http://xmlns.com/foaf/0.1/name'];
+        $result = compactWith($expanded, $context);
+        expect($result)->toHaveKey('http://example.com/name')
+            ->and($result)->not->toHaveKey('name');
+    });
+
+    it('matches a @vocab-relative term @type and drops the coerced @type (#t0021)', function () {
+        // "date" coerces to @vocab + "types/dateTime", which equals the value's
+        // @type, so value compaction drops @type and yields the bare string.
+        $expanded = [['http://example/date' => [['@value' => '2011', '@type' => 'http://example/types/dateTime']]]];
+        $context = ['@vocab' => 'http://example/', 'date' => ['@type' => 'types/dateTime']];
+        $result = compactWith($expanded, $context);
+        expect($result['date'])->toBe('2011');
+    });
+
+    it('does not select a @type:@id term for a plain-string value (#t0006)', function () {
+        // "ref" coerces to @id; a plain string is not a node reference, so the
+        // term would be destructive — fall through to the full IRI.
+        $expanded = [['@id' => 'http://example/node', 'http://example/ref' => [['@value' => 'not-an-iri']]]];
+        $context = ['ref' => ['@id' => 'http://example/ref', '@type' => '@id']];
+        $result = compactWith($expanded, $context);
+        expect($result)->toHaveKey('http://example/ref')
+            ->and($result)->not->toHaveKey('ref');
+    });
 });
