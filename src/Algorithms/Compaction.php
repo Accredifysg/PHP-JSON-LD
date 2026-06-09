@@ -1018,6 +1018,14 @@ class Compaction
             if (str_contains($prefixTerm, ':')) {
                 continue;
             }
+            // §5.7: only a prefix-flagged term may form a compact IRI. The flag
+            // is true for a simple term def ending in a gen-delim, or for an
+            // explicit @prefix:true; an expanded def without @prefix (#tp001/
+            // #tp002) or an explicit @prefix:false (#tp008) is not usable.
+            $prefixDef = $this->activeContext->getTermDefinition($prefixTerm);
+            if (! is_array($prefixDef) || ($prefixDef[Keyword::Prefix->value] ?? false) !== true) {
+                continue;
+            }
             $len = strlen($termIri);
             if ($len > $bestLen) {
                 $bestLen = $len;

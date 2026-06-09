@@ -429,4 +429,21 @@ describe('JsonLdProcessor::compact', function () {
         $r2 = compactWith($expanded, ['@version' => 1.1, 'type' => ['@id' => '@type', '@container' => '@set']]);
         expect($r2['type'])->toBe(['http://example.org/type']);
     });
+
+    it('forms a compact IRI only from a prefix-eligible term (#tp002/#tp008)', function () {
+        // The node carries a property so it is not a free-floating @id-only node.
+        $expanded = [['@id' => 'http://example.org/id1', 'http://example.org/p' => [['@value' => 'x']]]];
+        // A simple string def ending in a gen-delim IS a prefix → compacts.
+        $simple = compactWith($expanded, ['ex' => 'http://example.org/']);
+        expect($simple['@id'])->toBe('ex:id1');
+        // An expanded (object) def without @prefix is NOT a prefix (#tp002).
+        $expandedDef = compactWith($expanded, ['ex' => ['@id' => 'http://example.org/']]);
+        expect($expandedDef['@id'])->toBe('http://example.org/id1');
+        // An explicit @prefix:false is NOT a prefix (#tp008).
+        $noPrefix = compactWith($expanded, ['@version' => 1.1, 'ex' => ['@id' => 'http://example.org/', '@prefix' => false]]);
+        expect($noPrefix['@id'])->toBe('http://example.org/id1');
+        // An explicit @prefix:true on an expanded def IS a prefix.
+        $yesPrefix = compactWith($expanded, ['@version' => 1.1, 'ex' => ['@id' => 'http://example.org/', '@prefix' => true]]);
+        expect($yesPrefix['@id'])->toBe('ex:id1');
+    });
 });

@@ -206,6 +206,10 @@ class TermDefinitions
     {
         $this->validateTermSyntax($key);
 
+        // A SIMPLE term definition is one whose value was a bare string (vs an
+        // expanded object definition). It matters for the §5.7 compact-IRI
+        // prefix flag below.
+        $wasSimple = is_string($termDefinition);
         if (is_string($termDefinition)) {
             $termDefinition = ['@id' => $termDefinition];
         }
@@ -250,6 +254,23 @@ class TermDefinitions
             && $this->getVocab() !== null
         ) {
             $termDefinition[Keyword::Id->value] = $this->getVocab().$key;
+        }
+
+        // §4.2.2 step 16 / §5.7: mark a SIMPLE term definition whose IRI mapping
+        // ends with a gen-delim (:/?#[]@) as a usable compact-IRI prefix. The
+        // flag is recorded on the stored definition (it travels through
+        // scoped-context copies). We only ever SET @prefix:true here and never
+        // write @prefix:false — an expanded (object) definition without @prefix
+        // simply has no flag. Compaction (§5.7) treats "@prefix === true" as the
+        // sole prefix-eligibility test, so an expanded def (tp001/tp002) or an
+        // explicit @prefix:false (tp008) keeps the full IRI; expansion's
+        // (lenient) compact-IRI handling, which only blocks an explicit
+        // @prefix:false, is intentionally left unchanged.
+        if (! array_key_exists(Keyword::Prefix->value, $termDefinition)) {
+            $id = $termDefinition[Keyword::Id->value] ?? null;
+            if ($wasSimple && is_string($id) && $id !== '' && str_contains(':/?#[]@', substr($id, -1))) {
+                $termDefinition[Keyword::Prefix->value] = true;
+            }
         }
 
         $this->storeProtectedAware($key, $termDefinition, $protectedContext, $overrideProtected);

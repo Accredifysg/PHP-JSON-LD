@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-06-09
+
+Compaction: the §5.7 compact-IRI prefix flag.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.51.0:      370      210      435
+v0.52.0:      370      213      435   (+3 compact)
+```
+
+### Fixed (compaction, §5.7)
+
+- A compact IRI (`term:suffix`) is now only formed from a *prefix-eligible*
+  term. A term definition is a prefix when it is a simple string definition
+  whose IRI mapping ends with a gen-delim (`:/?#[]@`), or when it carries an
+  explicit `@prefix: true`. An expanded (object) term definition without
+  `@prefix` (`#tp001` in 1.0, `#tp002` in 1.1) or one flagged `@prefix: false`
+  (`#tp008`) keeps the full IRI.
+- The prefix flag is computed at term-definition time and stored on the
+  definition, so it travels through scoped-context copies. Expansion's
+  (lenient) compact-IRI handling — which only blocks an explicit
+  `@prefix: false` — is intentionally left unchanged, so this is a
+  compaction-only tightening (expand/toRdf unaffected; VC characterization
+  fixtures remain byte-equivalent).
+
 ## [0.51.0] - 2026-06-09
 
 Expansion: lexicographic key processing + property-valued `@index` on graph
