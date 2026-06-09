@@ -143,10 +143,12 @@ describe('JsonLdProcessor::compact', function () {
         expect($result['typemap'])->toBe(['http://example.org/foo' => ['label' => 'foo typed']]);
     });
 
-    it('recurses into @graph, compacting inner nodes', function () {
+    it('recurses into @graph, compacting inner nodes (keeping @graph an array)', function () {
+        // §5.6 / #t0039/#t0016: a node-level @graph value stays an array even
+        // for a single member (unlike @included, which unwraps).
         $expanded = [['@graph' => [['http://example/name' => [['@value' => 'Alice']]]]]];
         $result = compactWith($expanded, ['@vocab' => 'http://example/']);
-        expect($result['@graph'])->toBe(['name' => 'Alice']);
+        expect($result['@graph'])->toBe([['name' => 'Alice']]);
     });
 
     it('recurses into @included, compacting inner nodes', function () {
@@ -356,5 +358,36 @@ describe('JsonLdProcessor::compact', function () {
         $result = compactWith($expanded, $context);
         expect($result)->toHaveKey('http://example/ref')
             ->and($result)->not->toHaveKey('ref');
+    });
+
+    it('keys a property-valued @index map by the index property value (#tpi01)', function () {
+        // author{@container:@index,@index:prop}: the map key is the value of the
+        // "prop" property, which is then removed from the node.
+        $expanded = [[
+            'http://example/author' => [
+                ['@id' => 'http://example/p1', 'http://example/prop' => [['@value' => 'regular']]],
+                ['@id' => 'http://example/p2', 'http://example/prop' => [['@value' => 'guest']]],
+            ],
+        ]];
+        $context = ['@vocab' => 'http://example/', 'author' => ['@type' => '@id', '@container' => '@index', '@index' => 'prop']];
+        $result = compactWith($expanded, $context);
+        expect($result['author'])->toBe([
+            'regular' => ['@id' => 'http://example/p1'],
+            'guest' => ['@id' => 'http://example/p2'],
+        ]);
+    });
+
+    it('compacts a sole-@id node in a @type map to a bare string (#tm020)', function () {
+        $expanded = [['http://example/foo' => [['@id' => 'http://example/baz', '@type' => ['http://example/bar']]]]];
+        $context = ['@vocab' => 'http://example/', '@base' => 'http://example/', 'foo' => ['@container' => '@type']];
+        $result = compactWith($expanded, $context);
+        expect($result['foo'])->toBe(['bar' => 'baz']);
+    });
+
+    it('keeps a nested @list nested instead of flattening it (#tli01)', function () {
+        $expanded = [['http://example/foo' => [['@list' => [['@list' => []]]]]]];
+        $context = ['foo' => ['@id' => 'http://example/foo', '@container' => '@list']];
+        $result = compactWith($expanded, $context);
+        expect($result['foo'])->toBe([[]]);
     });
 });

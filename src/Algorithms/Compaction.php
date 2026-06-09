@@ -313,8 +313,13 @@ class Compaction
         // @list object.
         if (isset($node[Keyword::List->value]) && is_array($node[Keyword::List->value])) {
             $listContainer = $this->isListContainer($activeProperty);
-            $compactedList = $this->compactElement(array_values($node[Keyword::List->value]), $activeProperty);
-            $asArray = is_array($compactedList) && array_is_list($compactedList) ? $compactedList : [$compactedList];
+            // Compact each list item individually so a nested @list (which
+            // compacts to an array) stays nested rather than being collapsed by
+            // the single-item unwrap in compactElement (#tli01/#tli02/#tli03).
+            $asArray = [];
+            foreach (array_values($node[Keyword::List->value]) as $listItem) {
+                $asArray[] = $this->compactElement($listItem, $activeProperty);
+            }
             if ($listContainer) {
                 return $asArray;
             }
@@ -389,7 +394,9 @@ class Compaction
                 foreach ($items as $item) {
                     $compactedItems[] = $this->compactElement($item, null);
                 }
-                $result[$this->compactIri($key, vocab: true)] = count($compactedItems) === 1 && is_array($compactedItems[0])
+                // A node-level @graph value stays an array (#t0039); @included
+                // unwraps a single member to a bare object.
+                $result[$this->compactIri($key, vocab: true)] = ($key !== Keyword::Graph->value && count($compactedItems) === 1 && is_array($compactedItems[0]))
                     ? $compactedItems[0]
                     : $compactedItems;
 
@@ -486,7 +493,7 @@ class Compaction
                 } else {
                     $mapType = $this->mapContainerType($term);
                     $compactedValue = $mapType !== null
-                        ? $this->compactContainerMap($groupItems, $mapType)
+                        ? $this->compactContainerMap($groupItems, $mapType, $term)
                         : $this->compactElement($groupItems, $term);
                 }
 
@@ -774,7 +781,7 @@ class Compaction
      * @param  list<mixed>  $items
      * @return array<string, mixed>
      */
-    private function compactContainerMap(array $items, string $mapType): array
+    private function compactContainerMap(array $items, string $mapType, ?string $activeProperty = null): array
     {
         $map = [];
         foreach ($items as $item) {
@@ -782,7 +789,7 @@ class Compaction
                 continue;
             }
 
-            [$key, $entry] = $this->mapKeyAndEntry($item, $mapType);
+            [$key, $entry] = $this->mapKeyAndEntry($item, $mapType, $activeProperty);
             if ($key === null) {
                 continue;
             }
@@ -807,7 +814,7 @@ class Compaction
      * @param  array<array-key, mixed>  $item
      * @return array{0: ?string, 1: mixed}
      */
-    private function mapKeyAndEntry(array $item, string $mapType): array
+    private function mapKeyAndEntry(array $item, string $mapType, ?string $activeProperty = null): array
     {
         // The synthetic "no key" sentinel is @none, which must itself be
         // compacted to a keyword alias if the active context defines one
@@ -824,6 +831,50 @@ class Compaction
                 return [$lang, $item[Keyword::Value->value] ?? null];
 
             case Keyword::Index->value:
+                // Property-valued index (§5.6): when the term sets @index to a
+                // property IRI (not the @index keyword), the map key is that
+                // property's VALUE on the node, which is then removed (#tpi01-05).
+                $def = $activeProperty !== null ? $this->activeContext->getTermDefinition($activeProperty) : null;
+                $indexTerm = is_array($def)
+                    && isset($def[Keyword::Index->value])
+                    && is_string($def[Keyword::Index->value])
+                    && $def[Keyword::Index->value] !== Keyword::Index->value
+                    ? $def[Keyword::Index->value]
+                    : null;
+                $indexProp = null;
+                if ($indexTerm !== null) {
+                    $indexProp = $this->expandTermIri($indexTerm);
+                    if (! str_contains($indexProp, ':')) {
+                        $vocab = $this->activeContext->getVocab();
+                        $indexProp = $vocab !== null && $vocab !== '' ? $vocab.$indexTerm : $indexProp;
+                    }
+                }
+                if ($indexProp !== null) {
+                    // Compact the node first, then take the key from the COMPACTED
+                    // index-property value: a string (incl. a @type:@id-coerced
+                    // node ref) becomes the key and is removed; a non-string
+                    // (e.g. a {@id} object) leaves the key @none and the property
+                    // intact (#tpi01/#tpi02/#tpi03/#tpi06).
+                    $entry = $this->compactObject($item, null);
+                    $propKey = $this->compactIri($indexProp, vocab: true);
+                    $key = $none;
+                    if (is_array($entry) && array_key_exists($propKey, $entry)) {
+                        $propVal = $entry[$propKey];
+                        if (is_string($propVal)) {
+                            $key = $propVal;
+                            unset($entry[$propKey]);
+                        } elseif (is_array($propVal) && array_is_list($propVal) && isset($propVal[0]) && is_string($propVal[0])) {
+                            $key = $propVal[0];
+                            $rest = array_slice($propVal, 1);
+                            $entry[$propKey] = count($rest) === 1 ? $rest[0] : $rest;
+                            if ($rest === []) {
+                                unset($entry[$propKey]);
+                            }
+                        }
+                    }
+
+                    return [$key, $entry];
+                }
                 $index = isset($item[Keyword::Index->value]) && is_string($item[Keyword::Index->value])
                     ? $item[Keyword::Index->value]
                     : $none;
@@ -847,7 +898,7 @@ class Compaction
                     ? array_values($item[Keyword::Type->value])
                     : [];
                 if ($types === [] || ! is_string($types[0])) {
-                    return [$none, $this->compactObject($item, null)];
+                    return [$none, $this->typeMapEntry($item, $activeProperty)];
                 }
                 $typeKey = $this->compactIri($types[0], vocab: true);
                 $rest = array_slice($types, 1);
@@ -858,10 +909,30 @@ class Compaction
                     $stripped[Keyword::Type->value] = $rest;
                 }
 
-                return [$typeKey, $this->compactObject($stripped, null)];
+                return [$typeKey, $this->typeMapEntry($stripped, $activeProperty)];
         }
 
         return [null, null];
+    }
+
+    /**
+     * Compacts one @type-container map entry. A node left with only @id
+     * compacts to the bare, compacted @id STRING (#tm020-023); the @id is
+     * vocab-compacted when the container term coerces to `@type: @vocab`,
+     * otherwise document-relative. Anything else compacts as a node object.
+     *
+     * @param  array<array-key, mixed>  $node
+     */
+    private function typeMapEntry(array $node, ?string $activeProperty): mixed
+    {
+        if (count($node) === 1 && isset($node[Keyword::Id->value]) && is_string($node[Keyword::Id->value])) {
+            $def = $activeProperty !== null ? $this->activeContext->getTermDefinition($activeProperty) : null;
+            $vocab = is_array($def) && ($def[Keyword::Type->value] ?? null) === Keyword::Vocab->value;
+
+            return $this->compactIri($node[Keyword::Id->value], vocab: $vocab);
+        }
+
+        return $this->compactObject($node, null);
     }
 
     /**

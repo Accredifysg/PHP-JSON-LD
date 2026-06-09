@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-06-09
+
+Four compaction container/value features, designed via a workflow and each
+landed measured-in-isolation against the full suite.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.43.0:      352      178      423
+v0.44.0:      352      193      423   (+15 compact)
+```
+
+### Added / Fixed (compaction, §5.6)
+
+- **Property-valued `@index`** (`#tpi01`–`#tpi04`, `#t0112`, `#t0113`): a term
+  `{@container:@index, @index:"prop"}` now keys the index map by the node's
+  index-property VALUE (compacted), removing that property — except when the
+  value is a node reference (not a string), where the key stays `@none` and the
+  property is kept (`#tpi06` preserved).
+- **`@type`-map sole-`@id` entries** (`#tm020`–`#tm023`): a node left with only
+  `@id` (after its `@type` became the map key) compacts to the bare, compacted
+  `@id` string — vocab-compacted for a `@type:@vocab` container term, otherwise
+  document-relative.
+- **Nested `@list`** (`#tli01`–`#tli03`): a coerced `@list` whose items are
+  themselves `@list` objects now compacts to a nested array (e.g. `[[]]`)
+  instead of being flattened, by compacting list items individually.
+- **`@graph` arrays** (`#t0039`, `#t0016`): a node-level `@graph` value stays an
+  array even for a single member (only `@included` unwraps a single member).
+
+### Deferred
+
+- Explicit `@graph` wrapping when the target term is not `@container:@graph`
+  (`#t0090`/`#t0092`/`#t0094`/`#t0083`) and the `compactArrays:false` variants
+  (`#t0091`/`#t0093`) — the latter need a `compactArrays` option that is not yet
+  threaded through `JsonLdOptions`.
+
 ## [0.43.0] - 2026-06-09
 
 Compaction term-selection / value-coercion fixes — part of the cluster the
