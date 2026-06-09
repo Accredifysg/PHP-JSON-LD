@@ -549,4 +549,42 @@ describe('expansion validation gates', function () {
         expect($json)->toContain('http://example.org/ignoreMe')
             ->and($json)->not->toContain('@reverse');
     });
+
+    it('accumulates @type from a literal @type and a type alias in lexicographic key order (#tpr30)', function () use ($expand) {
+        // "@type" (0x40) sorts before "type" (0x74), so its value (Bar) precedes
+        // the alias value (Foo) regardless of document order.
+        $json = (string) json_encode($expand([
+            '@context' => ['@version' => 1.1, 'type' => ['@id' => '@type', '@container' => '@set']],
+            'type' => 'http://example.org/ns/Foo',
+            '@type' => 'http://example.org/ns/Bar',
+        ]), JSON_UNESCAPED_SLASHES);
+        $bar = strpos($json, 'Bar');
+        $foo = strpos($json, 'Foo');
+        expect(is_int($bar) && is_int($foo) && $bar < $foo)->toBeTrue();
+    });
+
+    it('appends @nest-alias values in lexicographic alias order, after base values (#tn004)', function () use ($expand) {
+        // nest aliases given nest2-before-nest1 must contribute nest1 before
+        // nest2 (lexicographic), and both after the base property value.
+        $json = (string) json_encode($expand([
+            '@context' => ['@vocab' => 'http://example.org/', 'nest1' => '@nest', 'nest2' => '@nest'],
+            'p2' => 'v2',
+            'nest2' => ['p2' => 'v4'],
+            'nest1' => ['p2' => 'v3'],
+        ]), JSON_UNESCAPED_SLASHES);
+        $v2 = strpos($json, '"v2"');
+        $v3 = strpos($json, '"v3"');
+        $v4 = strpos($json, '"v4"');
+        expect(is_int($v2) && is_int($v3) && is_int($v4) && $v2 < $v3 && $v3 < $v4)->toBeTrue();
+    });
+
+    it('attaches a property-valued @index to a @graph-wrapped entry (#tpi11)', function () use ($expand) {
+        $json = (string) json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/', 'input' => ['@container' => ['@graph', '@index'], '@index' => 'prop']],
+            'input' => ['g1' => ['value' => 'x']],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('http://example.org/prop')
+            ->and($json)->toContain('"@value":"g1"')
+            ->and($json)->not->toContain('"@index":"g1"');
+    });
 });

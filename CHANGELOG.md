@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-06-09
+
+Expansion: lexicographic key processing + property-valued `@index` on graph
+objects.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.50.0:      366      210      434
+v0.51.0:      370      210      435   (+4 expand, +1 toRdf)
+```
+
+### Fixed (expansion)
+
+- Object keys are now processed in lexicographic (code-point) order, so arrays
+  accumulated from sibling keys that map to the same property are
+  deterministically ordered: a literal `@type` keyword before a `type` alias
+  (`#tpr30`), values across multiple `@nest` aliases (`#tn004`), and language
+  maps with a colliding property (`#t0035`). Object-key output order is not
+  significant to consumers (compaction/toRdf are unaffected; the VC
+  characterization fixtures remain byte-equivalent).
+- A property-valued `@index` now applies even when the container also wraps
+  entries in a graph object (`@container: ["@graph", "@index"]`): the index
+  property is attached to the wrapped graph object (`#tpi11`).
+
 ## [0.50.0] - 2026-06-09
 
 Expansion: container-map index, `@vocab`-as-term, `@prefix:false`, keyword-shaped

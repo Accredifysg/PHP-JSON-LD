@@ -293,6 +293,12 @@ class Expansion
         // base properties, so colliding arrays read [base, …, nested] (§5.5).
         $deferredNestValues = [];
 
+        // §5.5: expansion processes object keys in lexicographic (code-point)
+        // order, so arrays accumulated from sibling keys that map to the same
+        // property (e.g. @type plus a `type` alias, or values across @nest
+        // aliases) are deterministically ordered (#tpr30/#tn004).
+        ksort($obj, SORT_STRING);
+
         try {
             foreach ($obj as $key => $value) {
                 if (! is_string($key)) {
@@ -1717,9 +1723,10 @@ class Expansion
         $indexKey = is_array($termDef) && isset($termDef[Keyword::Index->value]) && is_string($termDef[Keyword::Index->value])
             ? $termDef[Keyword::Index->value]
             : Keyword::Index->value;
-        // A property-valued index does not apply when the container also wraps
-        // entries in a graph object — there is no node to carry the property.
-        $indexProperty = ($indexKey !== Keyword::Index->value && ! $wrapGraph)
+        // A property-valued index applies even when the container also wraps
+        // entries in a graph object: the index property is attached to the
+        // wrapped graph object itself (#tpi11).
+        $indexProperty = ($indexKey !== Keyword::Index->value)
             ? $this->expandIri($indexKey, vocab: true)
             : null;
 
