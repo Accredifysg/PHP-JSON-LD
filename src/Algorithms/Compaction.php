@@ -379,7 +379,15 @@ class Compaction
             }
 
             if ($key === Keyword::Type->value) {
-                $result[$this->compactIri(Keyword::Type->value, vocab: true)] = $this->compactTypeValue($value);
+                $typeKey = $this->compactIri(Keyword::Type->value, vocab: true);
+                $compactedType = $this->compactTypeValue($value);
+                // When the @type term carries @container:@set, @type stays an
+                // array even for a single value (#t0104/#t0105) — a JSON-LD 1.1
+                // feature; JSON-LD 1.0 ignores it and keeps the scalar (#t0106).
+                if (! is_array($compactedType) && ! $this->activeContext->isJson10() && $this->hasContainer($typeKey, Keyword::Set->value)) {
+                    $compactedType = [$compactedType];
+                }
+                $result[$typeKey] = $compactedType;
 
                 continue;
             }

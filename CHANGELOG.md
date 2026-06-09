@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-06-09
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.46.0:      352      208      423
+v0.47.0:      352      210      423   (+2 compact)
+```
+
+### Fixed (compaction, §5.6)
+
+- `@type` whose term carries `@container: @set` now stays an array even for a
+  single value (`#t0104`/`#t0105`) — a JSON-LD 1.1 feature; under JSON-LD 1.0
+  it is ignored and the scalar is kept (`#t0106` preserved).
+
+### Notes
+
+- A `@prefix`-validity fix (a map-defined term without `@prefix: true`, or
+  `@prefix: false`, may not form a compact IRI — `#tp002`/`#tp008`) was
+  attempted and reverted: a naive "string-def or `@prefix:true`" eligibility
+  rule regressed 19 tests (many contexts legitimately use map-defined terms as
+  prefixes). Needs the precise §4.2.2 prefix-flag rule (gen-delim / simple
+  term); deferred.
+
 ## [0.46.0] - 2026-06-09
 
 Expand-first compaction + the fixes it unlocks. The largest compaction jump.

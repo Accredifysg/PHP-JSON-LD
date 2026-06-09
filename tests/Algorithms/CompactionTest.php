@@ -419,4 +419,14 @@ describe('JsonLdProcessor::compact', function () {
         $result = compactWith($expanded, ['@language' => 'en']);
         expect($result['http://example.com/foo'])->toBe(['@value' => 'foo-value']);
     });
+
+    it('keeps @type an array when its term has @container:@set (#t0104/#t0105)', function () {
+        $expanded = [['@type' => ['http://example.org/type']]];
+        // @type keyword as a @set container.
+        $r1 = compactWith($expanded, ['@version' => 1.1, '@type' => ['@container' => '@set']]);
+        expect($r1['@type'])->toBe(['http://example.org/type']);
+        // An alias of @type as a @set container.
+        $r2 = compactWith($expanded, ['@version' => 1.1, 'type' => ['@id' => '@type', '@container' => '@set']]);
+        expect($r2['type'])->toBe(['http://example.org/type']);
+    });
 });
