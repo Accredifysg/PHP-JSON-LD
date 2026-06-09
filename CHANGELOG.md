@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-06-09
+
+Type-map expansion cluster (each gains its toRdf twin).
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.48.0:      358      210      427
+v0.49.0:      362      210      431   (+4 expand, +4 toRdf)
+```
+
+### Fixed (expansion, §5.5 — `@type` / `@id` container maps)
+
+- An `@id`-map entry that already carries its own `@id` keeps it; the map key
+  no longer overrides the entry's explicit `@id` (`#tm002`, step 13.8.3.7.4).
+- A `@type`-map entry is now expanded with the type (map-key) term's
+  type-scoped `@context` active, so the entry sees the type's term definitions
+  (`#tm008`).
+- A `@type`-map / `@id`-map builds its map context from the *previous* context
+  (the context before the type-scoped context that introduced the map
+  property), so entries do not inherit the containing object's type-scoped term
+  redefinitions (`#tc013`, step 13.8.3.1).
+- A string entry of a `@type` map expands to a node reference (`@id`): against
+  `@base` (document-relative) by default (`#tm017`), or against `@vocab` when
+  the term is `@type: @vocab` (`#tm019`).
+
 ## [0.48.0] - 2026-06-09
 
 Expansion clusters (each gains its toRdf twin). Start of the push to 100%.

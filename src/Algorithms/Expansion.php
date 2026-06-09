@@ -1809,7 +1809,10 @@ class Expansion
                         if ($wrapGraph) {
                             $expandedItem = $this->wrapAsGraphObject($expandedItem);
                         }
-                        if (! $idIsNone) {
+                        // §5.5 step 13.8.3.7.4: the map key supplies @id ONLY
+                        // when the entry does not already carry one — an explicit
+                        // @id on the entry wins over the index key (#tm002).
+                        if (! $idIsNone && ! array_key_exists(Keyword::Id->value, $expandedItem)) {
                             $expandedId = $this->expandIri($id, documentRelative: true);
                             if ($expandedId !== null) {
                                 $expandedItem[Keyword::Id->value] = $expandedId;
@@ -1846,9 +1849,40 @@ class Expansion
             $expandedType = $this->expandIri($type, vocab: true);
             $typeIsNone = $expandedType === Keyword::None->value;
 
+            // §5.5 step 13.8.3.1: the map context for a @type map is the
+            // PREVIOUS context (the context as it stood before the type-scoped
+            // context that introduced this @type-container property), if any —
+            // so entries do NOT inherit the containing object's type-scoped term
+            // redefinitions (#tc013).
+            $savedContext = $this->termDefinitions;
+            $mapBase = $this->termDefinitions->getPreviousContext() ?? $this->termDefinitions;
+            $this->termDefinitions = $mapBase;
+            // §5.5 step 13.8.3.2: when the type (the map key) is a term in the
+            // map context with a type-scoped @context, that context is active
+            // while the entry is expanded (#tm008/#tc013). Restored after this
+            // key's entries.
+            $typeTermDef = $mapBase->getTermDefinition($type);
+            if (is_array($typeTermDef) && isset($typeTermDef[Keyword::Context->value])) {
+                $this->termDefinitions = $this->applyScopedContext($typeTermDef[Keyword::Context->value], $mapBase, overrideProtected: false);
+            }
+
             $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
             foreach ($items as $item) {
-                $expanded = $this->expandElement($item, $activeProperty);
+                // §5.5: a string entry of a @type map is a node reference, not a
+                // literal — the string IRI-expands to @id. The active property's
+                // @type mapping selects the mode: @type:@vocab resolves against
+                // @vocab (#tm019); otherwise document-relative against @base
+                // (#tm017).
+                if (is_string($item)) {
+                    $propDef = $savedContext->getTermDefinition($activeProperty);
+                    $vocabType = is_array($propDef) && ($propDef[Keyword::Type->value] ?? null) === Keyword::Vocab->value;
+                    $iri = $vocabType
+                        ? $this->expandIri($item, vocab: true, documentRelative: true)
+                        : $this->expandIri($item, documentRelative: true);
+                    $expanded = $iri !== null ? [Keyword::Id->value => $iri] : null;
+                } else {
+                    $expanded = $this->expandElement($item, $activeProperty);
+                }
                 if ($expanded === null) {
                     continue;
                 }
@@ -1871,6 +1905,10 @@ class Expansion
                     $result[] = $expandedItem;
                 }
             }
+
+            // Restore the active context before the next type key — a type's
+            // scoped context is confined to its own entries.
+            $this->termDefinitions = $savedContext;
         }
 
         return $result;

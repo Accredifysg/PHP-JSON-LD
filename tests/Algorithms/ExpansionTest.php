@@ -482,4 +482,36 @@ describe('expansion validation gates', function () {
         ]), JSON_UNESCAPED_SLASHES);
         expect($json)->toContain('"@list":[{"@value":"one item"}]');
     });
+
+    it('keeps an @id-map entry\'s own @id rather than the map key (#tm002)', function () use ($expand) {
+        $out = $expand([
+            '@context' => ['@vocab' => 'http://example/', 'idmap' => ['@container' => '@id']],
+            'idmap' => ['http://example.org/foo' => ['@id' => 'http://example.org/bar', 'label' => 'x']],
+        ]);
+        expect($out[0]['http://example/idmap'][0]['@id'])->toBe('http://example.org/bar');
+    });
+
+    it('expands a @type-map string entry to a document-relative node reference (#tm017)', function () use ($expand) {
+        $out = $expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/ns/', '@base' => 'http://example.org/base/', 'foo' => ['@container' => '@type']],
+            'foo' => ['bar' => 'baz'],
+        ]);
+        expect($out[0]['http://example.org/ns/foo'][0]['@id'])->toBe('http://example.org/base/baz');
+    });
+
+    it('expands a @type-map string entry against @vocab when the term is @type:@vocab (#tm019)', function () use ($expand) {
+        $out = $expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/ns/', '@base' => 'http://example.org/base/', 'foo' => ['@type' => '@vocab', '@container' => '@type']],
+            'foo' => ['bar' => 'baz'],
+        ]);
+        expect($out[0]['http://example.org/ns/foo'][0]['@id'])->toBe('http://example.org/ns/baz');
+    });
+
+    it('applies the type key\'s type-scoped @context when expanding a @type-map entry (#tm008)', function () use ($expand) {
+        $out = $expand([
+            '@context' => ['@vocab' => 'http://example/', 'typemap' => ['@container' => '@type'], 'Type' => ['@context' => ['a' => 'http://example.org/a']]],
+            'typemap' => ['Type' => ['a' => 'v']],
+        ]);
+        expect($out[0]['http://example/typemap'][0])->toHaveKey('http://example.org/a');
+    });
 });
