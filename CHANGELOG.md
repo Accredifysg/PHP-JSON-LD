@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-06-09
+
+Compaction: type-scoped `@context` activation (scoped `@vocab` + list-form
+layers).
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.52.0:      370      213      435
+v0.53.0:      370      216      435   (+3 compact)
+```
+
+### Fixed (compaction, §5.6 — type-scoped contexts)
+
+- A type-scoped `@context`'s `@vocab` is now applied when compacting a node's
+  other properties (`#tc016`): the `@type` values that trigger the scope still
+  compact through the outer `@vocab` (they resolve via an explicit inverse term,
+  which is consulted before `@vocab` stripping), while sibling properties use
+  the scoped `@vocab`.
+- A type-scoped `@context` given as a LIST of layers (`[{…}]`, `[null, {…}]`)
+  is now applied layer-by-layer; previously the list form was silently skipped
+  (its integer keys were treated as non-string), so scoped term definitions
+  never reached the active context (`#tc017`/`#tc018`).
+
 ## [0.52.0] - 2026-06-09
 
 Compaction: the §5.7 compact-IRI prefix flag.

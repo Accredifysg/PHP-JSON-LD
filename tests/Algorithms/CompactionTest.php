@@ -446,4 +446,20 @@ describe('JsonLdProcessor::compact', function () {
         $yesPrefix = compactWith($expanded, ['@version' => 1.1, 'ex' => ['@id' => 'http://example.org/', '@prefix' => true]]);
         expect($yesPrefix['@id'])->toBe('ex:id1');
     });
+
+    it('applies a type-scoped @vocab when compacting a node\'s other properties (#tc016)', function () {
+        $expanded = [['http://example.org/p' => [['@type' => ['http://example.org/Type'], 'http://example.com/foo' => [['@value' => 'com']]]]]];
+        $context = ['@version' => 1.1, '@vocab' => 'http://example.org/', 'Type' => ['@context' => ['@vocab' => 'http://example.com/']]];
+        $result = compactWith($expanded, $context);
+        // @type compacts via the OUTER vocab; the sibling prop via the scoped vocab.
+        expect($result['p'])->toBe(['@type' => 'Type', 'foo' => 'com']);
+    });
+
+    it('applies a list-form type-scoped @context when compacting a node (#tc017)', function () {
+        $expanded = [['@type' => ['http://example/Foo'], 'http://example/foo-prop' => [['@value' => 'foo']]]];
+        $context = ['@version' => 1.1, '@vocab' => 'http://example/', 'Foo' => ['@context' => [['prop' => 'http://example/foo-prop']]]];
+        $result = compactWith($expanded, $context);
+        expect($result['prop'])->toBe('foo')
+            ->and($result)->not->toHaveKey('foo-prop');
+    });
 });

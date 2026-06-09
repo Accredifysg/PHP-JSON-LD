@@ -197,6 +197,21 @@ class Compaction
      */
     private function activateScopedContext(array $scoped): void
     {
+        // A scoped @context may be a LIST of layers (e.g. [{...}] in #tc017,
+        // [null, {...}] in #tc018). Apply each layer in turn, composing on the
+        // prior layer's result; a null/non-map layer is a no-op here (any terms
+        // a null would "reset" are reinstated by the non-propagating rollback
+        // when descending into a nested node object).
+        if (array_is_list($scoped)) {
+            foreach ($scoped as $layer) {
+                if (is_array($layer)) {
+                    $this->activateScopedContext($layer);
+                }
+            }
+
+            return;
+        }
+
         $ctx = clone $this->activeContext;
         $vocab = $ctx->getVocab();
 
@@ -207,11 +222,20 @@ class Compaction
             // A scoped @base applies to the cloned active context so that
             // compactIri can relativise document-relative IRIs against it
             // (e.g. #tc015 type-scoped base, #tc024 property-scoped base).
-            // @vocab is deliberately NOT applied here: a scoped @vocab must not
-            // affect compaction of the @type values that triggered it (§5.6),
-            // so naive application regresses type-scoped-vocab cases (#tc016).
             if ($key === Keyword::Base->value && (is_string($value) || $value === null)) {
                 $ctx->setBase($value === null ? null : IriResolver::establishBase($ctx->getBase(), $value));
+
+                continue;
+            }
+            // A scoped @vocab applies to the cloned active context so the node's
+            // OTHER properties compact through it (#tc016). The @type values that
+            // triggered this scope are unaffected: their IRIs resolve via an
+            // explicit inverse term, which compactIri consults BEFORE @vocab
+            // stripping. $vocab is kept in sync so bare-term @id resolution below
+            // uses the scoped vocabulary.
+            if ($key === Keyword::Vocab->value && (is_string($value) || $value === null)) {
+                $ctx->setVocab($value);
+                $vocab = $value;
 
                 continue;
             }

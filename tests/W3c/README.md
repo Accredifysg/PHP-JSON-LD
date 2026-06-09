@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    370 passed /  15 failed (v0.52.0)
-Compaction:   213 passed /  33 failed (v0.52.0)
-toRdf:        435 passed /  32 failed (v0.52.0)
+Expansion:    370 passed /  15 failed (v0.53.0)
+Compaction:   216 passed /  30 failed (v0.53.0)
+toRdf:        435 passed /  32 failed (v0.53.0)
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -121,6 +121,7 @@ Each Phase 4 PR:
 | v0.50.0 |          366  |    +4  | expansion: @index keep-own, @vocab-as-term, @prefix:false, keyword-shaped @reverse (+3 toRdf)|
 | v0.51.0 |          370  |    +4  | expansion: lexicographic key order (@type/@nest/lang accumulation) + property-valued @index on graph objects (+1 toRdf)|
 | v0.52.0 |          370  |    +0  | compaction §5.7 compact-IRI prefix flag: only prefix-eligible terms form term:suffix (+3 compact)|
+| v0.53.0 |          370  |    +0  | compaction type-scoped @context: scoped @vocab + list-form layers (+3 compact)|
 
 ### Notes on v0.4.0
 
