@@ -104,14 +104,17 @@ class Expansion
             $expanded = $expanded[Keyword::Graph->value];
         }
 
-        // If the result is a list, flatten it (drop nulls).
+        // If the result is a list, flatten it and drop free-floating items
+        // (§5.5 step 18): at the top level a value object, a node with only an
+        // @id, or a @list object carries no statement and is removed
+        // (#t0045/#t0046/#t0047).
         if (array_is_list($expanded)) {
             $out = [];
             foreach ($expanded as $item) {
                 if ($item === null) {
                     continue;
                 }
-                if (is_array($item) && ! array_is_list($item)) {
+                if (is_array($item) && ! array_is_list($item) && ! $this->isFreeFloating($item)) {
                     /** @var array<string, mixed> $item */
                     $out[] = $item;
                 }
@@ -120,9 +123,11 @@ class Expansion
             return $out;
         }
 
-        // Single object → wrap in list.
+        // Single object → wrap in list, unless it is free-floating at the top
+        // level (a lone value object / @list / @id-only node), which is dropped
+        // (§5.5 step 18 / #t0045).
         /** @var array<string, mixed> $expanded */
-        return [$expanded];
+        return $this->isFreeFloating($expanded) ? [] : [$expanded];
     }
 
     /**
@@ -441,6 +446,13 @@ class Expansion
                         $this->mergeProperty($result, $expandedKey, $containerHandled);
 
                         continue;
+                    }
+
+                    // A scalar value of a @container:@list property is treated
+                    // as a single-element list so it expands to a {@list:[…]}
+                    // object (#t0004), via the @list wrapping in expandArray.
+                    if (! is_array($value) && $this->containerIs($key, Keyword::List->value)) {
+                        $value = [$value];
                     }
 
                     $expandedValue = $this->expandElement($value, $key);
@@ -1196,6 +1208,20 @@ class Expansion
         $key = array_key_first($obj);
 
         return is_string($key) && $this->expandIri($key, vocab: true) === Keyword::Id->value;
+    }
+
+    /**
+     * True if an expanded item is "free-floating" at the top level / in @graph
+     * (§5.5 step 18) and therefore dropped: a value object (`@value`), a `@list`
+     * object, or a node object whose only entry is `@id`.
+     *
+     * @param  array<array-key, mixed>  $item
+     */
+    private function isFreeFloating(array $item): bool
+    {
+        return array_key_exists(Keyword::Value->value, $item)
+            || array_key_exists(Keyword::List->value, $item)
+            || (count($item) === 1 && array_key_exists(Keyword::Id->value, $item));
     }
 
     /**

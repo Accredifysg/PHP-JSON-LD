@@ -457,4 +457,29 @@ describe('expansion validation gates', function () {
         $nested = strpos($json, '"nested"');
         expect(is_int($base) && is_int($nested) && $base < $nested)->toBeTrue();
     });
+
+    it('drops free-floating values, @id-only nodes and lists at the top level (#t0045/#t0046/#t0047)', function () use ($expand) {
+        expect($expand(['@value' => 'free']))->toBe([]);
+        expect($expand(['@graph' => [['@id' => 'http://example/x'], ['@value' => 'v']]]))->toBe([]);
+        // A node WITH properties survives.
+        $kept = $expand(['@graph' => [['@id' => 'http://example/n', 'http://example/p' => 'v']]]);
+        expect($kept)->toHaveCount(1);
+    });
+
+    it('ignores a keyword-shaped term @id, falling back to @vocab (#t0120)', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://example/', 'ignoreMe' => ['@id' => '@ignoreMe']],
+            'ignoreMe' => 'x',
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('http://example/ignoreMe')
+            ->and($json)->not->toContain('@ignoreMe');
+    });
+
+    it('wraps a scalar value of a @container:@list property in a @list object (#t0004)', function () use ($expand) {
+        $json = json_encode($expand([
+            '@context' => ['list' => ['@id' => 'http://example/list', '@container' => '@list']],
+            'list' => 'one item',
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@list":[{"@value":"one item"}]');
+    });
 });

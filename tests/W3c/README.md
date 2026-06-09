@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    352 passed /  33 failed (v0.47.0)
-Compaction:   210 passed /  36 failed (v0.47.0)
-toRdf:        423 passed /  44 failed (v0.47.0)
+Expansion:    358 passed /  27 failed (v0.48.0)
+Compaction:   210 passed /  36 failed (v0.48.0)
+toRdf:        427 passed /  40 failed (v0.48.0)
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -116,6 +116,7 @@ Each Phase 4 PR:
 | v0.45.0 |          352  |    +0  | compaction IRI relativisation (@id against document base) + base threading (+4 compact)|
 | v0.46.0 |          352  |    +0  | expand-first compaction + sibling-isolation + default-language + @graph simple/named (+11 compact)|
 | v0.47.0 |          352  |    +0  | @type with @container:@set stays an array in 1.1 (+2 compact)|
+| v0.48.0 |          358  |    +6  | expansion: free-floating drop, keyword-shaped @id, @list scalar wrap (+4 toRdf)|
 
 ### Notes on v0.4.0
 

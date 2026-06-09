@@ -212,6 +212,18 @@ class TermDefinitions
 
         $this->validateTermDefinitionStructure($key, $termDefinition);
 
+        // §4.2.2: an @id that has the FORM of a keyword (@ + letters) but is not
+        // a real keyword is ignored — the term then falls back to @vocab below
+        // (#t0120). "@" alone and "@foo.bar" are not keyword-shaped, so kept.
+        if (
+            array_key_exists(Keyword::Id->value, $termDefinition)
+            && is_string($termDefinition[Keyword::Id->value])
+            && preg_match('/^@[A-Za-z]+$/', $termDefinition[Keyword::Id->value]) === 1
+            && ! Keyword::contains($termDefinition[Keyword::Id->value])
+        ) {
+            unset($termDefinition[Keyword::Id->value]);
+        }
+
         // §4.2.2: a term with no explicit @id (and no @reverse), that is not
         // IRI-shaped and not a keyword, takes its IRI mapping from the active
         // @vocab AT DEFINITION TIME. Materialising it now (rather than relying

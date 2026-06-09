@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-06-09
+
+Expansion clusters (each gains its toRdf twin). Start of the push to 100%.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.47.0:      352      210      423
+v0.48.0:      358      210      427   (+6 expand, +4 toRdf)
+```
+
+### Fixed (expansion, §5.5)
+
+- Free-floating items are dropped at the top level / in `@graph`: a value
+  object, a node with only `@id`, or a `@list` object carries no statement and
+  is removed (`#t0045`/`#t0046`/`#t0047`, toRdf twins).
+- A term `@id` with the FORM of a keyword (`@` + letters, e.g. `@ignoreMe`) but
+  that is not a real keyword is ignored, so the term falls back to `@vocab`
+  (`#t0120`/`#tpr37`); `@` alone and `@foo.bar` are not keyword-shaped and are
+  kept.
+- A scalar value of a `@container: @list` property now expands to a `{@list:…}`
+  object (`#t0004`).
+
 ## [0.47.0] - 2026-06-09
 
 W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
