@@ -438,6 +438,14 @@ class ContextProcessor
             return $vocab; // absolute IRI
         }
 
+        // §4.1.2 step 5.2: @vocab is IRI-expanded with vocab=true, so a bare
+        // value that is itself a defined term resolves via that term's IRI
+        // mapping, e.g. @vocab:"ex" where ex→"http://example.org/" (#t0125).
+        $termDef = $this->termDefinitions->getTermDefinition($vocab);
+        if ($termDef !== null && isset($termDef['@id']) && is_string($termDef['@id'])) {
+            return $termDef['@id'];
+        }
+
         // Relative reference: append to the current @vocab, else resolve
         // against the base.
         $currentVocab = $this->termDefinitions->getVocab();

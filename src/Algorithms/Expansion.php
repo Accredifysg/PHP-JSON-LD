@@ -904,15 +904,17 @@ class Expansion
 
             // Step 6.4: compact IRI expansion via prefix term def.
             $prefixDef = $this->termDefinitions->getTermDefinition($prefix);
-            if ($prefixDef !== null && isset($prefixDef['@id']) && is_string($prefixDef['@id'])) {
-                $prefixIri = $prefixDef['@id'];
-
-                // The spec says compact-IRI expansion only applies when the
-                // term definition is flagged as a prefix (@prefix: true), but
-                // common practice (and the v0.1.1 behaviour we're replacing)
-                // treats any term definition with a string IRI mapping as a
-                // prefix. We follow that lenient interpretation here.
-                return $prefixIri.$suffix;
+            if (
+                $prefixDef !== null
+                && isset($prefixDef['@id'])
+                && is_string($prefixDef['@id'])
+                // A term explicitly flagged @prefix:false is NOT a prefix, so
+                // "term:suffix" is not a compact IRI and is left for absolute-IRI
+                // handling (#tpr29). We otherwise keep the lenient interpretation
+                // (any string-IRI term acts as a prefix) for back-compat.
+                && ($prefixDef[Keyword::Prefix->value] ?? null) !== false
+            ) {
+                return $prefixDef['@id'].$suffix;
             }
 
             // Step 6.5: if value has the form of an absolute IRI, return as-is.
@@ -1761,7 +1763,11 @@ class Expansion
                                     : [];
                                 array_unshift($existing, $indexValue);
                                 $expandedItem[$indexProperty] = $existing;
-                            } else {
+                            } elseif (! array_key_exists(Keyword::Index->value, $expandedItem)) {
+                                // The container key supplies @index ONLY when the
+                                // entry does not already carry one — an explicit
+                                // @index on the entry wins over the map key
+                                // (#t0036, step 13.8.3.7.3).
                                 $expandedItem[Keyword::Index->value] = $index;
                             }
                         }

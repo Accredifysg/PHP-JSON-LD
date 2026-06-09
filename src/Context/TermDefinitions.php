@@ -224,6 +224,19 @@ class TermDefinitions
             unset($termDefinition[Keyword::Id->value]);
         }
 
+        // §4.2.2 step 14: an @reverse whose value has the FORM of a keyword
+        // (but is not a real keyword) makes the whole term definition be
+        // ignored — the term then falls back to @vocab at use time and the
+        // value is expanded as an ordinary forward property (#tpr39).
+        if (
+            array_key_exists(Keyword::Reverse->value, $termDefinition)
+            && is_string($termDefinition[Keyword::Reverse->value])
+            && preg_match('/^@[A-Za-z]+$/', $termDefinition[Keyword::Reverse->value]) === 1
+            && ! Keyword::contains($termDefinition[Keyword::Reverse->value])
+        ) {
+            return;
+        }
+
         // §4.2.2: a term with no explicit @id (and no @reverse), that is not
         // IRI-shaped and not a keyword, takes its IRI mapping from the active
         // @vocab AT DEFINITION TIME. Materialising it now (rather than relying

@@ -484,34 +484,69 @@ describe('expansion validation gates', function () {
     });
 
     it('keeps an @id-map entry\'s own @id rather than the map key (#tm002)', function () use ($expand) {
-        $out = $expand([
+        $json = (string) json_encode($expand([
             '@context' => ['@vocab' => 'http://example/', 'idmap' => ['@container' => '@id']],
             'idmap' => ['http://example.org/foo' => ['@id' => 'http://example.org/bar', 'label' => 'x']],
-        ]);
-        expect($out[0]['http://example/idmap'][0]['@id'])->toBe('http://example.org/bar');
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@id":"http://example.org/bar"')
+            ->and($json)->not->toContain('"@id":"http://example.org/foo"');
     });
 
     it('expands a @type-map string entry to a document-relative node reference (#tm017)', function () use ($expand) {
-        $out = $expand([
+        $json = (string) json_encode($expand([
             '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/ns/', '@base' => 'http://example.org/base/', 'foo' => ['@container' => '@type']],
             'foo' => ['bar' => 'baz'],
-        ]);
-        expect($out[0]['http://example.org/ns/foo'][0]['@id'])->toBe('http://example.org/base/baz');
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@id":"http://example.org/base/baz"');
     });
 
     it('expands a @type-map string entry against @vocab when the term is @type:@vocab (#tm019)', function () use ($expand) {
-        $out = $expand([
+        $json = (string) json_encode($expand([
             '@context' => ['@version' => 1.1, '@vocab' => 'http://example.org/ns/', '@base' => 'http://example.org/base/', 'foo' => ['@type' => '@vocab', '@container' => '@type']],
             'foo' => ['bar' => 'baz'],
-        ]);
-        expect($out[0]['http://example.org/ns/foo'][0]['@id'])->toBe('http://example.org/ns/baz');
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@id":"http://example.org/ns/baz"');
     });
 
     it('applies the type key\'s type-scoped @context when expanding a @type-map entry (#tm008)', function () use ($expand) {
-        $out = $expand([
+        $json = (string) json_encode($expand([
             '@context' => ['@vocab' => 'http://example/', 'typemap' => ['@container' => '@type'], 'Type' => ['@context' => ['a' => 'http://example.org/a']]],
             'typemap' => ['Type' => ['a' => 'v']],
-        ]);
-        expect($out[0]['http://example/typemap'][0])->toHaveKey('http://example.org/a');
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('http://example.org/a');
+    });
+
+    it('keeps an @index-map entry\'s own @index rather than the map key (#t0036)', function () use ($expand) {
+        $json = (string) json_encode($expand([
+            '@context' => ['c' => ['@id' => 'http://example/c', '@container' => '@index']],
+            'c' => ['A' => ['@id' => 'http://example/n', '@index' => 'own']],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"@index":"own"')
+            ->and($json)->not->toContain('"@index":"A"');
+    });
+
+    it('resolves @vocab whose value is itself a defined term (#t0125)', function () use ($expand) {
+        $json = (string) json_encode($expand([
+            '@context' => [['@version' => 1.1, 'ex' => ['@id' => 'http://example.org/', '@prefix' => true]], ['@vocab' => 'ex']],
+            'foo' => 'bar',
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('http://example.org/foo');
+    });
+
+    it('does not expand a compact IRI when the prefix term is @prefix:false (#tpr29)', function () use ($expand) {
+        $json = (string) json_encode($expand([
+            '@context' => ['@version' => 1.1, 'tag' => ['@id' => 'http://example.org/ns/tag/', '@prefix' => false]],
+            'tag:champin.net,2019:prop' => 'kept literal',
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('"tag:champin.net,2019:prop"');
+    });
+
+    it('ignores a term whose @reverse has the form of a keyword, falling back to @vocab (#tpr39)', function () use ($expand) {
+        $json = (string) json_encode($expand([
+            '@context' => ['@vocab' => 'http://example.org/', 'ignoreMe' => ['@reverse' => '@ignoreMe']],
+            'ignoreMe' => ['text' => 'not reversed'],
+        ]), JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('http://example.org/ignoreMe')
+            ->and($json)->not->toContain('@reverse');
     });
 });

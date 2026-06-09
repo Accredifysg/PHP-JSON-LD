@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-06-09
+
+Expansion: container-map index, `@vocab`-as-term, `@prefix:false`, keyword-shaped
+`@reverse` (each gains its toRdf twin).
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.49.0:      362      210      431
+v0.50.0:      366      210      434   (+4 expand, +3 toRdf)
+```
+
+### Fixed (expansion)
+
+- An `@index`-map entry that already carries its own `@index` keeps it; the map
+  key no longer overrides the entry's explicit `@index` (`#t0036`, mirrors the
+  `#tm002` `@id`-map rule).
+- `@vocab` whose value is itself a defined term is IRI-expanded via that term
+  (vocab-style), e.g. `@vocab: "ex"` where `ex → http://example.org/` resolves
+  subsequent terms against `http://example.org/` (`#t0125`, §4.1.2 step 5.2).
+- A term explicitly flagged `@prefix: false` is no longer usable as a
+  compact-IRI prefix, so `tag:champin.net,2019:prop` stays a literal absolute
+  IRI rather than expanding via `tag` (`#tpr29`).
+- A term whose `@reverse` value has the FORM of a keyword (but is not a real
+  keyword) is ignored entirely, so the term falls back to `@vocab` and its value
+  expands as an ordinary forward property (`#tpr39`).
+
 ## [0.49.0] - 2026-06-09
 
 Type-map expansion cluster (each gains its toRdf twin).

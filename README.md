@@ -29,9 +29,9 @@ A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) spec
 ## Planned scope (v1.0)
 
 - [x] Custom `DocumentLoader` interface
-- [~] Expansion (§5.5) — implemented; ~362/385 of the W3C expand suite
+- [~] Expansion (§5.5) — implemented; ~366/385 of the W3C expand suite
 - [~] Compaction (§5.6) — implemented incl. container-maps (incl. property-valued `@index`, `@type`-map node refs), keyword recursion, `@nest`, nested `@list`, `@graph` maps, `@reverse`, value-aware term selection, property-/type-scoped contexts with scoped `@base`, IRI relativisation, expand-first normalisation, `@type`-set arrays; ~210/246 of the W3C compact suite
-- [~] Serialize JSON-LD to RDF (§7 / `toRdf`) — implemented; ~431/467 of the W3C toRdf suite (N-Quads output incl. `rdfDirection`; generalized RDF pending)
+- [~] Serialize JSON-LD to RDF (§7 / `toRdf`) — implemented; ~434/467 of the W3C toRdf suite (N-Quads output incl. `rdfDirection`; generalized RDF pending)
 
 > Suite numbers from v0.42.0 use the spec-accurate `toEqual` comparison
 > (object-key order insignificant, array order significant); earlier numbers
