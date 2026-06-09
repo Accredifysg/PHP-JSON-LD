@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    352 passed /  33 failed (v0.45.0)
-Compaction:   197 passed /  49 failed (v0.45.0)
-toRdf:        423 passed /  44 failed (v0.45.0)
+Expansion:    352 passed /  33 failed (v0.46.0)
+Compaction:   208 passed /  38 failed (v0.46.0)
+toRdf:        423 passed /  44 failed (v0.46.0)
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -114,6 +114,7 @@ Each Phase 4 PR:
 | v0.43.0 |          352  |    +0  | compaction term-selection: @vocab-collision, @vocab-relative @type, destructive-coercion guard (+4 compact)|
 | v0.44.0 |          352  |    +0  | compaction features: property-valued @index, @type-map sole-@id, nested @list, @graph arrays (+15 compact)|
 | v0.45.0 |          352  |    +0  | compaction IRI relativisation (@id against document base) + base threading (+4 compact)|
+| v0.46.0 |          352  |    +0  | expand-first compaction + sibling-isolation + default-language + @graph simple/named (+11 compact)|
 
 ### Notes on v0.4.0
 

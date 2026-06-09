@@ -394,9 +394,12 @@ class Compaction
                 foreach ($items as $item) {
                     $compactedItems[] = $this->compactElement($item, null);
                 }
-                // A node-level @graph value stays an array (#t0039); @included
-                // unwraps a single member to a bare object.
-                $result[$this->compactIri($key, vocab: true)] = ($key !== Keyword::Graph->value && count($compactedItems) === 1 && is_array($compactedItems[0]))
+                // A NAMED graph (the node also has an @id) keeps @graph as an
+                // array (#t0039/#t0016); a SIMPLE graph (only @graph) and
+                // @included unwrap a single member to a bare object (#t0090/
+                // #t0092).
+                $isNamedGraph = $key === Keyword::Graph->value && isset($node[Keyword::Id->value]);
+                $result[$this->compactIri($key, vocab: true)] = (! $isNamedGraph && count($compactedItems) === 1 && is_array($compactedItems[0]))
                     ? $compactedItems[0]
                     : $compactedItems;
 
@@ -467,24 +470,26 @@ class Compaction
             foreach ($order as $term) {
                 $groupItems = $groups[$term];
 
-                // §5.6: a property whose term carries a property-scoped
-                // @context activates it while its value is compacted, then
-                // rolls back. The term itself was already selected against the
-                // outer context above.
-                $scoped = $this->propertyScopedContext($term);
-                $savedContext = $scoped !== null ? $this->activeContext : null;
-                $savedInverse = $scoped !== null ? $this->inverse : null;
-                $savedReverse = $scoped !== null ? $this->reverseInverse : null;
+                // Snapshot the active context around EVERY property's value
+                // compaction: a property-scoped @context activated here, or a
+                // type-scoped rollback consumed inside a nested-node value, must
+                // not leak into sibling properties — sibling compaction must be
+                // order-independent (#tc015/#tc019).
+                $savedContext = $this->activeContext;
+                $savedInverse = $this->inverse;
+                $savedReverse = $this->reverseInverse;
                 $savedPrevious = $this->previousContext;
+
+                // §5.6: a property whose term carries a property-scoped @context
+                // activates it while its value is compacted. It PROPAGATES into
+                // the value's nested nodes (unlike type-scoped): clear the
+                // type-scoped rollback so nested nodes keep these terms (#tc013/
+                // #tc019); an explicit @propagate:false confines it instead,
+                // rolling nested nodes back to the pre-activation context (#tc027).
+                $scoped = $this->propertyScopedContext($term);
                 if ($scoped !== null) {
                     $preScoped = ['context' => $this->activeContext, 'inverse' => $this->inverse, 'reverse' => $this->reverseInverse];
                     $this->activateScopedContext($scoped);
-                    // A property-scoped context PROPAGATES into the value's
-                    // nested nodes (unlike type-scoped): clear the type-scoped
-                    // rollback so the nested node keeps these terms (#tc013/
-                    // #tc019). An explicit @propagate:false confines it instead,
-                    // so the nested node rolls back to the pre-activation
-                    // context (#tc027).
                     $this->previousContext = $this->propagatesFalse($scoped) ? $preScoped : null;
                 }
 
@@ -497,12 +502,11 @@ class Compaction
                         : $this->compactElement($groupItems, $term);
                 }
 
-                if ($scoped !== null && $savedContext !== null) {
-                    $this->activeContext = $savedContext;
-                    $this->inverse = $savedInverse ?? [];
-                    $this->reverseInverse = $savedReverse ?? [];
-                    $this->previousContext = $savedPrevious;
-                }
+                // Restore for the next sibling property.
+                $this->activeContext = $savedContext;
+                $this->inverse = $savedInverse;
+                $this->reverseInverse = $savedReverse;
+                $this->previousContext = $savedPrevious;
 
                 $this->assignProperty($result, $term, $compactedValue);
             }
@@ -628,23 +632,31 @@ class Compaction
         // object is rebuilt with aliased keys, never collapsed to a scalar.
         $typeNone = $typeMapping === Keyword::None->value;
 
+        // The term's effective @language: its own @language coercion (an
+        // explicit null opts out) or, absent one, the active default @language.
+        $termHasLang = is_array($termDef) && array_key_exists(Keyword::Language->value, $termDef);
+        $termLang = $termHasLang && is_string($termDef[Keyword::Language->value]) ? $termDef[Keyword::Language->value] : null;
+        $effectiveLang = $termHasLang ? $termLang : $this->activeContext->getDefaultLanguage();
+
         // If the term coerces to the value's @type, drop @type.
         if (! $typeNone && $valueType !== null && $typeMapping !== null && $this->expandedEquals($typeMapping, $valueType) && ! $hasOther && $valueLang === null && $valueDir === null) {
             return $raw;
         }
 
-        // Plain @value with no @type / @language / @direction → the scalar.
+        // Plain @value with no @type / @language / @direction → the scalar —
+        // UNLESS it is a string and an effective @language is active, where
+        // collapsing would wrongly imply that language on round-trip, so the
+        // value object is kept (#t0072).
         if (! $typeNone && $valueType === null && $valueLang === null && $valueDir === null && ! $hasOther) {
-            return $raw;
+            if (! is_string($raw) || $effectiveLang === null) {
+                return $raw;
+            }
         }
 
         // @language collapse (§5.6.3): a language-tagged value whose language
         // matches the term's @language coercion — or, absent one, the active
         // default @language — drops @language and becomes the bare scalar.
         // Skipped when a default @direction is active (direction would be lost).
-        $termHasLang = is_array($termDef) && array_key_exists(Keyword::Language->value, $termDef);
-        $termLang = $termHasLang && is_string($termDef[Keyword::Language->value]) ? $termDef[Keyword::Language->value] : null;
-        $effectiveLang = $termHasLang ? $termLang : $this->activeContext->getDefaultLanguage();
         if (
             ! $typeNone
             && $valueType === null

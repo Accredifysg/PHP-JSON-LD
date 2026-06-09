@@ -143,12 +143,17 @@ describe('JsonLdProcessor::compact', function () {
         expect($result['typemap'])->toBe(['http://example.org/foo' => ['label' => 'foo typed']]);
     });
 
-    it('recurses into @graph, compacting inner nodes (keeping @graph an array)', function () {
-        // §5.6 / #t0039/#t0016: a node-level @graph value stays an array even
-        // for a single member (unlike @included, which unwraps).
-        $expanded = [['@graph' => [['http://example/name' => [['@value' => 'Alice']]]]]];
-        $result = compactWith($expanded, ['@vocab' => 'http://example/']);
+    it('keeps @graph an array for a NAMED graph, unwraps it for a SIMPLE graph', function () {
+        // §5.6 / #t0039: a NAMED graph (the node also has @id) keeps @graph as
+        // an array even for a single member.
+        $named = [['@id' => 'http://example/g', '@graph' => [['http://example/name' => [['@value' => 'Alice']]]]]];
+        $result = compactWith($named, ['@vocab' => 'http://example/']);
         expect($result['@graph'])->toBe([['name' => 'Alice']]);
+
+        // #t0090: a SIMPLE graph (only @graph) unwraps a single member.
+        $simple = [['@graph' => [['http://example/name' => [['@value' => 'Bob']]]]]];
+        $result2 = compactWith($simple, ['@vocab' => 'http://example/']);
+        expect($result2['@graph'])->toBe(['name' => 'Bob']);
     });
 
     it('recurses into @included, compacting inner nodes', function () {
@@ -158,7 +163,12 @@ describe('JsonLdProcessor::compact', function () {
     });
 
     it('wraps multiple top-level nodes in a @graph map', function () {
-        $expanded = [['@id' => 'http://example/a'], ['@id' => 'http://example/b']];
+        // Nodes need properties to survive expansion (free-floating @id-only
+        // nodes are dropped); compaction now expands its input first (§5.6).
+        $expanded = [
+            ['@id' => 'http://example/a', 'http://example/p' => [['@value' => 'x']]],
+            ['@id' => 'http://example/b', 'http://example/p' => [['@value' => 'y']]],
+        ];
         $result = compactWith($expanded, []);
         expect($result)->toHaveKey('@graph');
         expect($result['@graph'])->toHaveCount(2);
@@ -389,5 +399,24 @@ describe('JsonLdProcessor::compact', function () {
         $context = ['foo' => ['@id' => 'http://example/foo', '@container' => '@list']];
         $result = compactWith($expanded, $context);
         expect($result['foo'])->toBe([[]]);
+    });
+
+    it('expands its input first, applying the document @context (#t0090)', function () {
+        // The input carries its own @context (input is @container:@graph); compact
+        // must expand it before compacting, keeping the explicit @graph.
+        $input = [
+            '@context' => ['@version' => 1.1, 'input' => ['@id' => 'http://ex/input', '@container' => '@graph'], 'value' => 'http://ex/value'],
+            'input' => ['value' => 'x'],
+        ];
+        $result = compactWith($input, ['@version' => 1.1, 'input' => 'http://ex/input', 'value' => 'http://ex/value']);
+        expect($result['input'])->toBe(['@graph' => ['value' => 'x']]);
+    });
+
+    it('keeps a value object when a default @language would otherwise be implied (#t0072)', function () {
+        // A language-less string value must NOT collapse to a bare scalar under
+        // a default @language (round-trip would wrongly add the language).
+        $expanded = [['http://example.com/foo' => [['@value' => 'foo-value']]]];
+        $result = compactWith($expanded, ['@language' => 'en']);
+        expect($result['http://example.com/foo'])->toBe(['@value' => 'foo-value']);
     });
 });

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-06-09
+
+Expand-first compaction + the fixes it unlocks. The largest compaction jump.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.45.0:      352      197      423
+v0.46.0:      352      208      423   (+11 compact)
+```
+
+### Fixed (compaction, §5.6)
+
+- `JsonLdProcessor::compact` now EXPANDS its input first (per §5.6 compaction
+  operates on an expanded document), so a document carrying its own `@context`
+  (e.g. `@container` definitions) is normalised before compaction. Fixes
+  free-floating-node dropping (`#t0001`/`#t0003`/`#t0004`), multiple `@context`
+  (`#t0071`), `@set` array contexts (`#ts001`), `@type:@vocab` relative
+  (`#t0062`), and the list-of-lists negative (`#te001`).
+- Sibling-property compaction is now order-independent: the active context is
+  snapshotted/restored around EVERY property's value compaction, so a
+  type-scoped-context rollback consumed inside a nested-node value no longer
+  leaks into later siblings (`#tc015`/`#tc019`). This was the regression that
+  blocked expand-first.
+- A language-less string value is no longer collapsed to a bare scalar when an
+  effective default/term `@language` is active (which would wrongly imply that
+  language on round-trip) — the value object is kept (`#t0072`).
+- A SIMPLE graph (a node with only `@graph`) unwraps a single member to a bare
+  object, while a NAMED graph (node with `@id` + `@graph`) keeps `@graph` an
+  array (`#t0090`/`#t0092`/`#t0094`, `#t0039`/`#t0016` preserved).
+
 ## [0.45.0] - 2026-06-09
 
 IRI relativisation in compaction — `@id` values are now expressed as relative

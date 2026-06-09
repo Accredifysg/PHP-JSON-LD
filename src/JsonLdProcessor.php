@@ -72,10 +72,15 @@ final class JsonLdProcessor implements Processor
             $contextDocument = ['@context' => $context];
         }
 
+        // §5.6: compaction operates on the EXPANDED document. Expand the input
+        // first (idempotent for already-expanded input) so a document carrying
+        // its own @context (e.g. @container definitions) is normalised first.
+        $expandedInput = $this->expand($expanded, $options)->toArray();
+
         $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, $options?->base, $options?->processingMode);
         $compaction = new Compaction($contextProcessor->getTermDefinitions());
 
-        $compacted = $compaction->compact($expanded);
+        $compacted = $compaction->compact($expandedInput);
 
         // Prepend the supplied @context (only when there's content + a
         // non-empty context), matching the spec's output shape.
