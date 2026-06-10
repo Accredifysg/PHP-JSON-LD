@@ -93,6 +93,15 @@ final class Harness
         $inputRef = isset($entry['input']) && is_string($entry['input']) ? $entry['input'] : null;
         $documentUrl = $inputRef !== null ? $baseIri.$inputRef : null;
 
+        // An expandContext option value is a manifest-relative filename (e.g.
+        // "expand/0077-context.jsonld"); resolve it against the manifest's
+        // base IRI so the harness document loader can serve it like any other
+        // fixture URL.
+        $options = $this->stringKeyedArray($entry['option'] ?? []);
+        if (isset($options['expandContext']) && is_string($options['expandContext']) && ! str_contains($options['expandContext'], '://')) {
+            $options['expandContext'] = $baseIri.$options['expandContext'];
+        }
+
         return new TestCase(
             id: $id,
             name: isset($entry['name']) && is_string($entry['name']) ? $entry['name'] : '',
@@ -104,7 +113,7 @@ final class Harness
             expectPath: $this->joinRelativePath($manifestDir, $entry['expect'] ?? null),
             expectErrorCode: $entry['expectErrorCode'] ?? null,
             contextPath: $this->joinRelativePath($manifestDir, $entry['context'] ?? null),
-            options: $this->stringKeyedArray($entry['option'] ?? []),
+            options: $options,
             baseIri: $baseIri,
             documentUrl: $documentUrl,
             rawTypes: $types,

@@ -19,6 +19,10 @@ namespace Accredify\JsonLd;
  *  - {@see $compactArrays} — when true (the default), compaction unwraps
  *    single-element arrays and drops `@graph`/`@set` array wrappers where a
  *    scalar/object suffices; false keeps arrays verbatim.
+ *  - {@see $expandContext} — a context applied BEFORE the document's own
+ *    `@context` when expanding (it initialises the active context). May be a
+ *    context map (optionally wrapped in `{"@context": …}`), an array of
+ *    contexts, or a remote context IRI.
  *
  * Reserved for forthcoming work (accepted but not yet acted upon):
  *  - {@see $rdfDirection} — "i18n-datatype" / "compound-literal" for toRdf.
@@ -29,16 +33,22 @@ namespace Accredify\JsonLd;
  */
 final class JsonLdOptions
 {
+    /**
+     * @param  array<array-key, mixed>|string|null  $expandContext
+     */
     public function __construct(
         public readonly ?string $base = null,
         public readonly ?string $processingMode = null,
         public readonly ?string $rdfDirection = null,
         public readonly bool $produceGeneralizedRdf = false,
         public readonly bool $compactArrays = true,
+        public readonly array|string|null $expandContext = null,
     ) {}
 
     /**
      * Derive a copy with selected fields overridden.
+     *
+     * @param  array<array-key, mixed>|string|null  $expandContext
      */
     public function with(
         ?string $base = null,
@@ -46,6 +56,7 @@ final class JsonLdOptions
         ?string $rdfDirection = null,
         ?bool $produceGeneralizedRdf = null,
         ?bool $compactArrays = null,
+        array|string|null $expandContext = null,
     ): self {
         return new self(
             $base ?? $this->base,
@@ -53,6 +64,7 @@ final class JsonLdOptions
             $rdfDirection ?? $this->rdfDirection,
             $produceGeneralizedRdf ?? $this->produceGeneralizedRdf,
             $compactArrays ?? $this->compactArrays,
+            $expandContext ?? $this->expandContext,
         );
     }
 }

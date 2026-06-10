@@ -40,8 +40,23 @@ final class PhpJsonLdAdapter implements Processor
         $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
 
         return (new JsonLdProcessor($this->loader))
-            ->expand($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options)))
+            ->expand($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), expandContext: self::expandContext($options)))
             ->toArray();
+    }
+
+    /**
+     * The `expandContext` API option as surfaced by the manifest: a context
+     * map, or a context URL (already resolved by the harness to the W3C test
+     * base, which the loader serves locally).
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<array-key, mixed>|string|null
+     */
+    private static function expandContext(array $options): array|string|null
+    {
+        $expandContext = $options['expandContext'] ?? null;
+
+        return is_string($expandContext) || is_array($expandContext) ? $expandContext : null;
     }
 
     /**
@@ -83,7 +98,7 @@ final class PhpJsonLdAdapter implements Processor
         $rdfDirection = isset($options['rdfDirection']) && is_string($options['rdfDirection']) ? $options['rdfDirection'] : null;
 
         return (new JsonLdProcessor($this->loader))
-            ->toRdf($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), rdfDirection: $rdfDirection))
+            ->toRdf($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), rdfDirection: $rdfDirection, expandContext: self::expandContext($options)))
             ->toNQuads();
     }
 }

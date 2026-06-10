@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-06-10
+
+Expansion: the `expandContext` option, context reset, scoped `@nest`.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.61.0:      372      246      436
+v0.62.0:      378      246      441   (+6 expand, +5 toRdf)
+```
+
+### Added
+
+- `JsonLdOptions::$expandContext` (§10.3): a context applied BEFORE the
+  document's own `@context` when expanding — a context map, a
+  `{"@context": …}` wrapper, or a remote context IRI — threaded through
+  `expand()`/`toRdf()` and the W3C harness adapter (`#t0077`).
+
+### Fixed (expansion)
+
+- `{"@context": null}` inside a node resets the ENTIRE active context — terms,
+  containers and all — so unmapped terms drop and container coercions vanish
+  (`#t0016`), and the base resets to the original document base rather than an
+  inherited scoped `@base` (`#t0060`).
+- `{"@context": {"@base": null}}` clears the base entirely, leaving relative
+  IRIs relative in the output (`#t0060`).
+- `@propagate: false` on a property-scoped context with `@import` is honoured
+  (`#tso06`).
+- A term aliased to `@nest` with its own property-scoped `@context` applies
+  that context to the nested values — the scoped context is no longer lost in
+  the deferred second pass (`#tc037`; the Bibframe example `#tc038` lands as a
+  bonus).
+
+The remaining 7 expand failures are the documented environment/spec-
+accommodation blockers (`#t0122` non-normative, `#t0128` shared-context
+circular ref, `#tc031` offline relative URLs, `#tc032`/`#tc033` unused-context
+errors, `#ter56` VC `@context`-term accommodation, `#tin06` json.api).
+
 ## [0.61.0] - 2026-06-10
 
 **Compaction reaches 100% of the W3C compact suite (246/246).**

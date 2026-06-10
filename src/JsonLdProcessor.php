@@ -49,6 +49,7 @@ final class JsonLdProcessor implements Processor
         if (! isset($documentForContext['@context'])) {
             $documentForContext['@context'] = [];
         }
+        $documentForContext['@context'] = $this->withExpandContext($documentForContext['@context'], $options);
 
         $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode);
 
@@ -60,6 +61,25 @@ final class JsonLdProcessor implements Processor
         return new ExpandedDocument(
             $expansion->expand($documentWithoutContext),
         );
+    }
+
+    /**
+     * §10.3 `expandContext` option: an API-supplied context applied BEFORE the
+     * document's own `@context`, initialising the active context. A
+     * `{"@context": …}` wrapper is unwrapped; a string value is a remote
+     * context reference (resolved through the document loader).
+     */
+    private function withExpandContext(mixed $documentContext, ?JsonLdOptions $options): mixed
+    {
+        $expandContext = $options?->expandContext;
+        if ($expandContext === null) {
+            return $documentContext;
+        }
+        if (is_array($expandContext) && array_key_exists('@context', $expandContext)) {
+            $expandContext = $expandContext['@context'];
+        }
+
+        return [$expandContext, $documentContext];
     }
 
     public function compact(array $expanded, array|string $context, ?JsonLdOptions $options = null): CompactedDocument
@@ -103,6 +123,7 @@ final class JsonLdProcessor implements Processor
         if (! isset($documentForContext['@context'])) {
             $documentForContext['@context'] = [];
         }
+        $documentForContext['@context'] = $this->withExpandContext($documentForContext['@context'], $options);
 
         $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode);
 

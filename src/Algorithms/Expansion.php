@@ -72,6 +72,17 @@ class Expansion
      */
     private readonly ?DocumentLoader $documentLoader;
 
+    /**
+     * The property-scoped context most recently applied by the property loop,
+     * tracked only when it is non-propagating (@propagate: false → it carries
+     * a previous context). Per §5.5 a property-scoped context is applied
+     * AFTER the step-7 previous-context rollback, so the property's IMMEDIATE
+     * value object(s) keep the scope; it rolls back one node level deeper.
+     * Tracking the instance lets the entry rollback in {@see expandObject}
+     * skip exactly those immediate objects (#tso06).
+     */
+    private ?TermDefinitions $freshPropertyScope = null;
+
     public function __construct(TermDefinitions $termDefinitions, ?DocumentLoader $documentLoader = null)
     {
         $this->documentBase = $termDefinitions;
@@ -254,7 +265,15 @@ class Expansion
         // context to the node on which the @type appeared, while letting
         // property-scoped / embedded contexts (which propagate) flow in.
         $incoming = $this->termDefinitions;
-        if (
+        $enteredFreshPropertyScope = $incoming === $this->freshPropertyScope ? $incoming : null;
+        if ($enteredFreshPropertyScope !== null) {
+            // §5.5: a property-scoped context (even @propagate: false) is
+            // applied AFTER the previous-context rollback, so the property's
+            // immediate value keeps the scope; it rolls back one node level
+            // deeper (#tso06). Cleared for this subtree, restored in the
+            // finally below so array siblings each keep the scope too.
+            $this->freshPropertyScope = null;
+        } elseif (
             $incoming->getPreviousContext() !== null
             && ! $this->objectHasKeyExpandingToValue($obj, $incoming)
             && ! $this->isSingleIdReference($obj)
@@ -266,8 +285,9 @@ class Expansion
         // §5.5 step 9: an embedded @context (an inline term map, or array of
         // them) overlays onto the active context and PROPAGATES into nested
         // objects. Applied BEFORE type-scoped so type-scoped's previous-context
-        // snapshot includes it.
-        if (isset($obj[Keyword::Context->value])) {
+        // snapshot includes it. array_key_exists (not isset) so an explicit
+        // `@context: null` performs the full context reset (#t0016/#t0060).
+        if (array_key_exists(Keyword::Context->value, $obj)) {
             // An embedded node @context propagates into nested objects but may
             // NOT redefine protected terms (override-protected = false).
             $this->termDefinitions = $this->applyScopedContext($obj[Keyword::Context->value], $this->termDefinitions, overrideProtected: false);
@@ -291,6 +311,9 @@ class Expansion
 
         // @nest values are collected here and merged in a SECOND pass after all
         // base properties, so colliding arrays read [base, …, nested] (§5.5).
+        // Each entry carries the nest term's definition so a property-scoped
+        // @context on the nest alias still applies in that pass (#tc037).
+        /** @var list<array{array<array-key, mixed>|null, mixed}> $deferredNestValues */
         $deferredNestValues = [];
 
         // §5.5: expansion processes object keys in lexicographic (code-point)
@@ -317,7 +340,7 @@ class Expansion
                     || $this->hasContainer($termDef, Keyword::Nest->value);
                 if ($isNestKey) {
                     // Defer to the second pass (#tn003/#tn005/#tn006/#tn007).
-                    $deferredNestValues[] = $value;
+                    $deferredNestValues[] = [$termDef, $value];
 
                     continue;
                 }
@@ -439,8 +462,14 @@ class Expansion
                 // node objects. Property-scoped contexts MAY redefine protected
                 // terms (override-protected = true).
                 $beforeValue = $this->termDefinitions;
+                $freshBeforeValue = $this->freshPropertyScope;
                 if ($termDef !== null && array_key_exists('@context', $termDef)) {
                     $this->termDefinitions = $this->applyScopedContext($termDef['@context'], $beforeValue, overrideProtected: true);
+                    if ($this->termDefinitions->getPreviousContext() !== null) {
+                        // Non-propagating (@propagate: false) property scope:
+                        // the immediate value must keep it (#tso06).
+                        $this->freshPropertyScope = $this->termDefinitions;
+                    }
                 }
 
                 try {
@@ -478,6 +507,7 @@ class Expansion
                     $expandedValue = $this->expandElement($value, $key);
                 } finally {
                     $this->termDefinitions = $beforeValue;
+                    $this->freshPropertyScope = $freshBeforeValue;
                 }
 
                 if ($expandedValue === null) {
@@ -510,12 +540,26 @@ class Expansion
 
             // Second pass: merge @nest values now that every base property is in
             // $result, so a property contributed by both reads [base, nested]
-            // rather than [nested, base] (§5.5 step 13.4.4 / #tn003).
-            foreach ($deferredNestValues as $deferredNest) {
-                $this->mergeNestedObject($deferredNest, $result);
+            // rather than [nested, base] (§5.5 step 13.4.4 / #tn003). A nest
+            // term's property-scoped @context is active while its nested
+            // values expand (#tc037).
+            foreach ($deferredNestValues as [$nestTermDef, $deferredNest]) {
+                $beforeNest = $this->termDefinitions;
+                if ($nestTermDef !== null && array_key_exists('@context', $nestTermDef)) {
+                    $this->termDefinitions = $this->applyScopedContext($nestTermDef['@context'], $beforeNest, overrideProtected: true);
+                }
+
+                try {
+                    $this->mergeNestedObject($deferredNest, $result);
+                } finally {
+                    $this->termDefinitions = $beforeNest;
+                }
             }
         } finally {
             $this->termDefinitions = $previousActive;
+            if ($enteredFreshPropertyScope !== null) {
+                $this->freshPropertyScope = $enteredFreshPropertyScope;
+            }
         }
 
         // Attach accumulated reverse relations (§5.5 step 13.7.4 / 13.4.6).
@@ -1573,9 +1617,11 @@ class Expansion
             if ($term === Keyword::Base->value && ($definition === null || is_string($definition))) {
                 // A scoped @base sets the document-relative resolution base for
                 // @id values within this context's scope (#tc015 type-scoped,
-                // #tc024 property-scoped). A null resets it; a relative @base
-                // resolves against the currently-active base.
-                $target->setBase($definition === null ? null : IriResolver::establishBase($target->getBase(), $definition));
+                // #tc024 property-scoped). A relative @base resolves against
+                // the currently-active base. A null CLEARS the base — stored
+                // as '' (vs null = "unset") so IRI expansion does not fall back
+                // to the document base and relative IRIs stay relative (#t0060).
+                $target->setBase($definition === null ? '' : IriResolver::establishBase($target->getBase(), $definition));
 
                 continue;
             }
