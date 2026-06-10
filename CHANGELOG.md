@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-06-10
+
+toRdf: JSON Canonicalization Scheme for `@json` literals.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.67.0:      378      246      458
+v0.68.0:      378      246      459   (+1 toRdf)
+```
+
+### Fixed (toRdf, §7.3 — `@json`)
+
+- `@json` literals are now serialised per the JSON Canonicalization Scheme
+  (RFC 8785): numbers use the ECMAScript Number-to-String form, so an
+  exponential mantissa drops a redundant `.0` (`1e30` → `1e+30`, not
+  `1.0e+30`) (`#tjs12`). `canonicalJson` is now a recursive encoder that
+  delegates string/structure serialisation to `json_encode` (escaping
+  unchanged) and formats only numbers itself; object keys remain sorted.
+
 ## [0.67.0] - 2026-06-10
 
 toRdf: empty node objects become blank nodes; `@id`-vanished nodes are dropped.

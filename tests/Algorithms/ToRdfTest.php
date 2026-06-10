@@ -177,6 +177,15 @@ it('drops a blank-node predicate by default but keeps it under produceGeneralize
     expect($generalized)->toContain('<http://example/s> _:b0 "v" .');
 });
 
+it('canonicalises a @json literal with ECMAScript number formatting + sorted keys (#tjs12)', function () {
+    $nq = toNQuads([
+        '@id' => 'http://example/s',
+        'http://example/p' => ['@value' => ['z' => 1.0e30, 'a' => 1.0e-27, 'm' => 4.5], '@type' => '@json'],
+    ]);
+    // Sorted keys; 1e30 → "1e+30" (not "1.0e+30"); 1e-27 → "1e-27"; 4.5 kept.
+    expect($nq)->toContain('"{\"a\":1e-27,\"m\":4.5,\"z\":1e+30}"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON>');
+});
+
 it('emits a blank node for a genuinely-empty node value but drops an @id-bearing one whose @id vanished (#te016/#tpr06/#te122)', function () {
     // A node whose only property is decoupled by a @context:null reset becomes
     // an empty node object {} → a fresh blank node referenced by its parent.

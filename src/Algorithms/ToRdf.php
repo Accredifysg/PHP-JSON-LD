@@ -303,32 +303,76 @@ final class ToRdf
     }
 
     /**
-     * Serialise a value to JSON for an rdf:JSON literal. Object keys are sorted
-     * recursively, slashes and Unicode are left unescaped. This covers the
-     * straightforward @json cases; the full JSON Canonicalization Scheme
-     * (Unicode normalisation, ECMAScript number formatting, UTF-16 key
-     * ordering) is not yet implemented.
+     * Serialise a value to JSON for an rdf:JSON literal, following the JSON
+     * Canonicalization Scheme (RFC 8785): object keys sorted recursively,
+     * slashes and Unicode left unescaped, and numbers formatted per the
+     * ECMAScript Number-to-String algorithm. Strings and structure are
+     * delegated to {@see json_encode} (so escaping matches exactly); only
+     * numbers get bespoke formatting.
      */
     private function canonicalJson(mixed $value): string
     {
-        $sorted = $this->sortJsonKeys($value);
+        if ($value === null) {
+            return 'null';
+        }
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        if (is_int($value)) {
+            return (string) $value;
+        }
+        if (is_float($value)) {
+            return $this->jcsNumber($value);
+        }
+        if (is_string($value)) {
+            return (string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+        if (is_array($value)) {
+            if (array_is_list($value)) {
+                return '['.implode(',', array_map(fn (mixed $v): string => $this->canonicalJson($v), $value)).']';
+            }
+            ksort($value, SORT_STRING);
+            $members = [];
+            foreach ($value as $key => $member) {
+                $members[] = (string) json_encode((string) $key, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                    .':'.$this->canonicalJson($member);
+            }
 
-        return (string) json_encode($sorted, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            return '{'.implode(',', $members).'}';
+        }
+
+        return 'null';
     }
 
-    private function sortJsonKeys(mixed $value): mixed
+    /**
+     * Format a float per the ECMAScript Number-to-String algorithm (RFC 8785
+     * §3.2.2.3): the shortest round-tripping decimal, with an exponential
+     * mantissa that drops a redundant ".0" (so 1e30 → "1e+30", not "1.0e+30").
+     */
+    private function jcsNumber(float $value): string
     {
-        if (! is_array($value)) {
-            return $value;
+        if (is_nan($value) || is_infinite($value)) {
+            return 'null'; // JSON has no NaN / Infinity
         }
 
-        if (array_is_list($value)) {
-            return array_map(fn (mixed $v): mixed => $this->sortJsonKeys($v), $value);
+        // PHP's shortest round-trip representation (serialize_precision = -1).
+        $s = (string) json_encode($value);
+
+        $ePos = stripos($s, 'e');
+        if ($ePos === false) {
+            return $s; // plain decimal already matches ECMAScript here
         }
 
-        ksort($value, SORT_STRING);
+        $mantissa = substr($s, 0, $ePos);
+        $exponent = substr($s, $ePos + 1);
+        if (str_contains($mantissa, '.')) {
+            $mantissa = rtrim(rtrim($mantissa, '0'), '.');
+        }
+        if ($exponent !== '' && $exponent[0] !== '+' && $exponent[0] !== '-') {
+            $exponent = '+'.$exponent;
+        }
 
-        return array_map(fn (mixed $v): mixed => $this->sortJsonKeys($v), $value);
+        return $mantissa.'e'.$exponent;
     }
 
     private function graphTerm(string $graphName): ?RdfTerm
