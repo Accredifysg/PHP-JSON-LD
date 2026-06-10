@@ -176,3 +176,17 @@ it('drops a blank-node predicate by default but keeps it under produceGeneralize
         ->toNQuads();
     expect($generalized)->toContain('<http://example/s> _:b0 "v" .');
 });
+
+it('drops a statement whose predicate IRI is not well-formed (two fragments) (#te111/#te112)', function () {
+    // A term appended to a `#`-terminated relative @vocab yields a double-`#`
+    // predicate, which is not a well-formed IRI and carries no RDF statement.
+    $nq = toNQuads([
+        '@context' => [['@base' => 'http://example.com/d/', '@vocab' => 'http://example.com/v/'], ['@vocab' => './rel#']],
+        '@id' => 'x',
+        '#frag' => 'frag-value',
+        'plain' => 'plain-value',
+    ]);
+    expect($nq)->not->toContain('##')
+        ->and($nq)->not->toContain('frag-value')
+        ->and($nq)->toContain('plain-value');
+});

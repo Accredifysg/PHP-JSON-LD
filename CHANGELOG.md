@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-06-10
+
+toRdf: reject double-fragment (non-well-formed) IRIs.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.65.0:      378      246      454
+v0.66.0:      378      246      456   (+2 toRdf)
+```
+
+### Fixed (toRdf, §7.1)
+
+- A statement whose IRI (predicate, subject, object, or graph name) contains
+  more than one `#` is dropped — an IRI has at most one fragment. This arises
+  when a property is appended to a `#`-terminated relative `@vocab` (e.g.
+  `#frag` under `@vocab: "./rel#"` → `…/rel##frag`), which the well-formedness
+  check in `isAbsoluteIri` now rejects (`#te111`, `#te112`).
+
 ## [0.65.0] - 2026-06-10
 
 toRdf: drop literals with malformed language tags.

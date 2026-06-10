@@ -359,6 +359,13 @@ final class ToRdf
             return false;
         }
 
+        // An IRI has at most ONE fragment: a value with two "#" (e.g. a term
+        // appended to a `#`-terminated relative @vocab → "…/rel2##fragment")
+        // is not a well-formed IRI, so its statement is dropped (#te111/#te112).
+        if (substr_count($value, '#') > 1) {
+            return false;
+        }
+
         // Reject characters that are not permitted in an IRIREF (spaces,
         // control characters, and the delimiter set), so a malformed IRI such
         // as "http://example.com/a b" produces no RDF term and its statement
