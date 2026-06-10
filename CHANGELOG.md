@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-06-10
+
+toRdf: the `produceGeneralizedRdf` option (§7.1).
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.62.0:      378      246      441
+v0.63.0:      378      246      443   (+2 toRdf)
+```
+
+### Added
+
+- `produceGeneralizedRdf` is now honoured by `toRdf`: a blank-node predicate is
+  emitted as a generalized-RDF statement instead of being dropped (`#t0118`,
+  `#te075`). Threaded through `JsonLdProcessor::toRdf()` and the W3C harness
+  adapter. The option defaults to `false`, so default output (valid RDF only)
+  is byte-unchanged.
+
 ## [0.62.0] - 2026-06-10
 
 Expansion: the `expandContext` option, context reset, scoped `@nest`.

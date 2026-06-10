@@ -133,6 +133,6 @@ final class JsonLdProcessor implements Processor
         $expanded = (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader))
             ->expand($documentWithoutContext);
 
-        return new RdfDataset((new ToRdf($options?->rdfDirection))->toRdf($expanded));
+        return new RdfDataset((new ToRdf($options?->rdfDirection, $options !== null ? $options->produceGeneralizedRdf : false))->toRdf($expanded));
     }
 }

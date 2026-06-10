@@ -160,3 +160,19 @@ it('keeps native true and 1 as distinct coerced values without loose dedup (#te0
     expect($nq)->toContain('"1"^^<http://example/d>')
         ->and($nq)->toContain('"true"^^<http://example/d>');
 });
+
+it('drops a blank-node predicate by default but keeps it under produceGeneralizedRdf (#t0118/#te075)', function () {
+    $doc = ['@id' => 'http://example/s', '_:b' => [['@value' => 'v']]];
+    $loader = new StubDocumentLoader;
+
+    // Default: the blank-node-predicate statement is dropped (valid RDF only).
+    $plain = (new JsonLdProcessor($loader))->toRdf($doc)->toNQuads();
+    expect($plain)->not->toContain('_:b');
+
+    // produceGeneralizedRdf: the blank-node predicate is emitted (generalized
+    // RDF). The issuer relabels the predicate blank node deterministically.
+    $generalized = (new JsonLdProcessor($loader))
+        ->toRdf($doc, new JsonLdOptions(produceGeneralizedRdf: true))
+        ->toNQuads();
+    expect($generalized)->toContain('<http://example/s> _:b0 "v" .');
+});

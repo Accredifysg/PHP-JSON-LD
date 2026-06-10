@@ -18,8 +18,8 @@ use Accredify\JsonLd\Rdf\RdfTerm;
  * {@see NodeMap} generation, and emits a flat list of {@see RdfQuad}.
  *
  * Not yet handled (these remain a small minority of the W3C toRdf suite):
- * `@json` literals via the JSON Canonicalization Scheme, the `rdfDirection`
- * option, and `produceGeneralizedRdf`.
+ * `@json` literals via the JSON Canonicalization Scheme and the `rdfDirection`
+ * option's full surface.
  */
 final class ToRdf
 {
@@ -36,9 +36,13 @@ final class ToRdf
      *                                     "i18n-datatype" or "compound-literal".
      *                                     Null leaves base-direction information
      *                                     out of the RDF (the default).
+     * @param  bool  $produceGeneralizedRdf  When true (§7.1), a blank-node
+     *                                       predicate is kept (generalized RDF)
+     *                                       instead of dropping the statement.
      */
     public function __construct(
         private readonly ?string $rdfDirection = null,
+        private readonly bool $produceGeneralizedRdf = false,
     ) {}
 
     /**
@@ -83,13 +87,22 @@ final class ToRdf
                         continue; // other keywords carry no RDF statement
                     }
 
-                    // Blank-node predicates are dropped (no generalized RDF);
-                    // relative-IRI predicates are not valid RDF.
-                    if (str_starts_with($property, '_:') || ! $this->isAbsoluteIri($property)) {
-                        continue;
+                    // A blank-node predicate is dropped UNLESS produceGeneralizedRdf
+                    // is set (§7.1), in which case it is emitted as a generalized
+                    // RDF predicate (#t0118/#te075). A relative-IRI predicate is
+                    // never valid RDF.
+                    $isBlankPredicate = str_starts_with($property, '_:');
+                    if ($isBlankPredicate) {
+                        if (! $this->produceGeneralizedRdf) {
+                            continue;
+                        }
+                        $predicate = RdfTerm::blankNode($property);
+                    } else {
+                        if (! $this->isAbsoluteIri($property)) {
+                            continue;
+                        }
+                        $predicate = RdfTerm::iri($property);
                     }
-
-                    $predicate = RdfTerm::iri($property);
 
                     foreach ($this->asList($values) as $item) {
                         $listQuads = [];
