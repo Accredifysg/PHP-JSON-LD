@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-06-10
+
+Compaction: reverse-map value-aware terms, `@json` arrays, property-valued
+index `@none`, `@list`+`@index`, and list/direction-aware selection.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.59.0:      372      230      436
+v0.60.0:      372      238      436   (+8 compact)
+```
+
+### Fixed (compaction)
+
+- `@reverse`-map values now get per-value term selection, mirroring the forward
+  path: each node ref picks the term whose coercion fits it (`@type: @id` vs
+  `@type: @vocab`), so one reverse property can split across two terms
+  (`#t0044`).
+- A `@json` literal whose `@value` is an array reaches the output verbatim —
+  it is no longer iterated as list items (which double-nested it under
+  `@container: @set` and dropped its content) (`#tjs07`).
+- A property-valued `@index` entry left as a sole-`@id` node ref collapses to a
+  bare IRI string ONLY when the index property was absent from the entry (the
+  `@none` key case); entries that kept their index property stay objects
+  (`#tpi05`, with `#tpi03`/`#tpi04` guarded).
+- A `{@list, @index}` value declines a `@container: @list` term (the container
+  form would drop the `@index`) and falls back to the full-IRI key (`#t0041`).
+- List/direction-aware selection: a list term coercing a `@direction` the
+  items don't share scores zero, a direction-matching list term wins
+  (`#tdi03`); a `@container: @list` term never matches a non-list value
+  (`#t0018`); a value that cannot live in a term's `@language` map —
+  mismatched `@direction` or a stray `@index` — declines it (`#tdi07`,
+  `#t0065`). `valueSignature` now tracks the items' common `@direction`.
+
 ## [0.59.0] - 2026-06-10
 
 Compaction: inverse-context term selection core (§5.6.2/§5.7).

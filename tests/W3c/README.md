@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    372 passed /  13 failed (v0.59.0)
-Compaction:   230 passed /  16 failed (v0.59.0)
-toRdf:        436 passed /  31 failed (v0.59.0)
+Expansion:    372 passed /  13 failed (v0.60.0)
+Compaction:   238 passed /   8 failed (v0.60.0)
+toRdf:        436 passed /  31 failed (v0.60.0)
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -128,6 +128,7 @@ Each Phase 4 PR:
 | v0.57.0 |          372  |    +0  | compaction: compactArrays option (§5.6.2) threaded through options (+3 compact)|
 | v0.58.0 |          372  |    +0  | compaction: reverse term with container -> index map + property-valued index via term def (+2 compact)|
 | v0.59.0 |          372  |    +0  | compaction term-selection core: term-name @id resolution, @vocab-strip precedence, @set/@language scoring (+5 compact)|
+| v0.60.0 |          372  |    +0  | compaction: reverse per-value terms, @json arrays, pidx @none collapse, @list+@index, list/direction selection (+8 compact)|
 
 ### Notes on v0.4.0
 

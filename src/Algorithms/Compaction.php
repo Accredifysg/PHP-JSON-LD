@@ -516,24 +516,53 @@ class Compaction
                     }
                     $nodeList = is_array($nodes) && array_is_list($nodes) ? $nodes : [$nodes];
                     $reverseTerm = $this->reverseInverse[$prop] ?? null;
-                    $activeProp = $reverseTerm ?? $this->compactIri($prop, vocab: true);
-                    // A reverse term may itself carry a container (@index — incl.
-                    // property-valued — or @graph): route through the same
-                    // container-map machinery as a forward property so the
-                    // reverse values become an index map rather than a flat array
-                    // (#t0036/#t0114).
-                    if ($this->hasContainer($activeProp, Keyword::Graph->value)) {
-                        $compacted = $this->compactGraphContainer($nodeList, $activeProp);
-                    } else {
-                        $mapType = $this->mapContainerType($activeProp);
-                        $compacted = $mapType !== null
-                            ? $this->compactContainerMap($nodeList, $mapType, $activeProp)
-                            : $this->compactElement($nodeList, $activeProp);
-                    }
                     if ($reverseTerm !== null) {
+                        // A reverse term may itself carry a container (@index —
+                        // incl. property-valued — or @graph): route through the
+                        // same container-map machinery as a forward property so
+                        // the reverse values become an index map rather than a
+                        // flat array (#t0036/#t0114).
+                        if ($this->hasContainer($reverseTerm, Keyword::Graph->value)) {
+                            $compacted = $this->compactGraphContainer($nodeList, $reverseTerm);
+                        } else {
+                            $mapType = $this->mapContainerType($reverseTerm);
+                            $compacted = $mapType !== null
+                                ? $this->compactContainerMap($nodeList, $mapType, $reverseTerm)
+                                : $this->compactElement($nodeList, $reverseTerm);
+                        }
                         $result[$reverseTerm] = $compacted;
-                    } else {
-                        $reverseMap[$this->compactIri($prop, vocab: true)] = $compacted;
+
+                        continue;
+                    }
+
+                    // No reverse-coerced term: mirror the forward path's
+                    // value-aware PER-ITEM term selection (§5.6.2). One reverse
+                    // value may pick a @type:@vocab term (its @id round-trips
+                    // through @vocab) while a sibling picks the @type:@id term
+                    // (#t0044). Group the items by their per-item term, then
+                    // compact each group under its term (containers routed as
+                    // for a forward property).
+                    $revGroups = [];
+                    $revOrder = [];
+                    foreach ($nodeList as $item) {
+                        $term = $this->compactIri($prop, vocab: true, value: [$item]);
+                        if (! array_key_exists($term, $revGroups)) {
+                            $revGroups[$term] = [];
+                            $revOrder[] = $term;
+                        }
+                        $revGroups[$term][] = $item;
+                    }
+                    foreach ($revOrder as $term) {
+                        $groupItems = $revGroups[$term];
+                        if ($this->hasContainer($term, Keyword::Graph->value)) {
+                            $compacted = $this->compactGraphContainer($groupItems, $term);
+                        } else {
+                            $mapType = $this->mapContainerType($term);
+                            $compacted = $mapType !== null
+                                ? $this->compactContainerMap($groupItems, $mapType, $term)
+                                : $this->compactElement($groupItems, $term);
+                        }
+                        $reverseMap[$term] = $compacted;
                     }
                 }
                 if ($reverseMap !== []) {
@@ -603,7 +632,10 @@ class Compaction
                     $this->previousContext = $this->propagatesFalse($scoped) ? $preScoped : null;
                 }
 
-                if ($this->hasContainer($term, Keyword::Graph->value)) {
+                $jsonLiteral = $this->verbatimJsonLiteral($groupItems, $term);
+                if ($jsonLiteral !== null) {
+                    $compactedValue = $jsonLiteral['value'];
+                } elseif ($this->hasContainer($term, Keyword::Graph->value)) {
                     $compactedValue = $this->compactGraphContainer($groupItems, $term);
                 } else {
                     $mapType = $this->mapContainerType($term);
@@ -748,17 +780,24 @@ class Compaction
         $termLang = $termHasLang && is_string($termDef[Keyword::Language->value]) ? $termDef[Keyword::Language->value] : null;
         $effectiveLang = $termHasLang ? $termLang : $this->activeContext->getDefaultLanguage();
 
+        // The term's effective @direction mirrors @language: its own
+        // @direction coercion (an explicit null opts out) or, absent one, the
+        // active default @direction.
+        $termHasDir = is_array($termDef) && array_key_exists(Keyword::Direction->value, $termDef);
+        $termDir = $termHasDir && is_string($termDef[Keyword::Direction->value]) ? $termDef[Keyword::Direction->value] : null;
+        $effectiveDir = $termHasDir ? $termDir : $this->activeContext->getDefaultDirection();
+
         // If the term coerces to the value's @type, drop @type.
         if (! $typeNone && $valueType !== null && $typeMapping !== null && $this->expandedEquals($typeMapping, $valueType) && ! $hasOther && $valueLang === null && $valueDir === null) {
             return $raw;
         }
 
         // Plain @value with no @type / @language / @direction → the scalar —
-        // UNLESS it is a string and an effective @language is active, where
-        // collapsing would wrongly imply that language on round-trip, so the
-        // value object is kept (#t0072).
+        // UNLESS it is a string and an effective @language or @direction is
+        // active, where collapsing would wrongly imply that language /
+        // direction on round-trip, so the value object is kept (#t0072).
         if (! $typeNone && $valueType === null && $valueLang === null && $valueDir === null && ! $hasOther) {
-            if (! is_string($raw) || $effectiveLang === null) {
+            if (! is_string($raw) || ($effectiveLang === null && $effectiveDir === null)) {
                 return $raw;
             }
         }
@@ -766,16 +805,33 @@ class Compaction
         // @language collapse (§5.6.3): a language-tagged value whose language
         // matches the term's @language coercion — or, absent one, the active
         // default @language — drops @language and becomes the bare scalar.
-        // Skipped when a default @direction is active (direction would be lost).
+        // The value's @direction (possibly absent) must equally match the
+        // term's effective @direction, or direction would be mangled on
+        // round-trip.
         if (
             ! $typeNone
             && $valueType === null
-            && $valueDir === null
             && ! $hasOther
             && $valueLang !== null
             && $effectiveLang !== null
-            && $this->activeContext->getDefaultDirection() === null
+            && $valueDir === $effectiveDir
             && strtolower($valueLang) === strtolower($effectiveLang)
+        ) {
+            return $raw;
+        }
+
+        // @direction collapse (#tdi03): a direction-tagged value with no
+        // language whose direction matches the term's effective @direction —
+        // while no effective @language would be implied — likewise becomes
+        // the bare scalar.
+        if (
+            ! $typeNone
+            && $valueType === null
+            && ! $hasOther
+            && $valueLang === null
+            && $effectiveLang === null
+            && $valueDir !== null
+            && $valueDir === $effectiveDir
         ) {
             return $raw;
         }
@@ -799,6 +855,55 @@ class Compaction
         }
 
         return $out;
+    }
+
+    /**
+     * Detects a property value that is a single JSON literal (a value object
+     * of `@type: @json`) whose selected term also coerces `@type: @json`.
+     * Value compaction yields the raw `@value` VERBATIM — including a raw
+     * ARRAY, which must reach the output as the property value itself rather
+     * than being iterated as list items (and double-wrapped under a `@set`
+     * container, #tjs07). Returns the delivered value wrapped in
+     * `['value' => …]` (the raw `@value` may itself be null, #tjs11), or null
+     * when the bypass does not apply.
+     *
+     * @param  list<mixed>  $groupItems
+     * @return array{value: mixed}|null
+     */
+    private function verbatimJsonLiteral(array $groupItems, string $term): ?array
+    {
+        if (count($groupItems) !== 1 || ! is_array($groupItems[0])) {
+            return null;
+        }
+        $item = $groupItems[0];
+        if (
+            count($item) !== 2
+            || ! array_key_exists(Keyword::Value->value, $item)
+            || ($item[Keyword::Type->value] ?? null) !== Keyword::Json->value
+        ) {
+            return null;
+        }
+        // Only when the term genuinely coerces @type:@json (so value compaction
+        // collapses to the raw @value); a term-less / un-coerced property keeps
+        // its rebuilt {@value, @type} object form (#tjs08/#tjs09). Container
+        // maps and @graph containers keep their own delivery.
+        $def = $this->activeContext->getTermDefinition($term);
+        if (! is_array($def) || ($def[Keyword::Type->value] ?? null) !== Keyword::Json->value) {
+            return null;
+        }
+        if ($this->mapContainerType($term) !== null || $this->hasContainer($term, Keyword::Graph->value)) {
+            return null;
+        }
+
+        $raw = $item[Keyword::Value->value];
+        // @container:@set (or compactArrays: false) keeps the property as an
+        // array: a raw ARRAY already is one and is delivered as-is (#tjs07);
+        // any other raw value is wrapped once.
+        if ($this->hasContainer($term, Keyword::Set->value) || ! $this->compactArrays) {
+            return ['value' => is_array($raw) && array_is_list($raw) ? $raw : [$raw]];
+        }
+
+        return ['value' => $raw];
     }
 
     /**
@@ -986,7 +1091,8 @@ class Compaction
                     $entry = $this->compactObject($item, null);
                     $propKey = $this->compactIri($indexProp, vocab: true);
                     $key = $none;
-                    if (is_array($entry) && array_key_exists($propKey, $entry)) {
+                    $hadIndexProp = is_array($entry) && array_key_exists($propKey, $entry);
+                    if ($hadIndexProp) {
                         $propVal = $entry[$propKey];
                         if (is_string($propVal)) {
                             $key = $propVal;
@@ -999,6 +1105,27 @@ class Compaction
                                 unset($entry[$propKey]);
                             }
                         }
+                    }
+
+                    // A node that never HAD the index property (so the key stays
+                    // @none) and is a sole-@id reference collapses to the bare
+                    // IRI string when the container term coerces @type:@id /
+                    // @type:@vocab (#tpi05) — recomputed from the EXPANDED @id,
+                    // not the entry's compacted {@id} form. Entries whose index
+                    // property was extracted above keep their object form
+                    // (#tpi01-#tpi04), as do nodes carrying a non-string index
+                    // property (#tpi06).
+                    $defType = isset($def[Keyword::Type->value]) && is_string($def[Keyword::Type->value])
+                        ? $def[Keyword::Type->value]
+                        : null;
+                    if (
+                        ! $hadIndexProp
+                        && ($defType === Keyword::Id->value || $defType === Keyword::Vocab->value)
+                        && count($item) === 1
+                        && isset($item[Keyword::Id->value])
+                        && is_string($item[Keyword::Id->value])
+                    ) {
+                        $entry = $this->compactIri($item[Keyword::Id->value], vocab: $defType === Keyword::Vocab->value);
                     }
 
                     return [$key, $entry];
@@ -1244,6 +1371,22 @@ class Compaction
             return '';
         }
 
+        // A {@list, @index} value must not select a @container:@list term —
+        // the container form would drop the @index. Decline so the property
+        // falls back to its full-IRI key with an explicit {@list, @index}
+        // object (#t0041).
+        if ($sig !== null && $sig['isList'] && $sig['listHasIndex'] && $this->defHasContainer($candidates[0]['def'], Keyword::List->value)) {
+            return '';
+        }
+
+        // Likewise decline when the best candidate's @language map cannot
+        // hold the value (mismatched @direction / stray @index): the property
+        // falls back to a compact IRI / full IRI with expanded value objects
+        // (#tdi07/#t0065).
+        if ($sig !== null && ! $sig['empty'] && ! $sig['isList'] && $this->languageMapIneligible($candidates[0]['def'], $value)) {
+            return '';
+        }
+
         return $candidates[0]['term'];
     }
 
@@ -1256,7 +1399,7 @@ class Compaction
      * node reference.
      *
      * @param  array<array-key, mixed>  $def
-     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}  $sig
+     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, commonDir: ?string, noTypeNoLang: bool, empty: bool, isList: bool, listHasIndex: bool}  $sig
      */
     private function isDestructiveTypeCoercion(array $def, array $sig): bool
     {
@@ -1288,7 +1431,7 @@ class Compaction
      * and a term with `@language: null` never decline here.
      *
      * @param  array<array-key, mixed>  $def
-     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}  $sig
+     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, commonDir: ?string, noTypeNoLang: bool, empty: bool, isList: bool, listHasIndex: bool}  $sig
      */
     private function isDestructiveLanguageCoercion(array $def, array $sig): bool
     {
@@ -1308,7 +1451,7 @@ class Compaction
      * summarised by its CONTENTS with `isList` set, so a `@container: @list`
      * term is required.
      *
-     * @return array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}
+     * @return array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, commonDir: ?string, noTypeNoLang: bool, empty: bool, isList: bool, listHasIndex: bool}
      */
     private function valueSignature(mixed $value): array
     {
@@ -1318,20 +1461,26 @@ class Compaction
         if (count($items) === 1 && is_array($items[0]) && array_key_exists(Keyword::List->value, $items[0]) && is_array($items[0][Keyword::List->value])) {
             $sig = $this->valueSignature(array_values($items[0][Keyword::List->value]));
             $sig['isList'] = true;
+            // A @list object carrying an @index cannot live under a
+            // @container:@list term — the container form has nowhere to keep
+            // the index (#t0041).
+            $sig['listHasIndex'] = isset($items[0][Keyword::Index->value]) && is_string($items[0][Keyword::Index->value]);
 
             return $sig;
         }
 
-        $sig = ['allNodeRefs' => true, 'allValueObjects' => true, 'commonType' => null, 'commonLang' => null, 'noTypeNoLang' => true, 'empty' => $items === [], 'isList' => false];
+        $sig = ['allNodeRefs' => true, 'allValueObjects' => true, 'commonType' => null, 'commonLang' => null, 'commonDir' => null, 'noTypeNoLang' => true, 'empty' => $items === [], 'isList' => false, 'listHasIndex' => false];
 
         $types = [];
         $langs = [];
+        $dirs = [];
         foreach ($items as $item) {
             if (! is_array($item)) {
                 // A bare scalar is a value with neither @type nor @language.
                 $sig['allNodeRefs'] = false;
                 $types["\0"] = null;
                 $langs["\0"] = null;
+                $dirs["\0"] = null;
 
                 continue;
             }
@@ -1341,8 +1490,10 @@ class Compaction
             if (array_key_exists(Keyword::Value->value, $item)) {
                 $t = isset($item[Keyword::Type->value]) && is_string($item[Keyword::Type->value]) ? $item[Keyword::Type->value] : null;
                 $l = isset($item[Keyword::Language->value]) && is_string($item[Keyword::Language->value]) ? $item[Keyword::Language->value] : null;
+                $d = isset($item[Keyword::Direction->value]) && is_string($item[Keyword::Direction->value]) ? $item[Keyword::Direction->value] : null;
                 $types[$t ?? "\0"] = $t;
                 $langs[$l ?? "\0"] = $l;
+                $dirs[$d ?? "\0"] = $d;
                 if ($t !== null || $l !== null) {
                     $sig['noTypeNoLang'] = false;
                 }
@@ -1358,6 +1509,9 @@ class Compaction
         if ($sig['allValueObjects'] && count($langs) === 1) {
             $sig['commonLang'] = reset($langs);
         }
+        if ($sig['allValueObjects'] && count($dirs) === 1) {
+            $sig['commonDir'] = reset($dirs);
+        }
 
         return $sig;
     }
@@ -1369,7 +1523,7 @@ class Compaction
      * matches.
      *
      * @param  array<array-key, mixed>  $def
-     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}  $sig
+     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, commonDir: ?string, noTypeNoLang: bool, empty: bool, isList: bool, listHasIndex: bool}  $sig
      */
     private function scoreCandidate(array $def, array $sig, mixed $value, bool $multiValued = false): int
     {
@@ -1377,6 +1531,8 @@ class Compaction
         $typeIri = $type !== null ? $this->resolveTypeMapping($type) : null;
         $hasLang = array_key_exists(Keyword::Language->value, $def);
         $lang = $hasLang && is_string($def[Keyword::Language->value]) ? $def[Keyword::Language->value] : null;
+        $hasDir = array_key_exists(Keyword::Direction->value, $def);
+        $dir = $hasDir && is_string($def[Keyword::Direction->value]) ? $def[Keyword::Direction->value] : null;
         $coerced = $type !== null || $hasLang || isset($def[Keyword::Container->value]);
         $baseline = $coerced ? 0 : 1;
 
@@ -1385,6 +1541,7 @@ class Compaction
         }
 
         $langMatches = $hasLang && $lang !== null && $sig['commonLang'] !== null && strtolower($lang) === strtolower($sig['commonLang']);
+        $dirMatches = $dir !== null && $sig['commonDir'] !== null && $dir === $sig['commonDir'];
         // A term's @type matches the value's common @type whether the value
         // carries the literal term ("type1") or the resolved IRI.
         $typeMatches = $sig['commonType'] !== null && ($type === $sig['commonType'] || $typeIri === $sig['commonType']);
@@ -1396,10 +1553,24 @@ class Compaction
             if (! ($this->defHasContainer($def, Keyword::List->value))) {
                 return $baseline;
             }
+            // A @container:@list term cannot carry the list's @index (#t0041):
+            // score it below a plain term so the value falls back to an
+            // explicit {@list, @index} object.
+            if ($sig['listHasIndex']) {
+                return 0;
+            }
+            // A term coercing a @direction the list's items don't all share
+            // would stamp that direction onto them on round-trip (#tdi03).
+            if ($dir !== null && $sig['commonDir'] !== $dir) {
+                return 0;
+            }
             if ($typeMatches) {
                 return 6;
             }
             if ($sig['commonType'] === null && $langMatches) {
+                return 6;
+            }
+            if ($sig['commonType'] === null && $sig['commonLang'] === null && $dirMatches) {
                 return 6;
             }
             if ($sig['allValueObjects'] && $sig['noTypeNoLang'] && $hasLang && $lang === null) {
@@ -1409,6 +1580,19 @@ class Compaction
                 return 4; // plain @list term — the mixed-list fallback
             }
 
+            return 0;
+        }
+
+        // A non-list value never matches a @container: @list term — the list
+        // wrapper would be fabricated on round-trip (#t0018).
+        if ($this->defHasContainer($def, Keyword::List->value)) {
+            return 0;
+        }
+
+        // A value that cannot live in the term's @language map (mismatched
+        // @direction, or an @index the map would drop) must not select it
+        // (#tdi07/#t0065).
+        if ($this->languageMapIneligible($def, $value)) {
             return 0;
         }
 
@@ -1510,6 +1694,45 @@ class Compaction
         }
         if (is_array($container)) {
             return in_array($keyword, $container, true);
+        }
+
+        return false;
+    }
+
+    /**
+     * True when $value holds an item that cannot live in the term's
+     * `@container: @language` map without loss: an entry's `@index` has no
+     * home in a language map (#t0065), and a language-map string takes the
+     * term's effective `@direction` on re-expansion, so an item whose own
+     * direction differs — or is absent while the term coerces one — must stay
+     * out (#tdi07). A term without an @language container is never ineligible.
+     *
+     * @param  array<array-key, mixed>  $def
+     */
+    private function languageMapIneligible(array $def, mixed $value): bool
+    {
+        if (! $this->defHasContainer($def, Keyword::Language->value)) {
+            return false;
+        }
+
+        // The term's effective @direction: its own @direction coercion (an
+        // explicit null opts out) or, absent one, the active default.
+        $hasDir = array_key_exists(Keyword::Direction->value, $def);
+        $dir = $hasDir && is_string($def[Keyword::Direction->value]) ? $def[Keyword::Direction->value] : null;
+        $effectiveDir = $hasDir ? $dir : $this->activeContext->getDefaultDirection();
+
+        $items = is_array($value) && array_is_list($value) ? $value : [$value];
+        foreach ($items as $item) {
+            if (! is_array($item) || ! array_key_exists(Keyword::Value->value, $item)) {
+                continue;
+            }
+            if (isset($item[Keyword::Index->value])) {
+                return true;
+            }
+            $itemDir = isset($item[Keyword::Direction->value]) && is_string($item[Keyword::Direction->value]) ? $item[Keyword::Direction->value] : null;
+            if ($itemDir !== $effectiveDir) {
+                return true;
+            }
         }
 
         return false;
