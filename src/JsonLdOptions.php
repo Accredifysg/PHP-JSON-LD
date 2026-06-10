@@ -16,6 +16,9 @@ namespace Accredify\JsonLd;
  * Currently wired:
  *  - {@see $base} — the initial base IRI for document-relative resolution.
  *  - {@see $processingMode} — "json-ld-1.0" / "json-ld-1.1" (default 1.1).
+ *  - {@see $compactArrays} — when true (the default), compaction unwraps
+ *    single-element arrays and drops `@graph`/`@set` array wrappers where a
+ *    scalar/object suffices; false keeps arrays verbatim.
  *
  * Reserved for forthcoming work (accepted but not yet acted upon):
  *  - {@see $rdfDirection} — "i18n-datatype" / "compound-literal" for toRdf.
@@ -31,6 +34,7 @@ final class JsonLdOptions
         public readonly ?string $processingMode = null,
         public readonly ?string $rdfDirection = null,
         public readonly bool $produceGeneralizedRdf = false,
+        public readonly bool $compactArrays = true,
     ) {}
 
     /**
@@ -41,12 +45,14 @@ final class JsonLdOptions
         ?string $processingMode = null,
         ?string $rdfDirection = null,
         ?bool $produceGeneralizedRdf = null,
+        ?bool $compactArrays = null,
     ): self {
         return new self(
             $base ?? $this->base,
             $processingMode ?? $this->processingMode,
             $rdfDirection ?? $this->rdfDirection,
             $produceGeneralizedRdf ?? $this->produceGeneralizedRdf,
+            $compactArrays ?? $this->compactArrays,
         );
     }
 }

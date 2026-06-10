@@ -68,7 +68,15 @@ class Compaction
      */
     private ?array $previousContext = null;
 
-    public function __construct(private TermDefinitions $activeContext)
+    /**
+     * @param  bool  $compactArrays  When true (the default, §5.6.2), a
+     *                               single-element array is unwrapped to its
+     *                               item and `@graph`/`@set` array wrappers are
+     *                               dropped where a scalar/object suffices. When
+     *                               false, arrays are kept verbatim (#t0070/
+     *                               #t0091/#t0093).
+     */
+    public function __construct(private TermDefinitions $activeContext, private bool $compactArrays = true)
     {
         $this->buildInverse();
     }
@@ -88,8 +96,9 @@ class Compaction
             if ($result === []) {
                 return [];
             }
-            // A single node object is returned bare.
-            if (count($result) === 1 && is_array($result[0])) {
+            // A single node object is returned bare — unless compactArrays is
+            // false, which keeps the top-level array (#t0091/#t0093).
+            if ($this->compactArrays && count($result) === 1 && is_array($result[0])) {
                 return $result[0];
             }
 
@@ -303,10 +312,17 @@ class Compaction
 
             // §5.6: a single-item array compacts to the item unless the
             // active property is a @set container (which always keeps an
-            // array). A @list container DOES unwrap here — the single
-            // {@list: …} element it contains is then compacted to its bare
-            // array form by the @list branch of compactObject.
-            if (count($compactedItems) === 1 && ! $this->hasContainer($activeProperty, Keyword::Set->value)) {
+            // array) or compactArrays is false (which keeps arrays verbatim,
+            // #t0070). A @list container DOES still unwrap even when
+            // compactArrays is false — the single {@list: …} element it
+            // contains must reach the @list branch of compactObject to become
+            // its bare array form.
+            $isListContainer = $this->hasContainer($activeProperty, Keyword::List->value);
+            if (
+                count($compactedItems) === 1
+                && ! $this->hasContainer($activeProperty, Keyword::Set->value)
+                && ($this->compactArrays || $isListContainer)
+            ) {
                 return $compactedItems[0];
             }
 
@@ -442,7 +458,7 @@ class Compaction
                 // @container:@set, which keeps the array (#tin01).
                 $compactedKey = $this->compactIri($key, vocab: true);
                 $isNamedGraph = $key === Keyword::Graph->value && isset($node[Keyword::Id->value]);
-                $keepArray = $isNamedGraph || $this->hasContainer($compactedKey, Keyword::Set->value);
+                $keepArray = $isNamedGraph || ! $this->compactArrays || $this->hasContainer($compactedKey, Keyword::Set->value);
                 $result[$compactedKey] = (! $keepArray && count($compactedItems) === 1 && is_array($compactedItems[0]))
                     ? $compactedItems[0]
                     : $compactedItems;
@@ -832,7 +848,7 @@ class Compaction
             return $map;
         }
 
-        return (! $asSet && count($list) === 1) ? $list[0] : $list;
+        return (! $asSet && $this->compactArrays && count($list) === 1) ? $list[0] : $list;
     }
 
     /**

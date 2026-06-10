@@ -68,8 +68,11 @@ final class PhpJsonLdAdapter implements Processor
         // The document base lets compaction relativise @id values (§5.6).
         $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
 
+        // compactArrays defaults to true; a manifest entry may set it false.
+        $compactArrays = isset($options['compactArrays']) && is_bool($options['compactArrays']) ? $options['compactArrays'] : true;
+
         return (new JsonLdProcessor($this->loader))
-            ->compact($input, $context, new JsonLdOptions(base: $base, processingMode: self::processingMode($options)))
+            ->compact($input, $context, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), compactArrays: $compactArrays))
             ->toArray();
     }
 

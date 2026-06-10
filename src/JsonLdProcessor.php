@@ -78,7 +78,7 @@ final class JsonLdProcessor implements Processor
         $expandedInput = $this->expand($expanded, $options)->toArray();
 
         $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, $options?->base, $options?->processingMode);
-        $compaction = new Compaction($contextProcessor->getTermDefinitions());
+        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $options !== null ? $options->compactArrays : true);
 
         $compacted = $compaction->compact($expandedInput);
 

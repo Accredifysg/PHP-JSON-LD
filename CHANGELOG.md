@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-06-09
+
+Compaction: the `compactArrays` option (§5.6.2).
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.56.0:      372      220      436
+v0.57.0:      372      223      436   (+3 compact)
+```
+
+### Added
+
+- `JsonLdOptions::$compactArrays` (default `true`), threaded through
+  `JsonLdProcessor::compact()` into `Compaction` and the W3C harness adapter.
+
+### Fixed (compaction, §5.6.2)
+
+- When `compactArrays` is `false`, single-element arrays are no longer unwrapped
+  to scalars/objects and `@graph`/top-level array wrappers are kept verbatim
+  (`#t0070`, `#t0091`, `#t0093`). A `@container: @list` term still unwraps its
+  single `{@list}` element internally (that is list-content delivery, not the
+  `compactArrays` collapse). All four unwrap sites are individually gated, so
+  the default (`true`) behaviour is byte-unchanged.
+
 ## [0.56.0] - 2026-06-09
 
 Expansion: reverse-property term with `@container: @index`.

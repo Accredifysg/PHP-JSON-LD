@@ -489,4 +489,17 @@ describe('JsonLdProcessor::compact', function () {
         $result = compactWith($expanded, $context);
         expect($result['included'])->toBe([['prop' => 'value2']]);
     });
+
+    it('keeps single-element arrays when compactArrays is false (#t0070)', function () {
+        $loader = new StubDocumentLoader;
+        $expanded = [['http://example.com/p' => [['@value' => 'one']]]];
+        // compactArrays default (true) -> scalar value.
+        $on = (string) json_encode((new JsonLdProcessor($loader))
+            ->compact($expanded, ['p' => 'http://example.com/p'])->toArray());
+        expect($on)->toContain('"p":"one"');
+        // compactArrays false -> the single-element array is kept verbatim.
+        $off = (string) json_encode((new JsonLdProcessor($loader))
+            ->compact($expanded, ['p' => 'http://example.com/p'], new Accredify\JsonLd\JsonLdOptions(compactArrays: false))->toArray());
+        expect($off)->toContain('"p":["one"]');
+    });
 });
