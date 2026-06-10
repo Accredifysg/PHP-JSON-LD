@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-06-10
+
+toRdf: empty node objects become blank nodes; `@id`-vanished nodes are dropped.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.66.0:      378      246      456
+v0.67.0:      378      246      458   (+2 toRdf)
+```
+
+### Fixed
+
+- A genuinely-empty node object (`{}` — e.g. a node whose only property is
+  decoupled by a `@context: null` reset) now serialises as a fresh blank node
+  referenced by its parent, instead of being silently iterated away in node-map
+  generation (`#te016`, `#tpr06`). PHP renders both `{}` and `[]` as an empty
+  array, so the node-map builder now treats an empty-array *value item* as an
+  empty node object while an empty value *list* still emits nothing.
+- Distinct from the above: a node object carrying an `@id` that expanded to
+  null (e.g. a keyword-shaped `@ignoreMe`) and having no other content is NOT a
+  blank node — the value is dropped during expansion, since the intended
+  identifier is simply absent (`#te122`, which previously passed only by
+  coincidence of the empty node being discarded).
+
 ## [0.66.0] - 2026-06-10
 
 toRdf: reject double-fragment (non-well-formed) IRIs.

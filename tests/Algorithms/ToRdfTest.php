@@ -177,6 +177,24 @@ it('drops a blank-node predicate by default but keeps it under produceGeneralize
     expect($generalized)->toContain('<http://example/s> _:b0 "v" .');
 });
 
+it('emits a blank node for a genuinely-empty node value but drops an @id-bearing one whose @id vanished (#te016/#tpr06/#te122)', function () {
+    // A node whose only property is decoupled by a @context:null reset becomes
+    // an empty node object {} → a fresh blank node referenced by its parent.
+    $empty = toNQuads([
+        '@id' => 'http://example/s',
+        'http://example/p' => ['@context' => null, 'undefinedTerm' => 'dropped'],
+    ]);
+    expect($empty)->toMatch('#<http://example/s> <http://example/p> _:b\d+ \.#');
+
+    // A node whose @id is a keyword-shaped (and thus dropped) IRI is NOT a
+    // blank node — the value is dropped, producing no statement.
+    $dropped = toNQuads([
+        '@id' => 'http://example/s',
+        'http://example/p' => ['@id' => '@ignoreMe'],
+    ]);
+    expect(trim($dropped))->toBe('');
+});
+
 it('drops a statement whose predicate IRI is not well-formed (two fragments) (#te111/#te112)', function () {
     // A term appended to a `#`-terminated relative @vocab yields a double-`#`
     // predicate, which is not a well-formed IRI and carries no RDF statement.

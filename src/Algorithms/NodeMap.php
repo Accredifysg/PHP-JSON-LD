@@ -67,6 +67,26 @@ final class NodeMap
     ): void {
         if (is_array($element) && array_is_list($element)) {
             foreach ($element as $item) {
+                // An empty-array ITEM is an empty node object ({} — PHP renders
+                // an empty object as []), not a nested empty list: it gets a
+                // fresh blank-node identifier and is linked to its parent rather
+                // than being silently iterated away (#tpr06/#te016). The
+                // value-LIST being empty ($element === []) is handled by this
+                // foreach simply not iterating, so empty @set values still emit
+                // nothing.
+                if ($item === [] && ($list !== null || (is_string($activeSubject) && $activeProperty !== null))) {
+                    $emptyId = $this->issuer->getId();
+                    $this->nodeMap[$activeGraph][$emptyId] ??= [Keyword::Id->value => $emptyId];
+                    $reference = [Keyword::Id->value => $emptyId];
+                    if ($list !== null) {
+                        $list[Keyword::List->value][] = $reference;
+                    } else {
+                        /** @var string $activeSubject */
+                        $this->addToNode($activeGraph, $activeSubject, $activeProperty, $reference, false);
+                    }
+
+                    continue;
+                }
                 $this->generateNodeMap($item, $activeGraph, $activeSubject, $activeProperty, $list);
             }
 

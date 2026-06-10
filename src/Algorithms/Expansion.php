@@ -514,6 +514,23 @@ class Expansion
                     continue;
                 }
 
+                // A node object that carried an @id which expanded to null (e.g.
+                // a keyword-shaped "@ignoreMe") and has no other content is NOT
+                // a blank node: the intended identifier is simply absent, so the
+                // value is dropped entirely (#te122 / #t0122). This is distinct
+                // from a genuinely-empty node (no @id key) handled just below.
+                if (
+                    $expandedValue === []
+                    && is_array($value)
+                    && ! array_is_list($value)
+                    && array_key_exists(Keyword::Id->value, $value)
+                    && ! array_key_exists(Keyword::Set->value, $value)
+                    && ! array_key_exists(Keyword::List->value, $value)
+                    && ! array_key_exists(Keyword::Value->value, $value)
+                ) {
+                    continue;
+                }
+
                 // Normalise to array (spec wraps property values as lists).
                 // An empty result from a single node-object value is an EMPTY
                 // NODE ({}), not an empty list — PHP can't tell [] (map) from
