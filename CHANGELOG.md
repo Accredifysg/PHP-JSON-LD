@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-06-10
+
+toRdf harness: sound blank-node isomorphism comparison.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.63.0:      378      246      443
+v0.64.0:      378      246      453   (+10 toRdf)
+```
+
+### Fixed (test harness)
+
+- The toRdf conformance comparison gains a **sound** RDF-dataset isomorphism
+  fallback. The existing order-based blank-node canonicalisation
+  (`normaliseNQuads`) is correct only for graphs without blank-node symmetry;
+  the `@graph`-container fixtures produce symmetric implicit named graphs whose
+  isomorphic-but-relabelled output it mislabelled. The new check does
+  signature-pruned backtracking over the blank-node bijection and verifies the
+  relabelled quad MULTISET exactly, so it can only rescue a heuristic
+  mismatch — never pass a genuinely different dataset. This corrected
+  10 false-failures whose RDF output was already spec-correct: the eight
+  `@graph`-container tests (`#te093`/`#te094`/`#te096`/`#te097`/`#te098`/
+  `#te104`/`#te105`/`#te107`), `#tdi03` (list `@direction`), and `#tpr10`
+  (protected terms).
+
+No library code changed — this is a test-infrastructure correctness fix; the
+processor's toRdf output is byte-identical.
+
 ## [0.63.0] - 2026-06-10
 
 toRdf: the `produceGeneralizedRdf` option (§7.1).

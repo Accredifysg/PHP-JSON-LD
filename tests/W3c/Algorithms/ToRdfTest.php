@@ -125,6 +125,128 @@ function normaliseNQuads(string $nquads): string
     return implode("\n", $relabelled);
 }
 
+/**
+ * Sound RDF-dataset isomorphism check between two N-Quads documents: the
+ * datasets are equal iff there is a bijection between their blank-node labels
+ * that makes the quad MULTISETS identical (ground terms must match exactly).
+ *
+ * {@see normaliseNQuads} is a fast order-based heuristic that is correct only
+ * for graphs without blank-node symmetry; for symmetric graphs (e.g. two
+ * implicit named graphs reached through identical predicates, as the `@graph`-
+ * container fixtures produce) it can label two isomorphic datasets
+ * differently. This routine is the exact fallback: signature-pruned
+ * backtracking over the blank-node bijection, verifying the relabelled quad
+ * multiset against the target. The final multiset check is what guarantees
+ * soundness — it can never report a non-isomorphic pair as equal — and the
+ * search is capped so a pathological symmetric graph degrades to "not equal"
+ * (the heuristic's verdict) rather than hanging. Only ever used to RESCUE a
+ * heuristic mismatch, so it cannot regress a passing comparison.
+ *
+ * @param  list<string>  $a
+ * @param  list<string>  $b
+ */
+function nQuadsIsomorphic(array $a, array $b): bool
+{
+    if (count($a) !== count($b)) {
+        return false;
+    }
+
+    $blanks = static function (array $lines): array {
+        $set = [];
+        foreach ($lines as $l) {
+            remapNQuadsLine($l, static function (string $bn) use (&$set): string {
+                $set[$bn] = true;
+
+                return $bn;
+            });
+        }
+
+        return array_keys($set);
+    };
+    $ba = $blanks($a);
+    $bb = $blanks($b);
+    if (count($ba) !== count($bb)) {
+        return false;
+    }
+
+    $target = $b;
+    sort($target, SORT_STRING);
+    if ($ba === []) {
+        $sa = $a;
+        sort($sa, SORT_STRING);
+
+        return $sa === $target;
+    }
+
+    // Signature of a blank node: the sorted multiset of the lines it occurs
+    // in, with itself marked and every OTHER blank masked — so a blank can map
+    // only onto one with an identical local structure.
+    $sig = static function (array $lines, string $self): string {
+        $m = array_map(
+            static fn (string $l): string => remapNQuadsLine($l, static fn (string $x): string => $x === $self ? '_:SELF' : '_:X'),
+            $lines,
+        );
+        sort($m, SORT_STRING);
+
+        return implode('|', $m);
+    };
+
+    $candidates = [];
+    $product = 1;
+    foreach ($ba as $g) {
+        $sg = $sig($a, $g);
+        $candidates[$g] = array_values(array_filter($bb, static fn (string $e): bool => $sig($b, $e) === $sg));
+        if ($candidates[$g] === []) {
+            return false;
+        }
+        $product *= count($candidates[$g]);
+    }
+    if ($product > 5040) {
+        return false; // refuse a pathological search; the heuristic already decided
+    }
+
+    $assign = [];
+    $used = [];
+    $backtrack = static function (int $k) use (&$backtrack, $ba, $candidates, &$assign, &$used, $a, $target): bool {
+        if ($k === count($ba)) {
+            $relabelled = array_map(
+                static fn (string $l): string => remapNQuadsLine($l, static fn (string $x): string => $assign[$x] ?? $x),
+                $a,
+            );
+            sort($relabelled, SORT_STRING);
+
+            return $relabelled === $target;
+        }
+        $g = $ba[$k];
+        foreach ($candidates[$g] as $e) {
+            if (isset($used[$e])) {
+                continue;
+            }
+            $assign[$g] = $e;
+            $used[$e] = true;
+            if ($backtrack($k + 1)) {
+                return true;
+            }
+            unset($used[$e], $assign[$g]);
+        }
+
+        return false;
+    };
+
+    return $backtrack(0);
+}
+
+/**
+ * @return list<string>
+ */
+function nQuadsLines(string $nquads): array
+{
+    return array_values(array_filter(
+        array_map('trim', explode("\n", $nquads)),
+        static fn (string $l): bool => $l !== '',
+    ));
+}
+
 it('serialises to RDF per W3C manifest', function (TestCase $test) {
     $processor = PhpJsonLdAdapter::default();
 
@@ -161,5 +283,12 @@ it('serialises to RDF per W3C manifest', function (TestCase $test) {
     }
 
     $expected = (string) file_get_contents($test->expectPath);
-    expect(normaliseNQuads($actual))->toEqual(normaliseNQuads($expected));
+
+    // Fast path: the order-based canonicalisation. Fallback: a sound
+    // blank-node isomorphism check that rescues structurally-equal datasets
+    // the heuristic mislabels (e.g. the symmetric `@graph`-container graphs).
+    $matches = normaliseNQuads($actual) === normaliseNQuads($expected)
+        || nQuadsIsomorphic(nQuadsLines($actual), nQuadsLines($expected));
+
+    expect($matches)->toBeTrue();
 })->with('to-rdf-tests');
