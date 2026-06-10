@@ -479,7 +479,19 @@ class Compaction
                     $nodeList = is_array($nodes) && array_is_list($nodes) ? $nodes : [$nodes];
                     $reverseTerm = $this->reverseInverse[$prop] ?? null;
                     $activeProp = $reverseTerm ?? $this->compactIri($prop, vocab: true);
-                    $compacted = $this->compactElement($nodeList, $activeProp);
+                    // A reverse term may itself carry a container (@index — incl.
+                    // property-valued — or @graph): route through the same
+                    // container-map machinery as a forward property so the
+                    // reverse values become an index map rather than a flat array
+                    // (#t0036/#t0114).
+                    if ($this->hasContainer($activeProp, Keyword::Graph->value)) {
+                        $compacted = $this->compactGraphContainer($nodeList, $activeProp);
+                    } else {
+                        $mapType = $this->mapContainerType($activeProp);
+                        $compacted = $mapType !== null
+                            ? $this->compactContainerMap($nodeList, $mapType, $activeProp)
+                            : $this->compactElement($nodeList, $activeProp);
+                    }
                     if ($reverseTerm !== null) {
                         $result[$reverseTerm] = $compacted;
                     } else {
@@ -921,11 +933,11 @@ class Compaction
                     : null;
                 $indexProp = null;
                 if ($indexTerm !== null) {
-                    $indexProp = $this->expandTermIri($indexTerm);
-                    if (! str_contains($indexProp, ':')) {
-                        $vocab = $this->activeContext->getVocab();
-                        $indexProp = $vocab !== null && $vocab !== '' ? $vocab.$indexTerm : $indexProp;
-                    }
+                    // Resolve the index property through the term definition: a
+                    // defined term (e.g. predicate -> rdf:predicate) wins over a
+                    // bare @vocab concatenation (#t0114); resolveTypeMapping also
+                    // handles the @vocab-relative and compact-IRI cases.
+                    $indexProp = $this->resolveTypeMapping($indexTerm);
                 }
                 if ($indexProp !== null) {
                     // Compact the node first, then take the key from the COMPACTED

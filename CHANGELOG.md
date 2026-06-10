@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-06-09
+
+Compaction: reverse terms with containers + property-valued index resolution.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.57.0:      372      223      436
+v0.58.0:      372      225      436   (+2 compact)
+```
+
+### Fixed (compaction)
+
+- A reverse-property term that itself carries a container (`@container: @index`,
+  including a property-valued index, or `@graph`) now routes its reverse values
+  through the same container-map machinery as a forward property, producing an
+  index map instead of a flat array (`#t0036`, `#t0114`).
+- A property-valued `@index`'s index property is now resolved through the term
+  definition (`resolveTypeMapping`), so a defined term such as
+  `predicate → rdf:predicate` wins over a bare `@vocab` concatenation (`#t0114`).
+
+### Known remaining
+
+- `#t0044` (`@type: @vocab` in a reverse map) still needs value-aware *per-value*
+  term selection inside the `@reverse` map (each node ref choosing between an
+  `@type: @id` and an `@type: @vocab` term); deferred to a focused follow-up.
+
 ## [0.57.0] - 2026-06-09
 
 Compaction: the `compactArrays` option (§5.6.2).

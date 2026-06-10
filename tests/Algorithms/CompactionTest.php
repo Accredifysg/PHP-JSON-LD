@@ -502,4 +502,20 @@ describe('JsonLdProcessor::compact', function () {
             ->compact($expanded, ['p' => 'http://example.com/p'], new Accredify\JsonLd\JsonLdOptions(compactArrays: false))->toArray());
         expect($off)->toContain('"p":["one"]');
     });
+
+    it('compacts a reverse term with @container:@index into an index map (#t0036)', function () {
+        $expanded = [[
+            '@id' => 'http://example.com/markus',
+            '@reverse' => ['http://xmlns.com/foaf/0.1/knows' => [
+                ['@id' => 'http://example.com/dave', '@index' => 'Dave'],
+                ['@id' => 'http://example.com/gregg', '@index' => 'Gregg'],
+            ]],
+        ]];
+        $context = ['isKnownBy' => ['@reverse' => 'http://xmlns.com/foaf/0.1/knows', '@container' => '@index']];
+        $result = compactWith($expanded, $context);
+        expect($result['isKnownBy'])->toBe([
+            'Dave' => ['@id' => 'http://example.com/dave'],
+            'Gregg' => ['@id' => 'http://example.com/gregg'],
+        ]);
+    });
 });

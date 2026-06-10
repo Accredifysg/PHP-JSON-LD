@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    372 passed /  13 failed (v0.57.0)
-Compaction:   223 passed /  23 failed (v0.57.0)
-toRdf:        436 passed /  31 failed (v0.57.0)
+Expansion:    372 passed /  13 failed (v0.58.0)
+Compaction:   225 passed /  21 failed (v0.58.0)
+toRdf:        436 passed /  31 failed (v0.58.0)
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -126,6 +126,7 @@ Each Phase 4 PR:
 | v0.55.0 |          370  |    +0  | compaction: @index on value objects + @included @set array (+2 compact)|
 | v0.56.0 |          372  |    +2  | expansion: reverse-property term with @container:@index (+1 toRdf)|
 | v0.57.0 |          372  |    +0  | compaction: compactArrays option (§5.6.2) threaded through options (+3 compact)|
+| v0.58.0 |          372  |    +0  | compaction: reverse term with container -> index map + property-valued index via term def (+2 compact)|
 
 ### Notes on v0.4.0
 
