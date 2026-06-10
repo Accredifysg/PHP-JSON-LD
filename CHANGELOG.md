@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-06-10
+
+**Compaction reaches 100% of the W3C compact suite (246/246).**
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.60.0:      372      238      436
+v0.61.0:      372      246      436   (+8 compact — the full suite)
+```
+
+### Fixed (compaction — final cluster)
+
+- Inline contexts supplied as part of the compaction context document are
+  applied when compacting (`#t0007`).
+- Index-map round-tripping: container-map entries preserve their original
+  shapes through compact→expand→compact (`#t0038`, `#ta038`).
+- An `@id` exactly equal to the document base relativises to `./` per
+  RFC 3986 (`IriResolver::relativize` edge case, `#t0076`).
+- A graph object WITH `@id` does not enter a `[@graph, @index]` container map;
+  it falls back to the (aliased) full form (`#t0083`).
+- A scoped `@context` given as an array including `@set`-bearing definitions
+  applies its array values correctly (`#ts002`).
+- NEW error conditions: compacting throws "IRI confused with prefix" when an
+  absolute IRI collides with a defined prefix term (`#te002`), and a
+  type-scoped context illegally overriding a protected term is rejected
+  during compaction context activation (`#tpr03`).
+- Expansion's compact-IRI step gains the matching prefix-candidate guard
+  (no expand/toRdf behaviour change — both suites byte-identical).
+
 ## [0.60.0] - 2026-06-10
 
 Compaction: reverse-map value-aware terms, `@json` arrays, property-valued

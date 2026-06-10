@@ -110,6 +110,15 @@ final class IriResolver
         }
 
         $relPath = self::relativePath($b['path'], $i['path']);
+        // An IRI identical to the base (same path, and no query/fragment of
+        // its own) is expressed as the base's last path segment — e.g.
+        // ".../api/things/1" against itself relativises to "1" (#t0076); a
+        // base path ending in "/" still yields "./" via the empty-string
+        // fallback below.
+        if ($relPath === '' && $b['path'] === $i['path'] && $i['query'] === null && $i['fragment'] === null) {
+            $pos = strrpos($i['path'], '/');
+            $relPath = $pos === false ? $i['path'] : substr($i['path'], $pos + 1);
+        }
         if ($relPath !== '') {
             $firstSeg = explode('/', $relPath, 2)[0];
             if (str_starts_with($relPath, '@') || str_contains($firstSeg, ':')) {

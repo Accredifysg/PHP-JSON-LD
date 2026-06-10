@@ -934,7 +934,30 @@ class Expansion
                 // (any string-IRI term acts as a prefix) for back-compat.
                 && ($prefixDef[Keyword::Prefix->value] ?? null) !== false
             ) {
-                return $prefixDef['@id'].$suffix;
+                // The prefix's @id may itself be a compact IRI built on an
+                // earlier prefix (e.g. "site-cd" -> "site:..."); the spec stores
+                // term IRI mappings fully expanded, so chase the chain here.
+                // Bounded: cyclic self-mappings are rejected at definition time,
+                // and the cap guards mutual cycles (#t0038/#ta038).
+                $prefixIri = $prefixDef['@id'];
+                for ($i = 0; $i < 10 && str_contains($prefixIri, ':'); $i++) {
+                    [$innerPrefix, $innerSuffix] = explode(':', $prefixIri, 2);
+                    if ($innerPrefix === '_' || str_starts_with($innerSuffix, '//')) {
+                        break;
+                    }
+                    $innerDef = $this->termDefinitions->getTermDefinition($innerPrefix);
+                    if (
+                        $innerDef === null
+                        || ! isset($innerDef['@id'])
+                        || ! is_string($innerDef['@id'])
+                        || ($innerDef[Keyword::Prefix->value] ?? null) === false
+                    ) {
+                        break;
+                    }
+                    $prefixIri = $innerDef['@id'].$innerSuffix;
+                }
+
+                return $prefixIri.$suffix;
             }
 
             // Step 6.5: if value has the form of an absolute IRI, return as-is.

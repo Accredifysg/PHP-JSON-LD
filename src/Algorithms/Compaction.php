@@ -241,8 +241,12 @@ class Compaction
      * removes the term (nullification).
      *
      * @param  array<array-key, mixed>  $scoped
+     * @param  bool  $overrideProtected  True for a property-scoped context,
+     *                                   which MAY redefine protected terms
+     *                                   (§4.1.2); false for a type-scoped
+     *                                   context, which may not (#tpr03).
      */
-    private function activateScopedContext(array $scoped): void
+    private function activateScopedContext(array $scoped, bool $overrideProtected = false): void
     {
         // A scoped @context may be a LIST of layers (e.g. [{...}] in #tc017,
         // [null, {...}] in #tc018). Apply each layer in turn, composing on the
@@ -252,7 +256,7 @@ class Compaction
         if (array_is_list($scoped)) {
             foreach ($scoped as $layer) {
                 if (is_array($layer)) {
-                    $this->activateScopedContext($layer);
+                    $this->activateScopedContext($layer, $overrideProtected);
                 }
             }
 
@@ -290,6 +294,11 @@ class Compaction
                 continue; // other keyword entries carry no term definition here
             }
             if ($value === null) {
+                // Nullifying a protected term is a protected-term redefinition
+                // unless overriding is permitted (#tpr03 family).
+                if (! $overrideProtected && $ctx->isProtected($key)) {
+                    throw new JsonLdException("Protected term redefinition: '{$key}' is protected and cannot be cleared by a scoped context");
+                }
                 unset($ctx->termDefinitions[$key]);
 
                 continue;
@@ -302,7 +311,10 @@ class Compaction
             if (! isset($def[Keyword::Id->value]) && ! str_contains($key, ':') && $vocab !== null) {
                 $def[Keyword::Id->value] = $vocab.$key;
             }
-            $ctx->termDefinitions[$key] = $def;
+            // Store protected-aware: a type-scoped context redefining a
+            // protected term differently must throw (#tpr03); a property-scoped
+            // context passes overrideProtected and is allowed through.
+            $ctx->overlayTerm($key, $def, false, $overrideProtected);
         }
 
         $this->activeContext = $ctx;
@@ -379,13 +391,13 @@ class Compaction
      */
     private function compactObject(array $node, ?string $activeProperty): mixed
     {
-        // Value object → value compaction.
+        // Value object → value compaction. The result — scalar, rebuilt value
+        // object, or {@id} reference — is FINAL: re-running it through the
+        // node-object loop would re-compact already-compacted strings (e.g. a
+        // kept "xsd:dateTime" @type), which is wrong now that IRI compaction
+        // raises "IRI confused with prefix" (#t0006/#t0011 vs #te002).
         if (array_key_exists(Keyword::Value->value, $node) || isset($node[Keyword::Id->value]) && count($node) === 1) {
-            $compactedValue = $this->compactValue($node, $activeProperty);
-            if (! is_array($compactedValue)) {
-                return $compactedValue;
-            }
-            $node = $compactedValue;
+            return $this->compactValue($node, $activeProperty);
         }
 
         // @list object.
@@ -628,7 +640,7 @@ class Compaction
                 $scoped = $this->propertyScopedContext($term);
                 if ($scoped !== null) {
                     $preScoped = ['context' => $this->activeContext, 'inverse' => $this->inverse, 'reverse' => $this->reverseInverse];
-                    $this->activateScopedContext($scoped);
+                    $this->activateScopedContext($scoped, overrideProtected: true);
                     $this->previousContext = $this->propagatesFalse($scoped) ? $preScoped : null;
                 }
 
@@ -960,6 +972,22 @@ class Compaction
             $graphNodes = is_array($graphValue) && array_is_list($graphValue) ? $graphValue : [$graphValue];
             $content = $this->compactElement($graphNodes, null);
 
+            // §5.6 (12.8.7): only a SIMPLE graph object (no @id) may enter a
+            // [@graph, @index] map; a graph object WITH @id keeps its full
+            // (aliased) {@id, @index, @graph} form instead (#t0083).
+            if ($hasIndex && ! $hasId && isset($item[Keyword::Id->value]) && is_string($item[Keyword::Id->value])) {
+                $full = [
+                    $this->compactIri(Keyword::Id->value, vocab: true) => $this->compactIri($item[Keyword::Id->value], vocab: false),
+                ];
+                if (isset($item[Keyword::Index->value]) && is_string($item[Keyword::Index->value])) {
+                    $full[$this->compactIri(Keyword::Index->value, vocab: true)] = $item[Keyword::Index->value];
+                }
+                $full[$this->compactIri(Keyword::Graph->value, vocab: true)] = $content;
+                $list[] = $full;
+
+                continue;
+            }
+
             if ($hasId || $hasIndex) {
                 if ($hasId) {
                     $key = isset($item[Keyword::Id->value]) && is_string($item[Keyword::Id->value])
@@ -1000,6 +1028,13 @@ class Compaction
         }
 
         if ($hasId || $hasIndex) {
+            // Graph objects that fell back to the full form bypass the map;
+            // when the map is otherwise empty, return them like a plain @graph
+            // container value (#t0083).
+            if ($map === [] && $list !== []) {
+                return (! $asSet && $this->compactArrays && count($list) === 1) ? $list[0] : $list;
+            }
+
             return $map;
         }
 
@@ -1016,6 +1051,11 @@ class Compaction
      */
     private function compactContainerMap(array $items, string $mapType, ?string $activeProperty = null): array
     {
+        // §5.6 step 12.8.9: when the container also includes @set (a JSON-LD
+        // 1.1 combination) — or compactArrays is false — every map entry stays
+        // an array even when single-valued (#ts002).
+        $asArray = ! $this->compactArrays
+            || (! $this->activeContext->isJson10() && $this->hasContainer($activeProperty, Keyword::Set->value));
         $map = [];
         foreach ($items as $item) {
             if (! is_array($item)) {
@@ -1033,7 +1073,7 @@ class Compaction
                 }
                 $map[$key][] = $entry;
             } else {
-                $map[$key] = $entry;
+                $map[$key] = $asArray ? [$entry] : $entry;
             }
         }
 
@@ -1299,17 +1339,65 @@ class Compaction
             // explicit @prefix:true; an expanded def without @prefix (#tp001/
             // #tp002) or an explicit @prefix:false (#tp008) is not usable.
             $prefixDef = $this->activeContext->getTermDefinition($prefixTerm);
-            if (! is_array($prefixDef) || ($prefixDef[Keyword::Prefix->value] ?? false) !== true) {
+            if (! is_array($prefixDef)) {
                 continue;
+            }
+            if (($prefixDef[Keyword::Prefix->value] ?? false) !== true) {
+                // JSON-LD 1.0 predates the prefix flag. There, a term defined
+                // with EXPANDED syntax still forms compact IRIs when the
+                // expanded form was REQUIRED to express a coercion
+                // (@container/@type/…) — 1.0 had no other way to write it, so
+                // it carries no anti-prefix signal (#t0038 "title:/value"). An
+                // expanded definition carrying nothing beyond @id deliberately
+                // avoided the simple string form, which (per the 1.1 suite's
+                // 1.0-mode expectation) opts the term out of prefix use (#tp001).
+                $legacyPrefix = $this->activeContext->isJson10()
+                    && array_diff(array_keys($prefixDef), [Keyword::Id->value, Keyword::Prefix->value, Keyword::Protected->value]) !== [];
+                if (! $legacyPrefix) {
+                    continue;
+                }
+            }
+            $candidate = $prefixTerm.':'.substr($iri, strlen($termIri));
+            // §5.7 step 9.4: a candidate that is itself a defined term is only
+            // usable when no value is being compacted AND its IRI mapping
+            // equals $iri — otherwise it would not round-trip (#t0007).
+            $candidateDef = $this->activeContext->getTermDefinition($candidate);
+            if ($candidateDef !== null) {
+                // The candidate term's IRI mapping: its @id when present, else
+                // (compact-IRI-shaped term) its own expansion; an explicit
+                // null @id (a nullified term) never matches.
+                if (array_key_exists(Keyword::Id->value, $candidateDef)) {
+                    $candidateId = is_string($candidateDef[Keyword::Id->value])
+                        ? $this->expandTermIri($candidateDef[Keyword::Id->value])
+                        : null;
+                } else {
+                    $candidateId = $this->expandTermIri($candidate);
+                }
+                if ($value !== null || $candidateId !== $iri) {
+                    continue;
+                }
             }
             $len = strlen($termIri);
             if ($len > $bestLen) {
                 $bestLen = $len;
-                $best = $prefixTerm.':'.substr($iri, $len);
+                $best = $candidate;
             }
         }
         if ($best !== null) {
             return $best;
+        }
+
+        // §5.7: an IRI that LOOKS like a compact IRI on a declared prefix
+        // term ("tag:champin.net,2019:prop" with prefix term "tag") must not be
+        // returned as-is — round-tripping would wrongly expand it through the
+        // prefix. This is the "IRI confused with prefix" error (#te002).
+        $colon = strpos($iri, ':');
+        if ($colon !== false && $colon > 0) {
+            $scheme = substr($iri, 0, $colon);
+            $schemeDef = $this->activeContext->getTermDefinition($scheme);
+            if (is_array($schemeDef) && ($schemeDef[Keyword::Prefix->value] ?? false) === true) {
+                throw new JsonLdException("IRI confused with prefix: '{$iri}' begins with declared prefix '{$scheme}'");
+            }
         }
 
         // Document-relative compaction against @base for non-vocab IRIs: a full
@@ -1411,7 +1499,12 @@ class Compaction
             return false;
         }
         if ($type === Keyword::Id->value || $type === Keyword::Vocab->value) {
-            return ! $sig['allNodeRefs'];
+            // An @id/@vocab coercion only destroys VALUE objects / scalars
+            // (value compaction would emit a bare string that re-expands as a
+            // node reference). Full node objects — not just bare references —
+            // survive intact, and the spec selects the term for them
+            // (type/language value @id) (#t0007).
+            return $sig['allValueObjects'];
         }
         if (! $sig['allValueObjects']) {
             return true;
