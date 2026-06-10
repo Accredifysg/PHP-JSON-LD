@@ -587,4 +587,17 @@ describe('expansion validation gates', function () {
             ->and($json)->toContain('"@value":"g1"')
             ->and($json)->not->toContain('"@index":"g1"');
     });
+
+    it('expands a reverse-property term that also has @container:@index (#t0063)', function () use ($expand) {
+        $json = (string) json_encode($expand([
+            '@context' => ['name' => 'http://xmlns.com/foaf/0.1/name', 'isKnownBy' => ['@reverse' => 'http://xmlns.com/foaf/0.1/knows', '@container' => '@index']],
+            '@id' => 'http://example.com/markus',
+            'isKnownBy' => ['Dave' => ['@id' => 'http://example.com/dave'], 'Gregg' => ['@id' => 'http://example.com/gregg']],
+        ]), JSON_UNESCAPED_SLASHES);
+        // The index-map entries become reverse values with @index attached.
+        expect($json)->toContain('"@reverse"')
+            ->and($json)->toContain('"@index":"Dave"')
+            ->and($json)->toContain('"@index":"Gregg"')
+            ->and($json)->toContain('http://example.com/dave');
+    });
 });

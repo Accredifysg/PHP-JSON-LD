@@ -336,7 +336,21 @@ class Expansion
                     if (! $this->looksLikeAbsoluteIri($reverseIri) && ! str_starts_with($reverseIri, '_:')) {
                         throw new JsonLdException('Invalid reverse property: @reverse must expand to an IRI or blank node');
                     }
-                    $this->collectReverseValues($reverseMap, $reverseIri, $this->expandElement($value, $key));
+                    // A reverse-property term may itself carry @container:@index
+                    // (the only container shape a reverse term may legally take):
+                    // the value is an index map whose entries expand to nodes
+                    // with @index attached, which then become the reverse values
+                    // (#t0063 plain @index, #t0131 property-valued @index). A
+                    // property-scoped @context is intentionally not layered here —
+                    // no legal reverse term shape combines @index with @context.
+                    $reverseValues = null;
+                    if ($this->containerIs($key, Keyword::Index->value)) {
+                        $reverseValues = $this->expandContainerValue($key, $value, $termDef);
+                    }
+                    if ($reverseValues === null) {
+                        $reverseValues = $this->expandElement($value, $key);
+                    }
+                    $this->collectReverseValues($reverseMap, $reverseIri, $reverseValues);
 
                     continue;
                 }

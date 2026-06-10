@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-06-09
+
+Expansion: reverse-property term with `@container: @index`.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.55.0:      370      220      435
+v0.56.0:      372      220      436   (+2 expand, +1 toRdf)
+```
+
+### Fixed (expansion, §5.5)
+
+- A reverse-property term (`{"@reverse": "…"}`) that also carries
+  `@container: @index` now expands its value as an index map — the entries
+  become the reverse values with their `@index` attached — instead of
+  mis-expanding the index map as a node object and producing an empty result
+  (`#t0063` plain `@index`, `#t0131` property-valued `@index`; `#te063` toRdf
+  twin). A property-scoped `@context` is intentionally not layered here, as no
+  legal reverse term shape combines `@index` with `@context`.
+
 ## [0.55.0] - 2026-06-09
 
 Compaction: `@index` on value objects + `@included` `@set`.

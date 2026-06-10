@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    370 passed /  15 failed (v0.55.0)
-Compaction:   220 passed /  26 failed (v0.55.0)
-toRdf:        435 passed /  32 failed (v0.55.0)
+Expansion:    372 passed /  13 failed (v0.56.0)
+Compaction:   220 passed /  26 failed (v0.56.0)
+toRdf:        436 passed /  31 failed (v0.56.0)
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -124,6 +124,7 @@ Each Phase 4 PR:
 | v0.53.0 |          370  |    +0  | compaction type-scoped @context: scoped @vocab + list-form layers (+3 compact)|
 | v0.54.0 |          370  |    +0  | compaction: @type-map key scoped context + @index on @list objects (+2 compact)|
 | v0.55.0 |          370  |    +0  | compaction: @index on value objects + @included @set array (+2 compact)|
+| v0.56.0 |          372  |    +2  | expansion: reverse-property term with @container:@index (+1 toRdf)|
 
 ### Notes on v0.4.0
 
