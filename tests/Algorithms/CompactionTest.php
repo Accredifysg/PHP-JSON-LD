@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\JsonLdProcessor;
 use Accredify\JsonLd\Tests\Context\Support\StubDocumentLoader;
 
@@ -499,7 +500,7 @@ describe('JsonLdProcessor::compact', function () {
         expect($on)->toContain('"p":"one"');
         // compactArrays false -> the single-element array is kept verbatim.
         $off = (string) json_encode((new JsonLdProcessor($loader))
-            ->compact($expanded, ['p' => 'http://example.com/p'], new Accredify\JsonLd\JsonLdOptions(compactArrays: false))->toArray());
+            ->compact($expanded, ['p' => 'http://example.com/p'], new JsonLdOptions(compactArrays: false))->toArray());
         expect($off)->toContain('"p":["one"]');
     });
 

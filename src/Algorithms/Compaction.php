@@ -124,15 +124,53 @@ class Compaction
             if (isset($definition['@reverse']) && is_string($definition['@reverse'])) {
                 $this->reverseInverse[$this->expandTermIri($definition['@reverse'])] ??= (string) $term;
             }
+            // A term with no explicit @id whose NAME is compact-IRI-shaped
+            // (e.g. "ex:vocab/date": {"@type": …}) takes its IRI mapping from
+            // the expansion of the term itself (§4.2.2), so it must be indexed
+            // — its exact inverse match outranks @vocab-stripping (#t0023).
+            if (! isset($definition['@id']) && ! isset($definition['@reverse']) && str_contains((string) $term, ':')) {
+                $definition['@id'] = (string) $term;
+            }
             if (! isset($definition['@id']) || ! is_string($definition['@id'])) {
                 continue;
             }
             // A term's @id is frequently a compact IRI (e.g. "ex:term1"); the
             // inverse must key on the FULLY-expanded IRI so that expanded
             // input properties resolve back to the term.
-            $expandedIri = $this->expandTermIri($definition['@id']);
+            $expandedIri = $this->expandTermIri($this->resolveTermId($definition['@id'], (string) $term));
             $this->inverse[$expandedIri][] = ['term' => (string) $term, 'def' => $definition];
         }
+    }
+
+    /**
+     * Resolves a term-definition `@id` that is itself a bare TERM NAME (no
+     * colon) before inverse indexing — mirroring IRI expansion of the @id at
+     * definition time: a `container` term whose @id is "label" must key on
+     * the IRI that the `label` term maps to (#t0027), and an `s` term with
+     * the same @id under an active vocabulary must key on the concatenation
+     * of @vocab and "label" (#t0089). A self-referential @id (the name is
+     * the term itself, or the referenced definition maps back to the same
+     * name) falls through to the vocabulary concatenation. Keywords and
+     * values containing ':' pass through untouched ({@see expandTermIri}
+     * handles compact IRIs).
+     */
+    private function resolveTermId(string $id, string $term): string
+    {
+        if ($id === '' || $this->isKeyword($id) || str_contains($id, ':')) {
+            return $id;
+        }
+        if ($id !== $term) {
+            $refDef = $this->activeContext->getTermDefinition($id);
+            $refId = is_array($refDef) && isset($refDef[Keyword::Id->value]) && is_string($refDef[Keyword::Id->value])
+                ? $refDef[Keyword::Id->value]
+                : null;
+            if ($refId !== null && $refId !== $id) {
+                return $refId;
+            }
+        }
+        $vocab = $this->activeContext->getVocab();
+
+        return ($vocab !== null && $vocab !== '') ? $vocab.$id : $id;
     }
 
     /**
@@ -531,7 +569,7 @@ class Compaction
             $groups = [];
             $order = [];
             foreach ($items as $item) {
-                $term = $this->compactIri($key, vocab: true, value: [$item]);
+                $term = $this->compactIri($key, vocab: true, value: [$item], multiValued: count($items) > 1);
                 if (! array_key_exists($term, $groups)) {
                     $groups[$term] = [];
                     $order[] = $term;
@@ -1067,7 +1105,7 @@ class Compaction
     /**
      * §5.7 IRI Compaction.
      */
-    private function compactIri(string $iri, bool $vocab, mixed $value = null): string
+    private function compactIri(string $iri, bool $vocab, mixed $value = null, bool $multiValued = false): string
     {
         // A keyword compacts to a keyword alias when the active context
         // defines one (a term whose @id maps to the keyword, e.g. "id": "@id"
@@ -1086,13 +1124,34 @@ class Compaction
         // compaction collapses the value; otherwise a plain term wins (stable
         // round-trip). Any exact match beats a compact IRI.
         if ($vocab && isset($this->inverse[$iri])) {
-            $term = $this->selectTerm($this->inverse[$iri], $value);
+            $term = $this->selectTerm($this->inverse[$iri], $value, $multiValued);
             if ($term !== '') {
                 return $term;
             }
             // selectTerm declined: the only matching term would destroy the
             // value (e.g. a @type:@id term for a plain string) — fall through
             // to a compact IRI / @vocab / full IRI (#t0006).
+        }
+
+        // @vocab stripping for vocab-mode IRIs — checked BEFORE forming a
+        // compact IRI: §5.7 prefers the @vocab-relative form over a (possibly
+        // shorter) prefix:suffix (#t0023 "prefer @vocab over compacted IRIs").
+        // The stripped name is rejected when it is itself a defined term
+        // mapping to a DIFFERENT IRI — using it would not round-trip (#t0043/
+        // #tc011); fall through to a compact IRI / the full IRI.
+        if ($vocab) {
+            $vocabIri = $this->activeContext->getVocab();
+            if ($vocabIri !== null && str_starts_with($iri, $vocabIri) && $iri !== $vocabIri) {
+                $stripped = substr($iri, strlen($vocabIri));
+                $strippedDef = $this->activeContext->getTermDefinition($stripped);
+                $collides = is_array($strippedDef)
+                    && isset($strippedDef[Keyword::Id->value])
+                    && is_string($strippedDef[Keyword::Id->value])
+                    && $this->expandTermIri($strippedDef[Keyword::Id->value]) !== $iri;
+                if (! $collides) {
+                    return $stripped;
+                }
+            }
         }
 
         // Compact IRI: find the longest prefix term whose @id is a strict
@@ -1126,24 +1185,6 @@ class Compaction
             return $best;
         }
 
-        // @vocab stripping for vocab-mode IRIs. The stripped name is rejected
-        // when it is itself a defined term mapping to a DIFFERENT IRI — using it
-        // would not round-trip (#t0043/#tc011); fall through to the full IRI.
-        if ($vocab) {
-            $vocabIri = $this->activeContext->getVocab();
-            if ($vocabIri !== null && str_starts_with($iri, $vocabIri) && $iri !== $vocabIri) {
-                $stripped = substr($iri, strlen($vocabIri));
-                $strippedDef = $this->activeContext->getTermDefinition($stripped);
-                $collides = is_array($strippedDef)
-                    && isset($strippedDef[Keyword::Id->value])
-                    && is_string($strippedDef[Keyword::Id->value])
-                    && $this->expandTermIri($strippedDef[Keyword::Id->value]) !== $iri;
-                if (! $collides) {
-                    return $stripped;
-                }
-            }
-        }
-
         // Document-relative compaction against @base for non-vocab IRIs: a full
         // relative reference (RFC 3986), e.g. "../parent", "#frag" (#t0045/
         // #t0066/#t0111). relativize() returns the IRI unchanged when it cannot
@@ -1171,14 +1212,14 @@ class Compaction
      *
      * @param  list<array{term: string, def: array<array-key, mixed>}>  $candidates
      */
-    private function selectTerm(array $candidates, mixed $value = null): string
+    private function selectTerm(array $candidates, mixed $value = null, bool $multiValued = false): string
     {
         $sig = $value !== null ? $this->valueSignature($value) : null;
 
-        usort($candidates, function (array $a, array $b) use ($sig, $value) {
+        usort($candidates, function (array $a, array $b) use ($sig, $value, $multiValued) {
             if ($sig !== null) {
-                $sa = $this->scoreCandidate($a['def'], $sig, $value);
-                $sb = $this->scoreCandidate($b['def'], $sig, $value);
+                $sa = $this->scoreCandidate($a['def'], $sig, $value, $multiValued);
+                $sb = $this->scoreCandidate($b['def'], $sig, $value, $multiValued);
                 if ($sa !== $sb) {
                     return $sb <=> $sa; // higher score first
                 }
@@ -1194,10 +1235,12 @@ class Compaction
             return $lenCmp !== 0 ? $lenCmp : strcmp($a['term'], $b['term']);
         });
 
-        // If even the best candidate's @type coercion would destroy the value,
-        // decline (return '') so the caller falls through to a compact IRI /
-        // @vocab / full IRI rather than emit under a lossy term (#t0006).
-        if ($sig !== null && ! $sig['empty'] && $this->isDestructiveTypeCoercion($candidates[0]['def'], $sig)) {
+        // If even the best candidate's @type or @language coercion would
+        // destroy the value, decline (return '') so the caller falls through
+        // to a compact IRI / @vocab / full IRI rather than emit under a lossy
+        // term (#t0006/#t0017).
+        if ($sig !== null && ! $sig['empty']
+            && ($this->isDestructiveTypeCoercion($candidates[0]['def'], $sig) || $this->isDestructiveLanguageCoercion($candidates[0]['def'], $sig))) {
             return '';
         }
 
@@ -1233,6 +1276,30 @@ class Compaction
         $typeIri = $this->resolveTypeMapping($type);
 
         return ! ($sig['commonType'] !== null && ($type === $sig['commonType'] || $typeIri === $sig['commonType']));
+    }
+
+    /**
+     * True when selecting $def would coerce the value into the WRONG language:
+     * the term carries an explicit `@language: "L"` while the value's common
+     * language is a non-null, non-matching tag — the value must decline to the
+     * full-IRI key instead (#t0017: the German value may not sit under the
+     * English-coerced comment_en). Restricted to plain (container-less) terms
+     * and language-TAGGED values: a value with NO language (commonLang null)
+     * and a term with `@language: null` never decline here.
+     *
+     * @param  array<array-key, mixed>  $def
+     * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}  $sig
+     */
+    private function isDestructiveLanguageCoercion(array $def, array $sig): bool
+    {
+        $lang = isset($def[Keyword::Language->value]) && is_string($def[Keyword::Language->value])
+            ? $def[Keyword::Language->value]
+            : null;
+        if ($lang === null || $sig['isList'] || isset($def[Keyword::Container->value])) {
+            return false;
+        }
+
+        return $sig['commonLang'] !== null && strtolower($sig['commonLang']) !== strtolower($lang);
     }
 
     /**
@@ -1304,7 +1371,7 @@ class Compaction
      * @param  array<array-key, mixed>  $def
      * @param  array{allNodeRefs: bool, allValueObjects: bool, commonType: ?string, commonLang: ?string, noTypeNoLang: bool, empty: bool, isList: bool}  $sig
      */
-    private function scoreCandidate(array $def, array $sig, mixed $value): int
+    private function scoreCandidate(array $def, array $sig, mixed $value, bool $multiValued = false): int
     {
         $type = isset($def[Keyword::Type->value]) && is_string($def[Keyword::Type->value]) ? $def[Keyword::Type->value] : null;
         $typeIri = $type !== null ? $this->resolveTypeMapping($type) : null;
@@ -1356,6 +1423,33 @@ class Compaction
             }
 
             return $baseline;
+        }
+
+        // INVARIANT: a pure-container term (@container @set / @language with
+        // no @type and no @language mapping) can never reach the typeMatches /
+        // langMatches branches below — it must be scored here or it stays at
+        // the coerced baseline of 0 and loses to any plain term.
+
+        // Language-tagged value objects → a @language-CONTAINER term holds
+        // every language (the map is keyed by it), so it outranks even an
+        // exact @language-coerced term — §5.7's container preference checks
+        // @language before @none (#t0089).
+        if ($sig['commonLang'] !== null && $type === null && ! $hasLang && $this->defHasContainer($def, Keyword::Language->value)) {
+            return 5;
+        }
+
+        // A MULTI-valued property of value objects → prefer a @container:@set
+        // term over a plain term (§5.7: @set precedes @none in the container
+        // preference order); an exact @type/@language match still wins (#t0027).
+        if ($multiValued && $sig['allValueObjects'] && $type === null && ! $hasLang && $this->defHasContainer($def, Keyword::Set->value)) {
+            return 2;
+        }
+
+        // A term whose @language: L mismatches the value's language would emit
+        // the WRONG language on round-trip — rank it below every other
+        // candidate (#t0017: the German value must not pick comment_en).
+        if ($hasLang && $lang !== null && $sig['commonLang'] !== null && ! $langMatches) {
+            return -1;
         }
 
         // Value objects sharing a single @type → prefer the @type-coerced term.

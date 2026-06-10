@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-06-10
+
+Compaction: inverse-context term selection core (§5.6.2/§5.7).
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.58.0:      372      225      436
+v0.59.0:      372      230      436   (+5 compact)
+```
+
+### Fixed (compaction, §5.6.2 / §5.7)
+
+- `buildInverse` now resolves a term whose `@id` is itself a bare TERM NAME
+  through the referenced term's definition (self-reference guarded), falling
+  back to `@vocab` concatenation — so `container: {"@id": "label"}` indexes
+  under the IRI `label` maps to (`#t0027`, `#t0089`, bonus `#tc003`).
+- A term with no explicit `@id` whose NAME is compact-IRI-shaped
+  (`"ex:vocab/date": {…}`) takes its IRI mapping from its own expansion and is
+  now indexed, so its exact inverse match outranks `@vocab`-stripping (`#t0023`).
+- `compactIri` now prefers `@vocab`-stripping over forming a NEW compact IRI
+  via a prefix term, per the §5.7 ordering (`#t0023`); an exact inverse term
+  still wins over both.
+- `scoreCandidate` gains container-preference branches: a `@container: @set`
+  term wins for multi-valued properties (threaded via a `multiValued` flag),
+  and a term with a mismatching `@language` coercion scores below plain terms.
+- `selectTerm` declines a candidate set whose only terms carry a `@language`
+  coercion that mismatches the value's language — the value falls back to the
+  full-IRI key as a value object instead of lossily absorbing the language
+  (`#t0017`).
+
 ## [0.58.0] - 2026-06-09
 
 Compaction: reverse terms with containers + property-valued index resolution.
