@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-06-10
+
+toRdf: drop literals with malformed language tags.
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.64.0:      378      246      453
+v0.65.0:      378      246      454   (+1 toRdf)
+```
+
+### Fixed (toRdf, §7.3)
+
+- A language-tagged literal whose `@language` is not a well-formed BCP47
+  language tag (e.g. `"a b"`, which contains a space) is now dropped — the
+  statement carries no valid RDF language — instead of emitting an invalid
+  N-Quads literal (`#twf05`).
+
 ## [0.64.0] - 2026-06-10
 
 toRdf harness: sound blank-node isomorphism comparison.

@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    378 passed /   7 failed (v0.64.0)
-Compaction:   246 passed /   0 failed (v0.64.0)  ← 100%
-toRdf:        453 passed /  14 failed (v0.64.0)
+Expansion:    378 passed /   7 failed (v0.65.0)
+Compaction:   246 passed /   0 failed (v0.65.0)  ← 100%
+toRdf:        454 passed /  13 failed (v0.65.0)
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -133,6 +133,7 @@ Each Phase 4 PR:
 | v0.62.0 |          378  |    +6  | expansion: expandContext option, @context:null full reset, @base:null, scoped @nest (+5 toRdf)|
 | v0.63.0 |          378  |    +0  | toRdf: produceGeneralizedRdf option — keep blank-node predicates (+2 toRdf)|
 | v0.64.0 |          378  |    +0  | toRdf harness: sound blank-node isomorphism compare — rescues 10 spec-correct false-failures (+10 toRdf)|
+| v0.65.0 |          378  |    +0  | toRdf: drop literals with malformed BCP47 language tags (+1 toRdf)|
 
 ### Notes on v0.4.0
 

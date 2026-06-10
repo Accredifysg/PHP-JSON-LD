@@ -193,8 +193,10 @@ final class ToRdf
      * @param  list<RdfQuad>  $listQuads  Receives any auxiliary triples (used
      *                                    by the compound-literal rdfDirection
      *                                    mode).
+     * @return RdfTerm|null Null when the value carries a malformed language
+     *                      tag and the statement must be dropped (#twf05).
      */
-    private function valueToLiteral(array $item, array &$listQuads, BlankNodeIssuer $issuer): RdfTerm
+    private function valueToLiteral(array $item, array &$listQuads, BlankNodeIssuer $issuer): ?RdfTerm
     {
         $value = $item[Keyword::Value->value];
 
@@ -267,6 +269,13 @@ final class ToRdf
 
         // String value.
         $stringValue = is_scalar($value) ? (string) $value : '';
+
+        // A language-tagged literal whose tag is not a well-formed BCP47
+        // language tag carries no valid RDF language: the statement is dropped
+        // (#twf05). A well-formed tag is ALPHA{1,8} (-(ALPHANUM){1,8})*.
+        if ($language !== null && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $language) !== 1) {
+            return null;
+        }
 
         return RdfTerm::literal($stringValue, $datatype, $language);
     }
