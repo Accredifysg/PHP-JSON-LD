@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    378 passed /   7 failed (v0.68.0)
-Compaction:   246 passed /   0 failed (v0.68.0)  ← 100%
-toRdf:        459 passed /   8 failed (v0.68.0)
+Expansion:    378 passed /   7 failed (v0.69.0)
+Compaction:   246 passed /   0 failed (v0.69.0)  ← 100%
+toRdf:        460 passed /   7 failed (v0.69.0)  ← remaining 7 are blockers
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -137,6 +137,7 @@ Each Phase 4 PR:
 | v0.66.0 |          378  |    +0  | toRdf: reject double-fragment (non-well-formed) IRIs (+2 toRdf)|
 | v0.67.0 |          378  |    +0  | toRdf: empty node → blank node; @id-vanished node dropped (+2 toRdf)|
 | v0.68.0 |          378  |    +0  | toRdf: JSON Canonicalization Scheme (ECMAScript numbers) for @json (+1 toRdf)|
+| v0.69.0 |          378  |    +0  | toRdf harness: compare RDF datasets as sets (dedupe quads) (+1 toRdf — remaining 7 are blockers)|
 
 ### Notes on v0.4.0
 

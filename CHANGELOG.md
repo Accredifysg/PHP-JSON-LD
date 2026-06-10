@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-06-10
+
+toRdf harness: compare RDF datasets as sets (de-duplicate quads).
+
+W3C JSON-LD 1.1 test suite (corrected `toEqual` gate):
+
+```
+            expand   compact   toRdf
+v0.68.0:      378      246      459
+v0.69.0:      378      246      460   (+1 toRdf)
+```
+
+### Fixed (test harness)
+
+- The toRdf comparison now de-duplicates quads before comparing, matching the
+  RDF data model (a dataset is a *set* of quads, compared up to isomorphism).
+  The same value reached through two `@index` keys yields the same triple once
+  its `@index` is dropped in RDF; our `toNQuads` already serialises a proper
+  de-duplicated set, but the harness's line-multiplicity comparison wrongly
+  expected the reference fixture's duplicate lines (`#te036`). No library code
+  changed — the processor's toRdf output is unchanged and remains a valid
+  (de-duplicated) RDF dataset.
+
+The remaining 7 toRdf failures are all genuine environment/spec-accommodation
+blockers — the same set as expansion's tail: `#tc031` (offline relative URL),
+`#tc032`/`#tc033` (unused-context error), `#te128` (shared-context circular
+ref), `#ter56` (VC `@context`-term accommodation), `#tin06` (json.api),
+`#tjs10` (PHP `json_decode` `{}`-vs-`[]`).
+
 ## [0.68.0] - 2026-06-10
 
 toRdf: JSON Canonicalization Scheme for `@json` literals.

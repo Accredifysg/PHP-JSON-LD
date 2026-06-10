@@ -120,6 +120,10 @@ function normaliseNQuads(string $nquads): string
         static fn (string $line): string => remapNQuadsLine($line, static fn (string $label): string => $map[$label] ?? $label),
         $lines,
     );
+    // An RDF dataset is a SET of quads, so duplicate quads (e.g. the same value
+    // reached through two @index keys, whose @index is dropped in RDF — #te036)
+    // are semantically irrelevant: compare datasets up to set membership.
+    $relabelled = array_values(array_unique($relabelled));
     sort($relabelled, SORT_STRING);
 
     return implode("\n", $relabelled);
@@ -241,10 +245,13 @@ function nQuadsIsomorphic(array $a, array $b): bool
  */
 function nQuadsLines(string $nquads): array
 {
-    return array_values(array_filter(
+    // Deduplicate: a dataset is a set, so exact-duplicate quads do not affect
+    // isomorphism (the count-based prune in nQuadsIsomorphic must see set
+    // cardinality, not line multiplicity).
+    return array_values(array_unique(array_filter(
         array_map('trim', explode("\n", $nquads)),
         static fn (string $l): bool => $l !== '',
-    ));
+    )));
 }
 
 it('serialises to RDF per W3C manifest', function (TestCase $test) {
