@@ -103,12 +103,23 @@ composer test:w3c
 | RDF to JSON-LD (`fromRdf`) | —           |         — |       — | out of scope (1.x)       |
 
 **Totals: 1084 / 1098 passing** across the three in-scope manifests; Compaction
-is fully conformant. The 14 residual failures (7 in the expand manifest, 7 in
-toRdf) trace to the **same 7 test IDs** — all environment- or
-spec-accommodation blockers, not capability gaps: `#tc031` (offline relative
-URL), `#tc032`/`#tc033` (unused-context error), `#te128` (shared-context
-circular ref), `#ter56` (VC `@context`-term accommodation), `#tin06`
-(`json.api`), `#tjs10` (PHP `json_decode` `{}`-vs-`[]`). See the
+is fully conformant. The 14 residual non-conformances (7 in the expand
+manifest, 7 in toRdf) are **9 distinct test IDs** — five shared by both
+manifests plus a couple unique to each — and are mostly environment /
+spec-accommodation limits, with a few minor validation gaps:
+
+- `#tc031` — context uses a relative URL resolving outside the offline fixture base
+- `#tc032` / `#tc033` — *unused* embedded contexts aren't validated (negative tests)
+- `#ter56` — redefining the `@context` keyword isn't rejected (negative test)
+- `#t0128` (expand) / `#te128` (toRdf) — two scoped contexts sharing a context trip the offline circular-reference guard
+- `#tin06` — the `json.api` `@included`-blocks example produces a different shape
+- `#t0122` (expand only) — keyword-shaped (`@`) IRIs are kept rather than ignored
+- `#tjs10` (toRdf only) — JSON-literal structural canonicalization differs
+
+These are carried as an explicit expected-failure allowlist
+([`tests/W3c/KnownBlockers.php`](tests/W3c/KnownBlockers.php)) so the
+conformance suite stays green and **gates CI** — any new regression, or a
+listed blocker that starts passing, fails the build. See the
 [CHANGELOG](CHANGELOG.md) and
 [tests/W3c/README.md](tests/W3c/README.md) for the full release-over-release
 history.

@@ -50,10 +50,16 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    378 passed /   7 failed (v1.0.0)
-Compaction:   246 passed /   0 failed (v1.0.0)  ← 100%
-toRdf:        460 passed /   7 failed (v1.0.0)  ← remaining 7 are blockers
+Expansion:    378 passed /   7 expected-skip (v1.0.0)
+Compaction:   246 passed /   0 expected-skip (v1.0.0)  ← 100%
+toRdf:        460 passed /   7 expected-skip (v1.0.0)
 ```
+
+The 14 expected-skips are an explicit expected-failure (xfail) allowlist in
+[`KnownBlockers.php`](KnownBlockers.php): a listed test that still fails is
+skipped (so `composer test:w3c` exits 0 and **gates CI**), but a listed test
+that starts passing fails the suite — so the list can't silently rot — and any
+*unlisted* failure fails as a real regression.
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
 > to `toEqual` (spec-accurate: object-key order insignificant, array order

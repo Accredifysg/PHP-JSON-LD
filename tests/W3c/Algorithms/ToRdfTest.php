@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Accredify\JsonLd\Tests\W3c\Harness;
+use Accredify\JsonLd\Tests\W3c\KnownBlockers;
 use Accredify\JsonLd\Tests\W3c\NotImplementedException;
 use Accredify\JsonLd\Tests\W3c\Support\PhpJsonLdAdapter;
 use Accredify\JsonLd\Tests\W3c\TestCase;
@@ -254,7 +255,15 @@ function nQuadsLines(string $nquads): array
     )));
 }
 
-it('serialises to RDF per W3C manifest', function (TestCase $test) {
+/**
+ * Runs one toRdf test and THROWS on any non-conformance (a positive test that
+ * errors or whose N-Quads differ, or a negative test that fails to error).
+ * Returns normally iff the processor conforms; NotImplementedException
+ * propagates so the caller can skip. The throws-on-failure shape lets the
+ * caller apply expected-failure (xfail) semantics uniformly.
+ */
+function assertToRdfConforms(TestCase $test): void
+{
     $processor = PhpJsonLdAdapter::default();
 
     $options = $test->options;
@@ -264,11 +273,11 @@ it('serialises to RDF per W3C manifest', function (TestCase $test) {
 
     try {
         $actual = $processor->toRdf($test->loadInput(), $options);
-    } catch (NotImplementedException) {
-        $this->markTestSkipped('toRdf not yet implemented');
+    } catch (NotImplementedException $e) {
+        throw $e;
     } catch (Throwable $e) {
-        // Loader / expansion / conversion error. A pass for negative tests
-        // (the spec expected an error); a failure for positive tests.
+        // Loader / expansion / conversion error. The expected outcome for
+        // negative tests; non-conformance for positive tests.
         if ($test->isNegative) {
             expect(true)->toBeTrue();
 
@@ -278,11 +287,11 @@ it('serialises to RDF per W3C manifest', function (TestCase $test) {
     }
 
     if ($test->isNegative) {
-        $this->fail('Negative tests should throw, but the processor returned a result');
+        throw new RuntimeException('Negative test should have thrown, but the processor returned a result');
     }
 
     if ($test->expectPath === null) {
-        // jld:PositiveSyntaxTest — no expected fixture; passing means the
+        // jld:PositiveSyntaxTest — no expected fixture; conforming means the
         // processor produced valid output without raising.
         expect($actual)->toBeString();
 
@@ -298,4 +307,24 @@ it('serialises to RDF per W3C manifest', function (TestCase $test) {
         || nQuadsIsomorphic(nQuadsLines($actual), nQuadsLines($expected));
 
     expect($matches)->toBeTrue();
+}
+
+it('serialises to RDF per W3C manifest', function (TestCase $test) {
+    // Expected-failure allowlist — see ExpansionTest / KnownBlockers.
+    $blockerReason = KnownBlockers::TO_RDF[$test->id] ?? null;
+
+    try {
+        assertToRdfConforms($test);
+    } catch (NotImplementedException) {
+        $this->markTestSkipped('toRdf not yet implemented');
+    } catch (Throwable $e) {
+        if ($blockerReason !== null) {
+            $this->markTestSkipped("known W3C blocker {$test->id}: {$blockerReason}");
+        }
+        throw $e;
+    }
+
+    if ($blockerReason !== null) {
+        $this->fail("{$test->id} is on the known-blocker allowlist but now conforms — remove it from KnownBlockers::TO_RDF.");
+    }
 })->with('to-rdf-tests');

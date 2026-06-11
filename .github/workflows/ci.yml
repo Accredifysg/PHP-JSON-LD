@@ -51,12 +51,12 @@ jobs:
         run: composer test
 
   conformance:
-    name: W3C Conformance Report
+    name: W3C Conformance
     runs-on: ubuntu-latest
-    # Informational only — does not gate merges. The PASS/FAIL count is the
-    # signal; this job stays yellow because of the documented residual
-    # blockers (7 expand, 7 toRdf — see the CHANGELOG), not regressions.
-    continue-on-error: true
+    # Gating. The 14 known blockers (7 expand, 7 toRdf) are an explicit
+    # expected-failure allowlist in tests/W3c/KnownBlockers.php, so the suite
+    # exits 0. Any NEW conformance regression — or a listed blocker that starts
+    # passing — fails this job.
 
     steps:
       - name: Checkout (with W3C submodule)
