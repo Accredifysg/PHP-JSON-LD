@@ -54,8 +54,8 @@ jobs:
     name: W3C Conformance Report
     runs-on: ubuntu-latest
     # Informational only — does not gate merges. The PASS/FAIL count is the
-    # signal; this job is expected to stay yellow until Phase 4 lands real
-    # algorithms.
+    # signal; this job stays yellow because of the documented residual
+    # blockers (7 expand, 7 toRdf — see the CHANGELOG), not regressions.
     continue-on-error: true
 
     steps:

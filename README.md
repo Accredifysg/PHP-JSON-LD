@@ -5,16 +5,18 @@
 <!-- ![Packagist Version](https://img.shields.io/packagist/v/accredifysg/php-json-ld) -->
 <!-- ![PHP Version](https://img.shields.io/packagist/php-v/accredifysg/php-json-ld) -->
 <!-- ![License](https://img.shields.io/packagist/l/accredifysg/php-json-ld) -->
-<!-- ![JSON-LD 1.1 Compliance](https://img.shields.io/badge/JSON--LD%201.1-WIP-orange) -->
+<!-- ![JSON-LD 1.1 Compliance](https://img.shields.io/badge/JSON--LD%201.1-partial-green) -->
 
 A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) specification.
 
-> **Status: Pre-1.0.** v0.1.0 ships the JSON-LD code extracted from
-> [accredifysg/verifiable-credentials-php](https://github.com/accredifysg/verifiable-credentials-php).
-> It is functionally complete for VCv2 / Open Badges v3 expansion but is
-> **not yet spec-compliant** with JSON-LD 1.1 — see
-> [CHANGELOG](CHANGELOG.md) for known limitations. The public API may change
-> before v1.0.
+> **Status: stable (1.0).** The public API is stable and the project follows
+> [Semantic Versioning](https://semver.org/) — breaking changes bump the major
+> version. v1.0.0 delivers spec-compliant JSON-LD 1.1 **Expansion**,
+> **Compaction**, and **Serialize to RDF** (`toRdf`), validated against the
+> official W3C JSON-LD 1.1 test suite — see the
+> [compliance matrix](#compliance) for per-algorithm conformance and the
+> [CHANGELOG](CHANGELOG.md) for the enumerated residual blockers. Flattening,
+> Framing, and RDF-to-JSON-LD (`fromRdf`) remain out of scope for the 1.x line.
 
 ## Goals
 
@@ -26,12 +28,12 @@ A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) spec
   not required).
 - Tested against the [official W3C JSON-LD test suite](https://github.com/w3c/json-ld-api).
 
-## Planned scope (v1.0)
+## Scope (delivered in v1.0)
 
 - [x] Custom `DocumentLoader` interface
-- [~] Expansion (§5.5) — implemented; ~378/385 of the W3C expand suite (the remaining 7 are environment/spec-accommodation blockers)
+- [x] Expansion (§5.5) — **378/385 of the W3C expand suite** (the remaining 7 are environment/spec-accommodation blockers)
 - [x] Compaction (§5.6) — **246/246 of the W3C compact suite (100%)**: container-maps (incl. property-valued `@index`, `@type`-map node refs), keyword recursion, `@nest`, nested `@list`, `@graph` maps, `@reverse` (incl. per-value term selection and containers), full inverse-context term scoring (list/direction-aware, `@json` literals), property-/type-scoped contexts with scoped `@base`/`@vocab`, IRI relativisation, expand-first normalisation, the `compactArrays` option, §5.7 prefix rules and error conditions
-- [~] Serialize JSON-LD to RDF (§7 / `toRdf`) — implemented; **460/467 of the W3C toRdf suite** (the remaining 7 are environment/spec-accommodation blockers); N-Quads output incl. `rdfDirection`, `produceGeneralizedRdf`, and JCS `@json` canonicalization
+- [x] Serialize JSON-LD to RDF (§7 / `toRdf`) — **460/467 of the W3C toRdf suite** (the remaining 7 are environment/spec-accommodation blockers); N-Quads output incl. `rdfDirection`, `produceGeneralizedRdf`, and JCS `@json` canonicalization
 
 > Suite numbers from v0.42.0 use the spec-accurate `toEqual` comparison
 > (object-key order insignificant, array order significant); earlier numbers
@@ -42,7 +44,7 @@ Out of scope for v1.0: Flattening, Framing, RDF-to-JSON-LD (`fromRdf`).
 ## Installation
 
 ```bash
-composer require accredifysg/php-json-ld:^0.1
+composer require accredifysg/php-json-ld:^1.0
 ```
 
 Requires PHP 8.1+. You also need a PSR-18 HTTP client + PSR-17 request
@@ -89,8 +91,31 @@ composer test
 composer test:w3c
 ```
 
-A per-algorithm PASS/FAIL matrix will appear in this section once Phase 4 is
-in progress (see [the plan](docs/plan.md)).
+### Conformance matrix (v1.0.0)
+
+| Algorithm                  | Spec        | W3C suite | Passing | Conformance              |
+| -------------------------- | ----------- | --------: | ------: | ------------------------ |
+| Expansion                  | §5.5        |       385 |     378 | 7 documented blockers    |
+| Compaction                 | §5.6        |       246 |     246 | **100%**                 |
+| Serialize to RDF (`toRdf`) | §7          |       467 |     460 | 7 documented blockers    |
+| Flattening                 | —           |         — |       — | out of scope (1.x)       |
+| Framing                    | —           |         — |       — | out of scope (1.x)       |
+| RDF to JSON-LD (`fromRdf`) | —           |         — |       — | out of scope (1.x)       |
+
+**Totals: 1084 / 1098 passing** across the three in-scope manifests; Compaction
+is fully conformant. The 14 residual failures (7 in the expand manifest, 7 in
+toRdf) trace to the **same 7 test IDs** — all environment- or
+spec-accommodation blockers, not capability gaps: `#tc031` (offline relative
+URL), `#tc032`/`#tc033` (unused-context error), `#te128` (shared-context
+circular ref), `#ter56` (VC `@context`-term accommodation), `#tin06`
+(`json.api`), `#tjs10` (PHP `json_decode` `{}`-vs-`[]`). See the
+[CHANGELOG](CHANGELOG.md) and
+[tests/W3c/README.md](tests/W3c/README.md) for the full release-over-release
+history.
+
+> Counts use the spec-accurate `toEqual` comparison (object-key order
+> insignificant, array order significant) introduced in v0.42.0; earlier
+> figures used a looser comparison and are not directly comparable.
 
 ### Characterization fixtures
 
@@ -98,13 +123,13 @@ in progress (see [the plan](docs/plan.md)).
 output, generated from running the original
 `accredifysg/verifiable-credentials-php` JsonLdProcessor over a set of
 sample documents. They are NOT a spec-conformance reference — they pin
-the package's current quirky behaviour so that spec-correctness work in
-later phases can land each behaviour change in a reviewable diff.
+the package's behaviour so that any change to expansion output lands as a
+reviewable diff.
 
-When a Phase 4 PR changes expansion in a way that updates these fixtures,
-the update should be reviewed for correctness and paired with any
-matching change in downstream consumers (e.g. VC's signed-credential
-test fixtures).
+When a PR changes expansion in a way that updates these fixtures, the
+update should be reviewed for correctness and paired with any matching
+change in downstream consumers (e.g. VC's signed-credential test
+fixtures).
 
 ## License
 

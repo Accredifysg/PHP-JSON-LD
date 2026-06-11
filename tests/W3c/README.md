@@ -50,9 +50,9 @@ composer test:all
 ## Current score
 
 ```
-Expansion:    378 passed /   7 failed (v0.69.0)
-Compaction:   246 passed /   0 failed (v0.69.0)  ← 100%
-toRdf:        460 passed /   7 failed (v0.69.0)  ← remaining 7 are blockers
+Expansion:    378 passed /   7 failed (v1.0.0)
+Compaction:   246 passed /   0 failed (v1.0.0)  ← 100%
+toRdf:        460 passed /   7 failed (v1.0.0)  ← remaining 7 are blockers
 ```
 
 > v0.42.0 corrected the expand/compact comparison from `toEqualCanonicalizing`
@@ -60,7 +60,7 @@ toRdf:        460 passed /   7 failed (v0.69.0)  ← remaining 7 are blockers
 > significant). Counts from v0.42.0 onward are not directly comparable to
 > earlier rows, which used the looser (gate-inflated) comparison.
 
-Each Phase 4 PR:
+Each conformance PR:
 1. Re-runs `composer test:w3c`.
 2. Records the before / after `passed` count in the commit message.
 3. Never regresses the `passed` count.
@@ -138,6 +138,7 @@ Each Phase 4 PR:
 | v0.67.0 |          378  |    +0  | toRdf: empty node → blank node; @id-vanished node dropped (+2 toRdf)|
 | v0.68.0 |          378  |    +0  | toRdf: JSON Canonicalization Scheme (ECMAScript numbers) for @json (+1 toRdf)|
 | v0.69.0 |          378  |    +0  | toRdf harness: compare RDF datasets as sets (dedupe quads) (+1 toRdf — remaining 7 are blockers)|
+| v1.0.0  |          378  |    +0  | first stable release — public API frozen; scores re-verified (1084/1098)|
 
 ### Notes on v0.4.0
 

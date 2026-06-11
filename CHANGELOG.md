@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-11
+
+First stable release. The public API is now covered by
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html) — breaking changes
+bump the major version.
+
+No library code changed since v0.69.0; this release stabilises the public API
+and finalises the documentation. Conformance is therefore identical to
+v0.69.0, re-verified against the W3C JSON-LD 1.1 test suite at release time:
+
+```
+            expand     compact    toRdf      total
+v1.0.0:    378/385    246/246    460/467    1084/1098
+```
+
+### Delivered
+
+- Spec-compliant JSON-LD 1.1 **Expansion** (§5.5), **Compaction** (§5.6 —
+  246/246, 100% of the W3C compact suite), and **Serialize to RDF** /
+  `toRdf` (§7).
+- Pluggable `DocumentLoader` with no mandatory HTTP-client dependency; bundled
+  `HttpDocumentLoader` and `CachingDocumentLoader` for consumers that want one.
+- N-Quads output including `rdfDirection`, `produceGeneralizedRdf`, and the
+  JSON Canonicalization Scheme (RFC 8785) for `@json` literals.
+
+### Known limitations
+
+- The 14 residual W3C failures (7 in the expand manifest, 7 in toRdf) trace to
+  the **same 7 test IDs** and are environment- or spec-accommodation blockers,
+  not capability gaps: `#tc031` (offline relative URL), `#tc032`/`#tc033`
+  (unused-context error), `#te128` (shared-context circular ref), `#ter56` (VC
+  `@context`-term accommodation), `#tin06` (`json.api`), `#tjs10` (PHP
+  `json_decode` `{}`-vs-`[]`).
+- Flattening, Framing, and RDF-to-JSON-LD (`fromRdf`) are out of scope for the
+  1.x line.
+
 ## [0.69.0] - 2026-06-10
 
 toRdf harness: compare RDF datasets as sets (de-duplicate quads).
@@ -2555,7 +2591,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/accredifysg/php-json-ld/compare/v0.69.0...v1.0.0
 [0.11.0]: https://github.com/accredifysg/php-json-ld/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/accredifysg/php-json-ld/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/accredifysg/php-json-ld/compare/v0.8.0...v0.9.0
