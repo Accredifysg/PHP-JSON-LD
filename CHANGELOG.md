@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-11
+
+### Changed
+
+- **Minimum PHP raised to 8.2** (`composer.json` now requires `^8.2`). PHP 8.1
+  is end-of-life (security support ended November 2025) and the dev test
+  toolchain (`pestphp/pest` → `brianium/paratest`) no longer installs on 8.1,
+  so the v1.0.0 `^8.1` claim could not actually be built or CI-verified on 8.1.
+  The library's runtime behaviour is unchanged and remains compatible with PHP
+  8.2 / 8.3 / 8.4; the only consumer
+  (`accredifysg/verifiable-credentials-php`) already requires `^8.2`. The CI
+  matrix drops its 8.1 leg accordingly.
+
+### Fixed
+
+- Removed four redundant `is_string()` sub-conditions in
+  `Context\TermDefinitions` term-definition validation that PHPStan 2.2 reports
+  as always-true (`booleanAnd.rightAlwaysTrue`) — the `@id` and `@type` offsets
+  are already proven to be strings by the earlier validation guards. Behaviour
+  is unchanged (each condition was true whenever it was reached); this only
+  restores a green `phpstan analyse` (level max) under the current PHPStan
+  release that CI resolves to. Conformance is unchanged (W3C 1084/1098).
+
 ## [1.0.0] - 2026-06-11
 
 First stable release. The public API is now covered by
@@ -2591,7 +2614,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/accredifysg/php-json-ld/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/accredifysg/php-json-ld/compare/v0.69.0...v1.0.0
 [0.11.0]: https://github.com/accredifysg/php-json-ld/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/accredifysg/php-json-ld/compare/v0.9.0...v0.10.0

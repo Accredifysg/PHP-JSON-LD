@@ -499,7 +499,9 @@ class TermDefinitions
         // (@id/@vocab/@json/@none) or resolve to an absolute IRI — not a blank
         // node, and not an unresolvable relative IRI (no @vocab to resolve a
         // bare value).
-        if (isset($definition['@type']) && is_string($definition['@type'])) {
+        // @type, when present, is already guaranteed to be a string by the
+        // validation guard above.
+        if (isset($definition['@type'])) {
             $type = $definition['@type'];
             // @type: @none is a JSON-LD 1.1 feature — invalid in 1.0.
             if ($this->isJson10() && $type === Keyword::None->value) {
@@ -543,7 +545,6 @@ class TermDefinitions
         if (
             ! $this->isJson10()
             && isset($definition['@id'])
-            && is_string($definition['@id'])
             && $definition['@id'] !== $term
             && $this->isIriShapedTerm($term)
         ) {
@@ -559,7 +560,7 @@ class TermDefinitions
         // prefix is the term itself (e.g. "term": {"@id": "term:term"}) would
         // expand to itself forever — reject it (#ter10). Absolute IRIs
         // (scheme://…), blank nodes (_:) and keyword @ids are not self-prefixes.
-        if (isset($definition['@id']) && is_string($definition['@id']) && ! Keyword::contains($definition['@id'])) {
+        if (isset($definition['@id']) && ! Keyword::contains($definition['@id'])) {
             $id = $definition['@id'];
             $colon = strpos($id, ':');
             if ($colon !== false) {
@@ -644,7 +645,6 @@ class TermDefinitions
             if (
                 in_array(Keyword::Type->value, $containerEntries, true)
                 && isset($definition['@type'])
-                && is_string($definition['@type'])
                 && $definition['@type'] !== Keyword::Id->value
                 && $definition['@type'] !== Keyword::Vocab->value
             ) {

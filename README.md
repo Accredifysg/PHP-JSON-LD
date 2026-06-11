@@ -47,7 +47,7 @@ Out of scope for v1.0: Flattening, Framing, RDF-to-JSON-LD (`fromRdf`).
 composer require accredifysg/php-json-ld:^1.0
 ```
 
-Requires PHP 8.1+. You also need a PSR-18 HTTP client + PSR-17 request
+Requires PHP 8.2+. You also need a PSR-18 HTTP client + PSR-17 request
 factory if you use the bundled `HttpDocumentLoader` (e.g. `guzzlehttp/guzzle`
 and `guzzlehttp/psr7`), or you can implement `DocumentLoader` yourself to
 serve `@context` URLs from wherever you like.
