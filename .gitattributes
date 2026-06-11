@@ -19,6 +19,7 @@
 /.gitmodules      export-ignore
 /.github          export-ignore
 /CHANGELOG.md     export-ignore
+/composer.lock    export-ignore
 /Pest.php         export-ignore
 /phpstan.neon.dist export-ignore
 /phpunit.xml      export-ignore

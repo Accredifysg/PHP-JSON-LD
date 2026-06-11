@@ -1,0 +1,21 @@
+# Dependabot keeps the committed composer.lock and CI actions current.
+# The lock is committed for deterministic CI (see CONTRIBUTING/README); bumps
+# arrive as reviewable PRs that run the full matrix before merge, instead of
+# the CI floating to latest and breaking on an unrelated push.
+version: 2
+updates:
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
