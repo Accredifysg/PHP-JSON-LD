@@ -6,12 +6,14 @@ namespace Accredify\JsonLd;
 
 use Accredify\JsonLd\Algorithms\Compaction;
 use Accredify\JsonLd\Algorithms\Expansion;
+use Accredify\JsonLd\Algorithms\Flattening;
 use Accredify\JsonLd\Algorithms\ToRdf;
 use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Contracts\DocumentLoader;
 use Accredify\JsonLd\Contracts\Processor;
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
+use Accredify\JsonLd\Documents\FlattenedDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Enums\Keyword;
 
@@ -111,6 +113,38 @@ final class JsonLdProcessor implements Processor
 
         /** @var array<string, mixed> $compacted */
         return new CompactedDocument($compacted);
+    }
+
+    public function flatten(array $document, array|string|null $context = null, ?JsonLdOptions $options = null): FlattenedDocument
+    {
+        // Expand first. A missing @context is tolerated (the document expands
+        // against an empty active context), mirroring toRdf().
+        $documentForContext = $document;
+        if (! isset($documentForContext['@context'])) {
+            $documentForContext['@context'] = [];
+        }
+        $documentForContext['@context'] = $this->withExpandContext($documentForContext['@context'], $options);
+
+        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode);
+
+        $documentWithoutContext = $document;
+        unset($documentWithoutContext['@context']);
+
+        $expanded = (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader))
+            ->expand($documentWithoutContext);
+
+        $flattened = (new Flattening)->flatten($expanded);
+
+        // §4.6 step 7: with no context, return the expanded-flattened form.
+        if ($context === null || $context === [] || $context === '') {
+            return new FlattenedDocument($flattened);
+        }
+
+        // §4.6 step 8: otherwise compact the flattened output against the
+        // supplied context. Reuse compact(), which wraps multiple nodes (and,
+        // with compactArrays:false, a single node) in @graph and prepends the
+        // @context — the shape flattened output requires.
+        return new FlattenedDocument($this->compact($flattened, $context, $options)->toArray());
     }
 
     public function toRdf(array $document, ?JsonLdOptions $options = null): RdfDataset

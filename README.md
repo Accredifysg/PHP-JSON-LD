@@ -9,14 +9,14 @@
 
 A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) specification.
 
-> **Status: stable (1.0).** The public API is stable and the project follows
+> **Status: stable.** The public API is stable and the project follows
 > [Semantic Versioning](https://semver.org/) — breaking changes bump the major
-> version. v1.0.0 delivers spec-compliant JSON-LD 1.1 **Expansion**,
-> **Compaction**, and **Serialize to RDF** (`toRdf`), validated against the
-> official W3C JSON-LD 1.1 test suite — see the
+> version. The package delivers spec-compliant JSON-LD 1.1 **Expansion**,
+> **Compaction**, **Serialize to RDF** (`toRdf`), and **Flattening**, validated
+> against the official W3C JSON-LD 1.1 test suite — see the
 > [compliance matrix](#compliance) for per-algorithm conformance and the
-> [CHANGELOG](CHANGELOG.md) for the enumerated residual blockers. Flattening,
-> Framing, and RDF-to-JSON-LD (`fromRdf`) remain out of scope for the 1.x line.
+> [CHANGELOG](CHANGELOG.md) for the enumerated residual blockers. Framing and
+> RDF-to-JSON-LD (`fromRdf`) remain out of scope.
 
 ## Goals
 
@@ -28,18 +28,19 @@ A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) spec
   not required).
 - Tested against the [official W3C JSON-LD test suite](https://github.com/w3c/json-ld-api).
 
-## Scope (delivered in v1.0)
+## Scope (delivered)
 
 - [x] Custom `DocumentLoader` interface
 - [x] Expansion (§5.5) — **378/385 of the W3C expand suite** (the remaining 7 are environment/spec-accommodation blockers)
 - [x] Compaction (§5.6) — **246/246 of the W3C compact suite (100%)**: container-maps (incl. property-valued `@index`, `@type`-map node refs), keyword recursion, `@nest`, nested `@list`, `@graph` maps, `@reverse` (incl. per-value term selection and containers), full inverse-context term scoring (list/direction-aware, `@json` literals), property-/type-scoped contexts with scoped `@base`/`@vocab`, IRI relativisation, expand-first normalisation, the `compactArrays` option, §5.7 prefix rules and error conditions
 - [x] Serialize JSON-LD to RDF (§7 / `toRdf`) — **460/467 of the W3C toRdf suite** (the remaining 7 are environment/spec-accommodation blockers); N-Quads output incl. `rdfDirection`, `produceGeneralizedRdf`, and JCS `@json` canonicalization
+- [x] Flattening (§4.6 / `flatten`) — **57/58 of the W3C flatten suite** (the lone blocker, `#tin06`, is the shared `@included` upstream blocker); folds named graphs into `@graph`, with optional compaction when a context is supplied
 
 > Suite numbers from v0.42.0 use the spec-accurate `toEqual` comparison
 > (object-key order insignificant, array order significant); earlier numbers
 > used a looser comparison and are not directly comparable — see the CHANGELOG.
 
-Out of scope for v1.0: Flattening, Framing, RDF-to-JSON-LD (`fromRdf`).
+Out of scope: Framing and RDF-to-JSON-LD (`fromRdf`).
 
 ## Installation
 
@@ -91,28 +92,28 @@ composer test
 composer test:w3c
 ```
 
-### Conformance matrix (v1.0.0)
+### Conformance matrix
 
 | Algorithm                  | Spec        | W3C suite | Passing | Conformance              |
 | -------------------------- | ----------- | --------: | ------: | ------------------------ |
 | Expansion                  | §5.5        |       385 |     378 | 7 documented blockers    |
 | Compaction                 | §5.6        |       246 |     246 | **100%**                 |
 | Serialize to RDF (`toRdf`) | §7          |       467 |     460 | 7 documented blockers    |
-| Flattening                 | —           |         — |       — | out of scope (1.x)       |
-| Framing                    | —           |         — |       — | out of scope (1.x)       |
-| RDF to JSON-LD (`fromRdf`) | —           |         — |       — | out of scope (1.x)       |
+| Flattening                 | §4.6        |        58 |      57 | 1 documented blocker     |
+| Framing                    | —           |         — |       — | out of scope             |
+| RDF to JSON-LD (`fromRdf`) | —           |         — |       — | out of scope             |
 
-**Totals: 1084 / 1098 passing** across the three in-scope manifests; Compaction
-is fully conformant. The 14 residual non-conformances (7 in the expand
-manifest, 7 in toRdf) are **9 distinct test IDs** — five shared by both
-manifests plus a couple unique to each — and are mostly environment /
-spec-accommodation limits, with a few minor validation gaps:
+**Totals: 1141 / 1156 passing** across the four in-scope manifests; Compaction
+is fully conformant. The 15 residual non-conformances (7 in the expand
+manifest, 7 in toRdf, 1 in flatten) are **9 distinct test IDs** — shared across
+manifests — and are mostly environment / spec-accommodation limits, with a few
+minor validation gaps:
 
 - `#tc031` — context uses a relative URL resolving outside the offline fixture base
 - `#tc032` / `#tc033` — *unused* embedded contexts aren't validated (negative tests)
 - `#ter56` — redefining the `@context` keyword isn't rejected (negative test)
 - `#t0128` (expand) / `#te128` (toRdf) — two scoped contexts sharing a context trip the offline circular-reference guard
-- `#tin06` — the `json.api` `@included`-blocks example produces a different shape
+- `#tin06` — the `json.api` `@included`-blocks example produces a different shape (expand, toRdf, flatten)
 - `#t0122` (expand only) — keyword-shaped (`@`) IRIs are kept rather than ignored
 - `#tjs10` (toRdf only) — JSON-literal structural canonicalization differs
 
