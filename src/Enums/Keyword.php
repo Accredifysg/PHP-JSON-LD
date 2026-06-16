@@ -20,6 +20,7 @@ enum Keyword: string
     case Base = '@base';
     case Container = '@container';
     case Context = '@context';
+    case Default = '@default';
     case Direction = '@direction';
     case Graph = '@graph';
     case Id = '@id';

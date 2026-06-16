@@ -6,6 +6,7 @@ namespace Accredify\JsonLd\Contracts;
 
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
+use Accredify\JsonLd\Documents\FlattenedDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\JsonLdOptions;
@@ -13,7 +14,7 @@ use Accredify\JsonLd\JsonLdOptions;
 /**
  * Public entry point for the package's algorithms.
  *
- * `expand`, `compact`, and `toRdf` are implemented.
+ * `expand`, `compact`, `flatten`, and `toRdf` are implemented.
  *
  * Kept as a separate interface from {@see DocumentLoader} so that consumers
  * can mock just the processor in tests without worrying about loader
@@ -49,6 +50,28 @@ interface Processor
      * @throws JsonLdException
      */
     public function compact(array $expanded, array|string $context, ?JsonLdOptions $options = null): CompactedDocument;
+
+    /**
+     * Flatten a JSON-LD document (the Flattening algorithm,
+     * {@link https://www.w3.org/TR/json-ld11-api/#flattening-algorithm §4.6}):
+     * collect every node object into a single flat array in the default graph,
+     * labelling blank nodes deterministically.
+     *
+     * As with {@see toRdf()}, a missing `@context` is tolerated.
+     *
+     * @param  array<array-key, mixed>  $document  A JSON-LD document.
+     * @param  array<array-key, mixed>|string|null  $context  When non-null, the
+     *                                                        flattened output is
+     *                                                        compacted against it
+     *                                                        and wrapped in
+     *                                                        `@graph`; when null
+     *                                                        the expanded-flattened
+     *                                                        form is returned.
+     * @param  JsonLdOptions|null  $options  API options. Null uses the defaults.
+     *
+     * @throws JsonLdException
+     */
+    public function flatten(array $document, array|string|null $context = null, ?JsonLdOptions $options = null): FlattenedDocument;
 
     /**
      * Deserialize a JSON-LD document to an RDF dataset (the toRdf algorithm).

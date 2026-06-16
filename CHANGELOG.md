@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **The next release is 2.0.0.** The JSON-LD 1.1 algorithms still missing from
+> the 1.x line — Flattening (below) and the planned `fromRdf` / `frame` — are
+> added to the public `Contracts\Processor` interface. Adding methods to a
+> published interface is a breaking change for downstream implementers, so these
+> algorithm additions are bundled into one major release rather than shipped
+> piecemeal. Callers using the concrete `JsonLdProcessor` are unaffected, and
+> the expand / compact / toRdf OUTPUT is unchanged throughout.
+
+### Added
+
+- **Flattening** — a new `Processor::flatten()` / `JsonLdProcessor::flatten()`
+  implementing the JSON-LD 1.1 Flattening Algorithm: collect every node object
+  into a single flat array in the default graph, labelling blank nodes
+  deterministically and folding each named graph into a `@graph` entry on its
+  graph-name node; with a supplied context the flattened output is compacted and
+  `@graph`-wrapped (reusing the Compaction algorithm). New `Algorithms\Flattening`
+  (built on the existing `Algorithms\NodeMap` node-map generation, exactly as
+  `toRdf` is), the `Documents\FlattenedDocument` result wrapper, and the
+  `Keyword::Default` case. **57/58 of the W3C flatten suite** (the lone blocker,
+  `#tin06`, is the same `json.api` `@included`-blocks shape difference already
+  carried for expand/toRdf); W3C total now 1141/1156.
+
+### Changed
+
+- **BREAKING:** `Contracts\Processor` gains `flatten()`. Adding a method to the
+  published interface breaks any downstream implementer, so this (and the
+  forthcoming `fromRdf` / `frame`) lands in 2.0.0. No runtime behaviour change
+  for existing `expand` / `compact` / `toRdf` callers.
+
 ## [1.0.1] - 2026-06-11
 
 ### Changed
