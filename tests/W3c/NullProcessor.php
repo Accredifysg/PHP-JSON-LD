@@ -23,6 +23,11 @@ final class NullProcessor implements Processor
         throw new NotImplementedException('Compaction not implemented');
     }
 
+    public function flatten(array $input, array $context, array $options): array
+    {
+        throw new NotImplementedException('Flattening not implemented');
+    }
+
     public function toRdf(array $input, array $options): string
     {
         throw new NotImplementedException('toRdf not implemented');

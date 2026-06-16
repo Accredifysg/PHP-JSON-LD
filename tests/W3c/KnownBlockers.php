@@ -40,4 +40,9 @@ final class KnownBlockers
         '#tin06' => 'positive: the json.api @included-blocks example serialises to a different N-Quads set.',
         '#tjs10' => 'positive: JSON-literal structural canonicalization differs (PHP json_decode cannot distinguish {} from []).',
     ];
+
+    /** @var array<string, string> flatten-manifest id => reason */
+    public const FLATTEN = [
+        '#tin06' => 'positive: the json.api @included-blocks example expands @id/@type in a different shape (same upstream expansion blocker as EXPAND/TO_RDF #tin06).',
+    ];
 }

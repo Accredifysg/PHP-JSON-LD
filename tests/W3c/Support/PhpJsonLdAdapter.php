@@ -91,6 +91,23 @@ final class PhpJsonLdAdapter implements Processor
             ->toArray();
     }
 
+    public function flatten(array $input, array $context, array $options): array
+    {
+        $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
+
+        // compactArrays defaults to true; a manifest entry may set it false.
+        $compactArrays = isset($options['compactArrays']) && is_bool($options['compactArrays']) ? $options['compactArrays'] : true;
+
+        return (new JsonLdProcessor($this->loader))
+            ->flatten(
+                $input,
+                // An empty context (no `context` fixture) means "no compaction".
+                $context === [] ? null : $context,
+                new JsonLdOptions(base: $base, processingMode: self::processingMode($options), compactArrays: $compactArrays, expandContext: self::expandContext($options)),
+            )
+            ->toArray();
+    }
+
     public function toRdf(array $input, array $options): string
     {
         $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
