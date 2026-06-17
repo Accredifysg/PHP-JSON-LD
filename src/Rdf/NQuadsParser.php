@@ -58,6 +58,13 @@ final class NQuadsParser
         if ($pos >= strlen($line) || $line[$pos] !== '.') {
             throw new JsonLdException("Malformed N-Quads statement (expected '.'): {$line}");
         }
+        $pos++; // consume the terminating '.'
+
+        // Only trailing whitespace may follow the '.'; anything else is garbage.
+        $this->skipWhitespace($line, $pos);
+        if ($pos !== strlen($line)) {
+            throw new JsonLdException("Unexpected trailing content after '.' in N-Quads statement: {$line}");
+        }
 
         return new RdfQuad($subject, $predicate, $object, $graph);
     }
@@ -226,7 +233,7 @@ final class NQuadsParser
                     $i += 10;
                     break;
                 default:
-                    throw new JsonLdException("Invalid escape '\\{$next}' in N-Quads literal: {$s}");
+                    throw new JsonLdException("Invalid escape '\\{$next}' in N-Quads escape sequence: {$s}");
             }
         }
 
@@ -236,14 +243,35 @@ final class NQuadsParser
     private function codepoint(string $hex, int $width, string $context): string
     {
         if (strlen($hex) !== $width || ! ctype_xdigit($hex)) {
-            throw new JsonLdException("Invalid Unicode escape in N-Quads literal: {$context}");
+            throw new JsonLdException("Invalid Unicode escape in N-Quads escape sequence: {$context}");
         }
         $codepoint = (int) hexdec($hex);
-        if ($codepoint > 0x10FFFF) {
-            throw new JsonLdException("Unicode code point out of range in N-Quads literal: {$context}");
+        // Reject out-of-range values and UTF-16 surrogate halves — neither is a
+        // valid Unicode scalar value.
+        if ($codepoint > 0x10FFFF || ($codepoint >= 0xD800 && $codepoint <= 0xDFFF)) {
+            throw new JsonLdException("Unicode code point out of range in N-Quads escape sequence: {$context}");
         }
 
-        return mb_chr($codepoint, 'UTF-8');
+        return self::encodeUtf8($codepoint);
+    }
+
+    /**
+     * Encode a Unicode scalar value as UTF-8, avoiding a hard dependency on
+     * ext-mbstring (`mb_chr`) for a single call.
+     */
+    private static function encodeUtf8(int $codepoint): string
+    {
+        if ($codepoint < 0x80) {
+            return chr($codepoint);
+        }
+        if ($codepoint < 0x800) {
+            return chr(0xC0 | ($codepoint >> 6)).chr(0x80 | ($codepoint & 0x3F));
+        }
+        if ($codepoint < 0x10000) {
+            return chr(0xE0 | ($codepoint >> 12)).chr(0x80 | (($codepoint >> 6) & 0x3F)).chr(0x80 | ($codepoint & 0x3F));
+        }
+
+        return chr(0xF0 | ($codepoint >> 18)).chr(0x80 | (($codepoint >> 12) & 0x3F)).chr(0x80 | (($codepoint >> 6) & 0x3F)).chr(0x80 | ($codepoint & 0x3F));
     }
 
     private function skipWhitespace(string $line, int &$pos): void

@@ -130,3 +130,7 @@ it('throws on a missing terminating dot', function () {
 it('throws on an unterminated literal', function () {
     parseNQuads('<http://e/s> <http://e/p> "oops .'."\n");
 })->throws(JsonLdException::class);
+
+it('throws on trailing content after the terminating dot', function () {
+    parseNQuads('<http://e/s> <http://e/p> <http://e/o> . garbage'."\n");
+})->throws(JsonLdException::class);

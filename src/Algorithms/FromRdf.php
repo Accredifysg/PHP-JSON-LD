@@ -6,7 +6,6 @@ namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Enums\Keyword;
 use Accredify\JsonLd\Exceptions\JsonLdException;
-use Accredify\JsonLd\Rdf\NQuadsParser;
 use Accredify\JsonLd\Rdf\RdfQuad;
 use Accredify\JsonLd\Rdf\RdfTerm;
 use JsonException;
@@ -17,8 +16,8 @@ use JsonException;
  * with RDF to Object Conversion and the linked-list conversion.
  *
  * The inverse of {@see ToRdf}: it consumes a flat list of {@see RdfQuad}
- * (parse N-Quads with {@see NQuadsParser} first) and
- * produces an expanded JSON-LD document.
+ * (parse N-Quads with `NQuadsParser` first) and produces an expanded JSON-LD
+ * document.
  *
  * Blank-node identifiers from the input are preserved (not re-issued). A
  * well-formed `rdf:first`/`rdf:rest`/`rdf:nil` chain is collapsed back to an

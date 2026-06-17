@@ -74,7 +74,12 @@ final class TestCase
             throw new RuntimeException("input file not found at {$this->inputPath}");
         }
 
-        return (string) file_get_contents($this->inputPath);
+        $contents = file_get_contents($this->inputPath);
+        if ($contents === false) {
+            throw new RuntimeException("Failed to read input file at {$this->inputPath}");
+        }
+
+        return $contents;
     }
 
     /**
