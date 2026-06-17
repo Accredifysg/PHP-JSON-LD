@@ -13,7 +13,9 @@ namespace Accredify\JsonLd\Tests\W3c;
  *
  * - expand:   array (the expanded JSON-LD document, always wrapped in [])
  * - compact:  array (the compacted JSON-LD document)
+ * - flatten:  array (the flattened JSON-LD document)
  * - toRdf:    string (N-Quads serialization)
+ * - fromRdf:  array (expanded JSON-LD deserialised from an N-Quads string)
  *
  * Implementations that don't yet support an algorithm should throw
  * {@see NotImplementedException}; the harness will mark the test skipped.
@@ -37,7 +39,21 @@ interface Processor
 
     /**
      * @param  array<mixed>  $input
+     * @param  array<mixed>  $context
+     * @param  array<string, mixed>  $options
+     * @return array<mixed>
+     */
+    public function flatten(array $input, array $context, array $options): array;
+
+    /**
+     * @param  array<mixed>  $input
      * @param  array<string, mixed>  $options
      */
     public function toRdf(array $input, array $options): string;
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return array<mixed>
+     */
+    public function fromRdf(string $input, array $options): array;
 }

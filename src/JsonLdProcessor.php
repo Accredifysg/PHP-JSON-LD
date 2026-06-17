@@ -7,6 +7,7 @@ namespace Accredify\JsonLd;
 use Accredify\JsonLd\Algorithms\Compaction;
 use Accredify\JsonLd\Algorithms\Expansion;
 use Accredify\JsonLd\Algorithms\Flattening;
+use Accredify\JsonLd\Algorithms\FromRdf;
 use Accredify\JsonLd\Algorithms\ToRdf;
 use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Contracts\DocumentLoader;
@@ -14,8 +15,10 @@ use Accredify\JsonLd\Contracts\Processor;
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
 use Accredify\JsonLd\Documents\FlattenedDocument;
+use Accredify\JsonLd\Documents\FromRdfDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Rdf\NQuadsParser;
 
 /**
  * Default {@see Processor} implementation.
@@ -184,5 +187,20 @@ final class JsonLdProcessor implements Processor
             ->expand($documentWithoutContext);
 
         return new RdfDataset((new ToRdf($options?->rdfDirection, $options !== null ? $options->produceGeneralizedRdf : false))->toRdf($expanded));
+    }
+
+    public function fromRdf(RdfDataset|string $input, ?JsonLdOptions $options = null): FromRdfDocument
+    {
+        // An N-Quads string is parsed; an RdfDataset is consumed directly (e.g.
+        // the output of toRdf()), with no string round-trip.
+        $quads = is_string($input) ? (new NQuadsParser)->parse($input) : $input->getQuads();
+
+        $result = (new FromRdf(
+            $options !== null && $options->useNativeTypes,
+            $options !== null && $options->useRdfType,
+            $options?->rdfDirection,
+        ))->fromRdf($quads);
+
+        return new FromRdfDocument($result);
     }
 }

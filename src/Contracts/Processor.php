@@ -7,6 +7,7 @@ namespace Accredify\JsonLd\Contracts;
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
 use Accredify\JsonLd\Documents\FlattenedDocument;
+use Accredify\JsonLd\Documents\FromRdfDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\JsonLdOptions;
@@ -14,7 +15,7 @@ use Accredify\JsonLd\JsonLdOptions;
 /**
  * Public entry point for the package's algorithms.
  *
- * `expand`, `compact`, `flatten`, and `toRdf` are implemented.
+ * `expand`, `compact`, `flatten`, `toRdf`, and `fromRdf` are implemented.
  *
  * Kept as a separate interface from {@see DocumentLoader} so that consumers
  * can mock just the processor in tests without worrying about loader
@@ -87,4 +88,19 @@ interface Processor
      * @throws JsonLdException
      */
     public function toRdf(array $document, ?JsonLdOptions $options = null): RdfDataset;
+
+    /**
+     * Deserialize an RDF dataset to an expanded JSON-LD document (the `fromRdf`
+     * algorithm,
+     * {@link https://www.w3.org/TR/json-ld11-api/#serialize-rdf-as-json-ld-algorithm §4.9}).
+     *
+     * @param  RdfDataset|string  $input  An {@see RdfDataset}, or an N-Quads
+     *                                    string (parsed before deserialisation).
+     * @param  JsonLdOptions|null  $options  API options — `useNativeTypes`,
+     *                                       `useRdfType`, `rdfDirection`. Null
+     *                                       uses the defaults.
+     *
+     * @throws JsonLdException
+     */
+    public function fromRdf(RdfDataset|string $input, ?JsonLdOptions $options = null): FromRdfDocument;
 }

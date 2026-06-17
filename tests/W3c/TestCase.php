@@ -62,6 +62,27 @@ final class TestCase
     }
 
     /**
+     * Loads the input as raw text rather than JSON — used by fromRdf, whose
+     * input fixtures are N-Quads (`.nq`) documents, not JSON.
+     */
+    public function loadInputRaw(): string
+    {
+        if ($this->inputPath === null) {
+            throw new RuntimeException("Test {$this->id} has no input file");
+        }
+        if (! is_file($this->inputPath)) {
+            throw new RuntimeException("input file not found at {$this->inputPath}");
+        }
+
+        $contents = file_get_contents($this->inputPath);
+        if ($contents === false) {
+            throw new RuntimeException("Failed to read input file at {$this->inputPath}");
+        }
+
+        return $contents;
+    }
+
+    /**
      * @return array<mixed>
      */
     private function loadJson(?string $path, string $label): array
