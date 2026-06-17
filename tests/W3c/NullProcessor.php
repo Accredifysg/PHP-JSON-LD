@@ -32,4 +32,9 @@ final class NullProcessor implements Processor
     {
         throw new NotImplementedException('toRdf not implemented');
     }
+
+    public function fromRdf(string $input, array $options): array
+    {
+        throw new NotImplementedException('fromRdf not implemented');
+    }
 }

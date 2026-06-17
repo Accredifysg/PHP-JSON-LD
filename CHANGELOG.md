@@ -8,12 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 > **The next release is 2.0.0.** The JSON-LD 1.1 algorithms still missing from
-> the 1.x line — Flattening (below) and the planned `fromRdf` / `frame` — are
-> added to the public `Contracts\Processor` interface. Adding methods to a
-> published interface is a breaking change for downstream implementers, so these
-> algorithm additions are bundled into one major release rather than shipped
-> piecemeal. Callers using the concrete `JsonLdProcessor` are unaffected, and
-> the expand / compact / toRdf OUTPUT is unchanged throughout.
+> the 1.x line — Flattening and RDF-to-JSON-LD `fromRdf` (below) and the planned
+> `frame` — are added to the public `Contracts\Processor` interface. Adding
+> methods to a published interface is a breaking change for downstream
+> implementers, so these algorithm additions are bundled into one major release
+> rather than shipped piecemeal. Callers using the concrete `JsonLdProcessor`
+> are unaffected, and the expand / compact / toRdf OUTPUT is unchanged
+> throughout.
 
 ### Added
 
@@ -27,14 +28,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `toRdf` is), the `Documents\FlattenedDocument` result wrapper, and the
   `Keyword::Default` case. **57/58 of the W3C flatten suite** (the lone blocker,
   `#tin06`, is the same `json.api` `@included`-blocks shape difference already
-  carried for expand/toRdf); W3C total now 1141/1156.
+  carried for expand/toRdf).
+
+- **RDF to JSON-LD (`fromRdf`)** — a new `Processor::fromRdf()` /
+  `JsonLdProcessor::fromRdf()` implementing the Serialize-RDF-as-JSON-LD
+  algorithm. Accepts an `RdfDataset` or an N-Quads string (parsed by a new,
+  dependency-free `Rdf\NQuadsParser` — php-json-ld takes no dependency on
+  `accredifysg/php-rdf-canonicalize`) and produces expanded JSON-LD: rebuilds
+  value objects (`useNativeTypes`), folds or keeps `rdf:type` (`useRdfType`),
+  reconstructs `rdf:first`/`rest`/`nil` chains into `@list`, and decodes `@json`
+  literals. New `Algorithms\FromRdf`, `Rdf\NQuadsParser`,
+  `Documents\FromRdfDocument`, and the `useNativeTypes` / `useRdfType`
+  `JsonLdOptions` fields. **49/53 of the W3C fromRdf suite** (remaining:
+  list-of-lists conversion `#t0008`/`#tli03`, and two non-normative
+  compound-literal direction cases). W3C total now 1190/1209.
 
 ### Changed
 
-- **BREAKING:** `Contracts\Processor` gains `flatten()`. Adding a method to the
-  published interface breaks any downstream implementer, so this (and the
-  forthcoming `fromRdf` / `frame`) lands in 2.0.0. No runtime behaviour change
-  for existing `expand` / `compact` / `toRdf` callers.
+- **BREAKING:** `Contracts\Processor` gains `flatten()` and `fromRdf()`. Adding
+  methods to the published interface breaks any downstream implementer, so these
+  (and the forthcoming `frame`) land in 2.0.0. No runtime behaviour change for
+  existing `expand` / `compact` / `toRdf` callers.
 
 ## [1.0.1] - 2026-06-11
 

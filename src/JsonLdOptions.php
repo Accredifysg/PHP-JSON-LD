@@ -24,10 +24,14 @@ namespace Accredify\JsonLd;
  *    context map (optionally wrapped in `{"@context": …}`), an array of
  *    contexts, or a remote context IRI.
  *
- * Reserved for forthcoming work (accepted but not yet acted upon):
- *  - {@see $rdfDirection} — "i18n-datatype" / "compound-literal" for toRdf.
+ *  - {@see $rdfDirection} — "i18n-datatype" / "compound-literal" for toRdf,
+ *    and reversing i18n-typed literals for fromRdf.
  *  - {@see $produceGeneralizedRdf} — emit generalized RDF (blank-node
  *    predicates) from toRdf.
+ *  - {@see $useNativeTypes} — fromRdf: coerce xsd:boolean/integer/double
+ *    literals to native JSON values.
+ *  - {@see $useRdfType} — fromRdf: keep `rdf:type` as a property instead of
+ *    folding it into `@type`.
  *
  * Immutable: use {@see with()} to derive a copy with one field changed.
  */
@@ -43,6 +47,8 @@ final class JsonLdOptions
         public readonly bool $produceGeneralizedRdf = false,
         public readonly bool $compactArrays = true,
         public readonly array|string|null $expandContext = null,
+        public readonly bool $useNativeTypes = false,
+        public readonly bool $useRdfType = false,
     ) {}
 
     /**
@@ -57,6 +63,8 @@ final class JsonLdOptions
         ?bool $produceGeneralizedRdf = null,
         ?bool $compactArrays = null,
         array|string|null $expandContext = null,
+        ?bool $useNativeTypes = null,
+        ?bool $useRdfType = null,
     ): self {
         return new self(
             $base ?? $this->base,
@@ -65,6 +73,8 @@ final class JsonLdOptions
             $produceGeneralizedRdf ?? $this->produceGeneralizedRdf,
             $compactArrays ?? $this->compactArrays,
             $expandContext ?? $this->expandContext,
+            $useNativeTypes ?? $this->useNativeTypes,
+            $useRdfType ?? $this->useRdfType,
         );
     }
 }

@@ -120,4 +120,15 @@ final class PhpJsonLdAdapter implements Processor
             ->toRdf($input, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), produceGeneralizedRdf: $generalized, rdfDirection: $rdfDirection, expandContext: self::expandContext($options)))
             ->toNQuads();
     }
+
+    public function fromRdf(string $input, array $options): array
+    {
+        $useNativeTypes = isset($options['useNativeTypes']) && $options['useNativeTypes'] === true;
+        $useRdfType = isset($options['useRdfType']) && $options['useRdfType'] === true;
+        $rdfDirection = isset($options['rdfDirection']) && is_string($options['rdfDirection']) ? $options['rdfDirection'] : null;
+
+        return (new JsonLdProcessor($this->loader))
+            ->fromRdf($input, new JsonLdOptions(processingMode: self::processingMode($options), rdfDirection: $rdfDirection, useNativeTypes: $useNativeTypes, useRdfType: $useRdfType))
+            ->toArray();
+    }
 }

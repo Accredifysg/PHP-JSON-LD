@@ -45,4 +45,12 @@ final class KnownBlockers
     public const FLATTEN = [
         '#tin06' => 'positive: the json.api @included-blocks example expands @id/@type in a different shape (same upstream expansion blocker as EXPAND/TO_RDF #tin06).',
     ];
+
+    /** @var array<string, string> fromRdf-manifest id => reason */
+    public const FROM_RDF = [
+        '#t0008' => 'positive (json-ld-1.0): list-of-lists uses the 1.0 (non-recursive) conversion shape; single-level list conversion is fully supported.',
+        '#tli03' => 'positive: nested list-of-lists conversion requires inner lists to collapse before the outer chain consumes their heads; single-level lists are fully supported.',
+        '#tdi11' => 'positive (non-normative): rdfDirection=compound-literal blank-node folding is not implemented.',
+        '#tdi12' => 'positive (non-normative): rdfDirection=compound-literal blank-node folding is not implemented.',
+    ];
 }

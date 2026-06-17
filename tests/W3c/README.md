@@ -29,7 +29,8 @@ tests/
         ├── ExpansionTest.php       # runs via PhpJsonLdAdapter
         ├── CompactionTest.php      # runs via PhpJsonLdAdapter
         ├── ToRdfTest.php           # runs via PhpJsonLdAdapter (N-Quads)
-        └── FlattenTest.php         # runs via PhpJsonLdAdapter
+        ├── FlattenTest.php         # runs via PhpJsonLdAdapter
+        └── FromRdfTest.php         # runs via PhpJsonLdAdapter (N-Quads input)
 ```
 
 ## Running
@@ -55,9 +56,10 @@ Expansion:    378 passed /   7 expected-skip
 Compaction:   246 passed /   0 expected-skip  ← 100%
 toRdf:        460 passed /   7 expected-skip
 Flattening:    57 passed /   1 expected-skip
+fromRdf:       49 passed /   4 expected-skip
 ```
 
-The 15 expected-skips are an explicit expected-failure (xfail) allowlist in
+The 19 expected-skips are an explicit expected-failure (xfail) allowlist in
 [`KnownBlockers.php`](KnownBlockers.php): a listed test that still fails is
 skipped (so `composer test:w3c` exits 0 and **gates CI**), but a listed test
 that starts passing fails the suite — so the list can't silently rot — and any
@@ -163,7 +165,6 @@ byte-identical to v0.3.0.
 
 ## Out of scope
 
-The harness runs Expansion, Compaction, toRdf, and Flattening. It deliberately
-does **not** yet load `fromRdf-manifest.jsonld`, `html-manifest.jsonld`, or
-`remote-doc-manifest.jsonld`. `fromRdf` is planned for the 2.0 line; the others
-can be added in follow-up PRs.
+The harness runs Expansion, Compaction, toRdf, Flattening, and fromRdf. It
+deliberately does **not** load `html-manifest.jsonld` or
+`remote-doc-manifest.jsonld`; those can be added in follow-up PRs.
