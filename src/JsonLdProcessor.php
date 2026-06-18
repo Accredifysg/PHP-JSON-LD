@@ -228,9 +228,17 @@ final class JsonLdProcessor implements Processor
         $expandedFrame = $this->runExpansion($frame, $options, frameExpansion: true);
         $frameObject = $expandedFrame[0] ?? [];
 
+        // Default @embed by processing mode: @last for 1.0 (embed at every
+        // occurrence, cycle-guarded), @once for 1.1 (embed first, reference
+        // after).
+        $modeOption = $options?->processingMode;
+        $embedOption = $options?->embed;
+        $processingMode = $modeOption ?? 'json-ld-1.1';
+        $embed = $embedOption ?? ($processingMode === 'json-ld-1.0' ? '@last' : '@once');
+
         $framed = (new Framing(
             $merged,
-            $options?->embed,
+            $embed,
             $options !== null && $options->explicit,
             $options !== null && $options->requireAll,
         ))->frame($frameObject);
@@ -254,8 +262,7 @@ final class JsonLdProcessor implements Processor
         // JSON-LD 1.1 (a single top-level node is emitted bare), false for 1.0
         // (always @graph-wrapped).
         $explicitOmitGraph = $options?->omitGraph;
-        $processingMode = $options?->processingMode;
-        $omitGraph = $explicitOmitGraph ?? (($processingMode ?? 'json-ld-1.1') !== 'json-ld-1.0');
+        $omitGraph = $explicitOmitGraph ?? ($processingMode !== 'json-ld-1.0');
         if ($omitGraph && count($graph) === 1) {
             $result += $graph[0];
         } else {

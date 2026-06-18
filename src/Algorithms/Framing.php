@@ -26,6 +26,8 @@ final class Framing
 {
     public const EMBED_ONCE = '@once';
 
+    public const EMBED_LAST = '@last';
+
     public const EMBED_ALWAYS = '@always';
 
     public const EMBED_NEVER = '@never';
@@ -69,7 +71,7 @@ final class Framing
         $result = [];
         foreach ($ids as $id) {
             if ($this->matches($this->nodeMap[(string) $id], $frame)) {
-                $result[] = $this->frameNode((string) $id, $frame, $this->embed, $embedded);
+                $result[] = $this->frameNode((string) $id, $frame, $this->embed, $embedded, []);
             }
         }
 
@@ -82,18 +84,27 @@ final class Framing
      *
      * @param  array<string, mixed>  $frame
      * @param  string  $embed  the effective @embed mode for this node
-     * @param  array<string, true>  $embedded  ids already embedded in this output (for @once / cycle guard)
+     * @param  array<string, true>  $embedded  ids already embedded anywhere in this output (for @once)
+     * @param  list<string>  $path  ids on the current ancestor path (cycle guard)
      * @return array<string, mixed>
      */
-    private function frameNode(string $id, array $frame, string $embed, array &$embedded): array
+    private function frameNode(string $id, array $frame, string $embed, array &$embedded, array $path): array
     {
-        // @never, or already embedded once / on the current path → reference only.
-        if ($embed === self::EMBED_NEVER || ($embed === self::EMBED_ONCE && isset($embedded[$id]))) {
+        // Emit a bare reference rather than embedding when: @never; @once and
+        // this node was already embedded somewhere; or it is already on the
+        // current ancestor path (cycle guard — @always / @last embed fully but
+        // must not recurse into themselves).
+        if (
+            $embed === self::EMBED_NEVER
+            || ($embed === self::EMBED_ONCE && isset($embedded[$id]))
+            || in_array($id, $path, true)
+        ) {
             return [Keyword::Id->value => $id];
         }
 
         $node = $this->nodeMap[$id] ?? [Keyword::Id->value => $id];
         $embedded[$id] = true;
+        $path[] = $id;
 
         $output = [Keyword::Id->value => $id];
         if (isset($node[Keyword::Type->value])) {
@@ -127,7 +138,7 @@ final class Framing
             $propEmbed = $this->embedFor($subFrame, $embed);
             $framedValues = [];
             foreach ($values as $value) {
-                $framedValues[] = $this->frameValue($value, $subFrame, $propEmbed, $embedded);
+                $framedValues[] = $this->frameValue($value, $subFrame, $propEmbed, $embedded, $path);
             }
             $output[$property] = $framedValues;
         }
@@ -151,7 +162,8 @@ final class Framing
         return match ($subFrame[Keyword::Embed->value]) {
             false, self::EMBED_NEVER => self::EMBED_NEVER,
             self::EMBED_ALWAYS => self::EMBED_ALWAYS,
-            true, self::EMBED_ONCE, '@last' => self::EMBED_ONCE,
+            self::EMBED_LAST => self::EMBED_LAST,
+            true, self::EMBED_ONCE => self::EMBED_ONCE,
             default => $inherited,
         };
     }
@@ -163,8 +175,9 @@ final class Framing
      * @param  array<string, mixed>|null  $subFrame
      * @param  string  $embed  the effective @embed mode for this value
      * @param  array<string, true>  $embedded
+     * @param  list<string>  $path
      */
-    private function frameValue(mixed $value, ?array $subFrame, string $embed, array &$embedded): mixed
+    private function frameValue(mixed $value, ?array $subFrame, string $embed, array &$embedded, array $path): mixed
     {
         if (is_array($value)
             && isset($value[Keyword::Id->value])
@@ -172,7 +185,7 @@ final class Framing
             && ! array_key_exists(Keyword::Value->value, $value)
             && isset($this->nodeMap[$value[Keyword::Id->value]])
         ) {
-            return $this->frameNode($value[Keyword::Id->value], $subFrame ?? [], $embed, $embedded);
+            return $this->frameNode($value[Keyword::Id->value], $subFrame ?? [], $embed, $embedded, $path);
         }
 
         return $value;
