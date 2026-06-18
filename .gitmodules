@@ -1,3 +1,6 @@
 [submodule "tests/w3c"]
 	path = tests/w3c
 	url = https://github.com/w3c/json-ld-api.git
+[submodule "tests/w3c-framing"]
+	path = tests/w3c-framing
+	url = https://github.com/w3c/json-ld-framing.git

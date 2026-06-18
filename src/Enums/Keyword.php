@@ -22,6 +22,8 @@ enum Keyword: string
     case Context = '@context';
     case Default = '@default';
     case Direction = '@direction';
+    case Embed = '@embed';
+    case Explicit = '@explicit';
     case Graph = '@graph';
     case Id = '@id';
     case Import = '@import';
@@ -32,9 +34,12 @@ enum Keyword: string
     case List = '@list';
     case Nest = '@nest';
     case None = '@none';
+    case Null = '@null';
+    case OmitDefault = '@omitDefault';
     case Prefix = '@prefix';
     case Propagate = '@propagate';
     case Protected = '@protected';
+    case RequireAll = '@requireAll';
     case Reverse = '@reverse';
     case Set = '@set';
     case Type = '@type';
