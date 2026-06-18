@@ -28,13 +28,13 @@ jobs:
       - name: Download Backend Coverage Report
         uses: actions/download-artifact@v4
         with:
-          name: coverage-report
+          name: ${{ needs.ci.outputs.backend-coverage-artifact-name }}
           path: coverage_BE
 
       - name: Download Backend JUnit Report
         uses: actions/download-artifact@v4
         with:
-          name: junit-report
+          name: ${{ needs.ci.outputs.backend-junit-artifact-name }}
           path: junit_BE
 
       - name: SonarQube Scan

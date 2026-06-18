@@ -2,6 +2,13 @@ name: CI
 
 on:
   workflow_call:
+    outputs:
+      backend-coverage-artifact-name:
+        description: "Name of the uploaded backend coverage artifact"
+        value: ${{ jobs.coverage.outputs.backend-coverage-artifact-name }}
+      backend-junit-artifact-name:
+        description: "Name of the uploaded backend JUnit test report artifact"
+        value: ${{ jobs.coverage.outputs.backend-junit-artifact-name }}
 
 jobs:
   test:
@@ -50,6 +57,9 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+    outputs:
+      backend-coverage-artifact-name: coverage-report
+      backend-junit-artifact-name: junit-report
 
     steps:
       - name: Checkout
