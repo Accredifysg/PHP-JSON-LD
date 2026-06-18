@@ -69,7 +69,7 @@ final class Framing
         $result = [];
         foreach ($ids as $id) {
             if ($this->matches($this->nodeMap[(string) $id], $frame)) {
-                $result[] = $this->frameNode((string) $id, $frame, $embedded);
+                $result[] = $this->frameNode((string) $id, $frame, $this->embed, $embedded);
             }
         }
 
@@ -81,18 +81,18 @@ final class Framing
      * bare `{@id}` reference, recursing into node-reference values.
      *
      * @param  array<string, mixed>  $frame
+     * @param  string  $embed  the effective @embed mode for this node
      * @param  array<string, true>  $embedded  ids already embedded in this output (for @once / cycle guard)
      * @return array<string, mixed>
      */
-    private function frameNode(string $id, array $frame, array &$embedded): array
+    private function frameNode(string $id, array $frame, string $embed, array &$embedded): array
     {
-        $node = $this->nodeMap[$id] ?? [Keyword::Id->value => $id];
-
         // @never, or already embedded once / on the current path → reference only.
-        if ($this->embed === self::EMBED_NEVER || ($this->embed === self::EMBED_ONCE && isset($embedded[$id]))) {
+        if ($embed === self::EMBED_NEVER || ($embed === self::EMBED_ONCE && isset($embedded[$id]))) {
             return [Keyword::Id->value => $id];
         }
 
+        $node = $this->nodeMap[$id] ?? [Keyword::Id->value => $id];
         $embedded[$id] = true;
 
         $output = [Keyword::Id->value => $id];
@@ -123,9 +123,11 @@ final class Framing
                 continue;
             }
 
+            // The sub-frame may override @embed for this property's values.
+            $propEmbed = $this->embedFor($subFrame, $embed);
             $framedValues = [];
             foreach ($values as $value) {
-                $framedValues[] = $this->frameValue($value, $subFrame, $embedded);
+                $framedValues[] = $this->frameValue($value, $subFrame, $propEmbed, $embedded);
             }
             $output[$property] = $framedValues;
         }
@@ -134,13 +136,35 @@ final class Framing
     }
 
     /**
+     * The effective `@embed` mode for a property's values: the sub-frame's own
+     * `@embed` (accepting both the 1.0 boolean/`@last` and 1.1 `@once`/
+     * `@always`/`@never` forms) or, absent one, the inherited mode.
+     *
+     * @param  array<string, mixed>|null  $subFrame
+     */
+    private function embedFor(?array $subFrame, string $inherited): string
+    {
+        if ($subFrame === null || ! array_key_exists(Keyword::Embed->value, $subFrame)) {
+            return $inherited;
+        }
+
+        return match ($subFrame[Keyword::Embed->value]) {
+            false, self::EMBED_NEVER => self::EMBED_NEVER,
+            self::EMBED_ALWAYS => self::EMBED_ALWAYS,
+            true, self::EMBED_ONCE, '@last' => self::EMBED_ONCE,
+            default => $inherited,
+        };
+    }
+
+    /**
      * Frame a single property value: a node reference is embedded (recursively),
      * any other value object is copied verbatim.
      *
      * @param  array<string, mixed>|null  $subFrame
+     * @param  string  $embed  the effective @embed mode for this value
      * @param  array<string, true>  $embedded
      */
-    private function frameValue(mixed $value, ?array $subFrame, array &$embedded): mixed
+    private function frameValue(mixed $value, ?array $subFrame, string $embed, array &$embedded): mixed
     {
         if (is_array($value)
             && isset($value[Keyword::Id->value])
@@ -148,7 +172,7 @@ final class Framing
             && ! array_key_exists(Keyword::Value->value, $value)
             && isset($this->nodeMap[$value[Keyword::Id->value]])
         ) {
-            return $this->frameNode($value[Keyword::Id->value], $subFrame ?? [], $embedded);
+            return $this->frameNode($value[Keyword::Id->value], $subFrame ?? [], $embed, $embedded);
         }
 
         return $value;

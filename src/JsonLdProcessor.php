@@ -250,7 +250,13 @@ final class JsonLdProcessor implements Processor
         if ($frameContext !== [] && $frameContext !== '' && $frameContext !== null) {
             $result[Keyword::Context->value] = $frameContext;
         }
-        if (($options->omitGraph ?? false) && count($graph) === 1) {
+        // omitGraph: the explicit option, else the mode default — true for
+        // JSON-LD 1.1 (a single top-level node is emitted bare), false for 1.0
+        // (always @graph-wrapped).
+        $explicitOmitGraph = $options?->omitGraph;
+        $processingMode = $options?->processingMode;
+        $omitGraph = $explicitOmitGraph ?? (($processingMode ?? 'json-ld-1.1') !== 'json-ld-1.0');
+        if ($omitGraph && count($graph) === 1) {
             $result += $graph[0];
         } else {
             $result[Keyword::Graph->value] = $graph;

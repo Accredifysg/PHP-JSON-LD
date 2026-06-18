@@ -713,6 +713,9 @@ class Expansion
                 // verbatim, including null) and never reaches this method.
 
             case Keyword::Language->value:
+                if ($this->frameExpansion) {
+                    return $value; // a frame may use {} / a list as a @language pattern
+                }
                 if (! is_string($value)) {
                     throw new JsonLdException('Invalid language-tagged string: @language must be a string');
                 }
@@ -720,6 +723,9 @@ class Expansion
                 return $value;
 
             case Keyword::Index->value:
+                if ($this->frameExpansion) {
+                    return $value;
+                }
                 if (! is_string($value)) {
                     throw new JsonLdException('Invalid @index value: must be a string');
                 }
@@ -1192,6 +1198,15 @@ class Expansion
      */
     private function finalizeValueObject(array $result): ?array
     {
+        if ($this->frameExpansion) {
+            // A frame's value object is a match pattern (e.g. {@value: {}},
+            // {@type: {}}, {@language: []}); it is kept verbatim, bypassing the
+            // strict value-object validation that applies to real documents.
+            ksort($result);
+
+            return $result;
+        }
+
         $allowed = [
             Keyword::Value->value => true,
             Keyword::Type->value => true,
