@@ -31,6 +31,7 @@ final class TestCase
         public readonly ?string $expectPath,
         public readonly mixed $expectErrorCode,
         public readonly ?string $contextPath,
+        public readonly ?string $framePath,
         public readonly array $options,
         public readonly string $baseIri,
         public readonly ?string $documentUrl,
@@ -59,6 +60,14 @@ final class TestCase
     public function loadContext(): array
     {
         return $this->loadJson($this->contextPath, 'context');
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    public function loadFrame(): array
+    {
+        return $this->loadJson($this->framePath, 'frame');
     }
 
     /**

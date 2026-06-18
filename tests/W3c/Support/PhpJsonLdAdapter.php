@@ -32,6 +32,11 @@ final class PhpJsonLdAdapter implements Processor
         return new self(W3cDocumentLoader::default());
     }
 
+    public static function forFraming(): self
+    {
+        return new self(W3cDocumentLoader::forFraming());
+    }
+
     public function expand(array $input, array $options): array
     {
         // `base` is the effective document base — option.base if the manifest
@@ -129,6 +134,19 @@ final class PhpJsonLdAdapter implements Processor
 
         return (new JsonLdProcessor($this->loader))
             ->fromRdf($input, new JsonLdOptions(processingMode: self::processingMode($options), rdfDirection: $rdfDirection, useNativeTypes: $useNativeTypes, useRdfType: $useRdfType))
+            ->toArray();
+    }
+
+    public function frame(array $input, array $frame, array $options): array
+    {
+        $base = isset($options['base']) && is_string($options['base']) ? $options['base'] : null;
+        $embed = isset($options['embed']) && is_string($options['embed']) ? $options['embed'] : null;
+        $explicit = isset($options['explicit']) && $options['explicit'] === true;
+        $requireAll = isset($options['requireAll']) && $options['requireAll'] === true;
+        $omitGraph = isset($options['omitGraph']) && is_bool($options['omitGraph']) ? $options['omitGraph'] : null;
+
+        return (new JsonLdProcessor($this->loader))
+            ->frame($input, $frame, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), embed: $embed, explicit: $explicit, requireAll: $requireAll, omitGraph: $omitGraph))
             ->toArray();
     }
 }

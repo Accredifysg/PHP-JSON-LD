@@ -49,6 +49,14 @@ final class Harness
     }
 
     /**
+     * Manifest root for the JSON-LD Framing suite (a separate submodule).
+     */
+    public static function fromFramingLocation(): self
+    {
+        return new self(__DIR__.'/../w3c-framing/tests');
+    }
+
+    /**
      * @return iterable<string, TestCase>
      */
     public function manifest(string $name): iterable
@@ -113,6 +121,7 @@ final class Harness
             expectPath: $this->joinRelativePath($manifestDir, $entry['expect'] ?? null),
             expectErrorCode: $entry['expectErrorCode'] ?? null,
             contextPath: $this->joinRelativePath($manifestDir, $entry['context'] ?? null),
+            framePath: $this->joinRelativePath($manifestDir, $entry['frame'] ?? null),
             options: $options,
             baseIri: $baseIri,
             documentUrl: $documentUrl,

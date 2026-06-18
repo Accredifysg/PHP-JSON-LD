@@ -7,7 +7,9 @@ namespace Accredify\JsonLd;
 use Accredify\JsonLd\Algorithms\Compaction;
 use Accredify\JsonLd\Algorithms\Expansion;
 use Accredify\JsonLd\Algorithms\Flattening;
+use Accredify\JsonLd\Algorithms\Framing;
 use Accredify\JsonLd\Algorithms\FromRdf;
+use Accredify\JsonLd\Algorithms\NodeMap;
 use Accredify\JsonLd\Algorithms\ToRdf;
 use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Contracts\DocumentLoader;
@@ -15,9 +17,11 @@ use Accredify\JsonLd\Contracts\Processor;
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
 use Accredify\JsonLd\Documents\FlattenedDocument;
+use Accredify\JsonLd\Documents\FramedDocument;
 use Accredify\JsonLd\Documents\FromRdfDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Internal\BlankNodeIssuer;
 use Accredify\JsonLd\Rdf\NQuadsParser;
 
 /**
@@ -202,5 +206,50 @@ final class JsonLdProcessor implements Processor
         ))->fromRdf($quads);
 
         return new FromRdfDocument($result);
+    }
+
+    public function frame(array $document, array $frame, ?JsonLdOptions $options = null): FramedDocument
+    {
+        // Expand the input and build a node map (default graph) to frame over.
+        $expandedInput = $this->expand($document, $options)->toArray();
+        $nodeMap = (new NodeMap(new BlankNodeIssuer))->generate($expandedInput);
+        /** @var array<string, array<string, mixed>> $merged */
+        $merged = $nodeMap[Keyword::Default->value] ?? [];
+
+        // Expand the frame against its own @context.
+        $expandedFrame = $this->expand($frame, $options)->toArray();
+        /** @var array<string, mixed> $frameObject */
+        $frameObject = isset($expandedFrame[0]) && is_array($expandedFrame[0]) ? $expandedFrame[0] : [];
+
+        $framed = (new Framing(
+            $merged,
+            $options?->embed,
+            $options !== null && $options->explicit,
+            $options !== null && $options->requireAll,
+        ))->frame($frameObject);
+
+        // Compact each framed node against the frame's @context, then wrap the
+        // result in @graph (unless omitGraph) and prepend that @context.
+        $frameContext = array_key_exists(Keyword::Context->value, $frame) ? $frame[Keyword::Context->value] : [];
+        $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options?->base, $options?->processingMode);
+        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $options === null || $options->compactArrays);
+
+        $graph = [];
+        foreach ($framed as $node) {
+            $graph[] = $compaction->compact([$node]);
+        }
+
+        $result = [];
+        if ($frameContext !== [] && $frameContext !== '' && $frameContext !== null) {
+            $result[Keyword::Context->value] = $frameContext;
+        }
+        if (($options->omitGraph ?? false) && count($graph) === 1) {
+            $result += $graph[0];
+        } else {
+            $result[Keyword::Graph->value] = $graph;
+        }
+
+        /** @var array<string, mixed> $result */
+        return new FramedDocument($result);
     }
 }

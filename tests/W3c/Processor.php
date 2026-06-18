@@ -16,6 +16,7 @@ namespace Accredify\JsonLd\Tests\W3c;
  * - flatten:  array (the flattened JSON-LD document)
  * - toRdf:    string (N-Quads serialization)
  * - fromRdf:  array (expanded JSON-LD deserialised from an N-Quads string)
+ * - frame:    array (the framed JSON-LD document)
  *
  * Implementations that don't yet support an algorithm should throw
  * {@see NotImplementedException}; the harness will mark the test skipped.
@@ -56,4 +57,12 @@ interface Processor
      * @return array<mixed>
      */
     public function fromRdf(string $input, array $options): array;
+
+    /**
+     * @param  array<mixed>  $input
+     * @param  array<mixed>  $frame
+     * @param  array<string, mixed>  $options
+     * @return array<mixed>
+     */
+    public function frame(array $input, array $frame, array $options): array;
 }

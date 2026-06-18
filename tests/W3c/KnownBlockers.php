@@ -53,4 +53,7 @@ final class KnownBlockers
         '#tdi11' => 'positive (non-normative): rdfDirection=compound-literal blank-node folding is not implemented.',
         '#tdi12' => 'positive (non-normative): rdfDirection=compound-literal blank-node folding is not implemented.',
     ];
+
+    /** @var array<string, string> frame-manifest id => reason */
+    public const FRAME = [];
 }
