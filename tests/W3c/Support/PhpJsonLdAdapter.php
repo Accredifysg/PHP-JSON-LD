@@ -143,10 +143,11 @@ final class PhpJsonLdAdapter implements Processor
         $embed = isset($options['embed']) && is_string($options['embed']) ? $options['embed'] : null;
         $explicit = isset($options['explicit']) && $options['explicit'] === true;
         $requireAll = isset($options['requireAll']) && $options['requireAll'] === true;
+        $omitDefault = isset($options['omitDefault']) && $options['omitDefault'] === true;
         $omitGraph = isset($options['omitGraph']) && is_bool($options['omitGraph']) ? $options['omitGraph'] : null;
 
         return (new JsonLdProcessor($this->loader))
-            ->frame($input, $frame, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), embed: $embed, explicit: $explicit, requireAll: $requireAll, omitGraph: $omitGraph))
+            ->frame($input, $frame, new JsonLdOptions(base: $base, processingMode: self::processingMode($options), embed: $embed, explicit: $explicit, requireAll: $requireAll, omitDefault: $omitDefault, omitGraph: $omitGraph))
             ->toArray();
     }
 }

@@ -250,7 +250,7 @@ final class Framing
 
             $this->frameProperties($subject, $frame, $output, $flagEmbed, $flagExplicit, $flagRequireAll, $graph);
             $this->injectDefaults($frame, $output);
-            $this->frameReverse($frame, $output, $id, $graph);
+            $this->frameReverse($frame, $output, $id, $graph, $property);
 
             $parent[] = $output;
             array_pop($this->subjectStack);
@@ -379,8 +379,11 @@ final class Framing
      *
      * @param  array<array-key, mixed>  $frame
      * @param  array<string, mixed>  $output  modified in place
+     * @param  ?string  $property  the active property of the carrying node, passed
+     *                             through so a nested `@reverse` does not reset the
+     *                             top-level `@once` embed compartment
      */
-    private function frameReverse(array $frame, array &$output, string $id, string $graph): void
+    private function frameReverse(array $frame, array &$output, string $id, string $graph, ?string $property): void
     {
         if (! isset($frame[Keyword::Reverse->value]) || ! is_array($frame[Keyword::Reverse->value])) {
             return;
@@ -408,7 +411,7 @@ final class Framing
                     }
                 }
                 if ($references) {
-                    $this->frameInternal([$sid], $subframe, $reverseValues, null, $graph, true);
+                    $this->frameInternal([$sid], $subframe, $reverseValues, $property, $graph, true);
                 }
             }
 
