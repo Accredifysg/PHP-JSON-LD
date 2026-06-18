@@ -34,8 +34,8 @@ namespace Accredify\JsonLd;
  *    folding it into `@type`.
  *  - Framing options — {@see $embed} (`@once`/`@always`/`@never`),
  *    {@see $explicit}, {@see $requireAll}, {@see $omitDefault},
- *    {@see $omitGraph}, {@see $ordered} — the API-level defaults a frame's own
- *    keywords may override.
+ *    {@see $omitGraph} — the API-level defaults a frame's own keywords may
+ *    override.
  *
  * Immutable: use {@see with()} to derive a copy with one field changed.
  */
@@ -58,7 +58,6 @@ final class JsonLdOptions
         public readonly bool $requireAll = false,
         public readonly bool $omitDefault = false,
         public readonly ?bool $omitGraph = null,
-        public readonly bool $ordered = false,
     ) {}
 
     /**
@@ -80,7 +79,6 @@ final class JsonLdOptions
         ?bool $requireAll = null,
         ?bool $omitDefault = null,
         ?bool $omitGraph = null,
-        ?bool $ordered = null,
     ): self {
         return new self(
             $base ?? $this->base,
@@ -96,7 +94,6 @@ final class JsonLdOptions
             $requireAll ?? $this->requireAll,
             $omitDefault ?? $this->omitDefault,
             $omitGraph ?? $this->omitGraph,
-            $ordered ?? $this->ordered,
         );
     }
 }

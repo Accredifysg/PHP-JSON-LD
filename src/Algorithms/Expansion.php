@@ -846,8 +846,9 @@ class Expansion
     private function expandTypeValue(mixed $value): array
     {
         if ($this->frameExpansion) {
-            // A frame's @type may list IRIs, the keyword @default, or {} /[]
-            // (wildcard / match-none — both an empty list to the matcher).
+            // A frame's @type may list IRIs, the keyword @default, a wildcard
+            // {} (kept as the FRAME_WILDCARD sentinel so the matcher can tell it
+            // from match-none []), or [] (match-none — an empty list).
             $typeItems = is_array($value) && array_is_list($value) ? $value : [$value];
             $types = [];
             foreach ($typeItems as $typeItem) {

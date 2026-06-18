@@ -27,8 +27,9 @@ use Accredify\JsonLd\JsonLdProcessor;
  * cleanup ({@see cleanupNull}) are done by {@see JsonLdProcessor::frame()}.
  *
  * The PHP associative-array document model cannot tell a JSON `{}` from `[]`
- * (both decode to `[]`), so an empty frame value is treated as a wildcard —
- * the common duck-typing intent — rather than the rarer `match none`.
+ * (both decode to `[]`), so a wildcard `{}` is carried as the
+ * {@see Expansion::FRAME_WILDCARD} sentinel through frame expansion, while a
+ * bare empty array `[]` is treated as `match none`.
  */
 final class Framing
 {
