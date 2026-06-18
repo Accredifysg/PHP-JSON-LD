@@ -1,0 +1,21 @@
+name: Pull Request
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Continuous Integration
+    uses: ./.github/workflows/ci.yml
+
+  # TEMPORARY: run SonarQube on PRs to validate the setup before relying on
+  # main.yml. Remove this job once validated on main.
+  sonar:
+    needs: ci
+    name: SonarQube Analysis
+    uses: Accredifysg/Accredify-Github-Workflows/.github/workflows/sonar-scan.yml@v2.0.0
+    with:
+      backend-coverage-artifact-name: ${{ needs.ci.outputs.backend-coverage-artifact-name }}
+      backend-junit-artifact-name: ${{ needs.ci.outputs.backend-junit-artifact-name }}
+    secrets: inherit

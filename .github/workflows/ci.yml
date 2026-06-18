@@ -1,10 +1,14 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_call:
+    outputs:
+      backend-coverage-artifact-name:
+        description: "Name of the uploaded backend coverage artifact"
+        value: ${{ jobs.coverage.outputs.backend-coverage-artifact-name }}
+      backend-junit-artifact-name:
+        description: "Name of the uploaded backend JUnit test report artifact"
+        value: ${{ jobs.coverage.outputs.backend-junit-artifact-name }}
 
 jobs:
   test:
@@ -49,6 +53,59 @@ jobs:
 
       - name: Run Pest (unit tests)
         run: composer test
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    outputs:
+      backend-coverage-artifact-name: coverage-report
+      backend-junit-artifact-name: junit-report
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php-8.3-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: |
+            ${{ runner.os }}-php-8.3-composer-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Generate code coverage
+        run: vendor/bin/pest --testsuite=Unit --coverage-clover=coverage/clover.xml --log-junit=coverage/junit.xml
+
+      - name: Normalize report paths
+        run: sed -i "s|${GITHUB_WORKSPACE}/||g" coverage/clover.xml coverage/junit.xml
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/clover.xml
+          if-no-files-found: error
+
+      - name: Upload JUnit Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: coverage/junit.xml
+          if-no-files-found: error
 
   conformance:
     name: W3C Conformance
