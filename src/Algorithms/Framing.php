@@ -41,6 +41,8 @@ final class Framing
 
     private bool $requireAll;
 
+    private bool $omitDefault;
+
     /**
      * @param  array<string, array<string, mixed>>  $nodeMap
      */
@@ -49,11 +51,13 @@ final class Framing
         ?string $embed,
         bool $explicit,
         bool $requireAll,
+        bool $omitDefault = false,
     ) {
         $this->nodeMap = $nodeMap;
         $this->embed = $embed ?? self::EMBED_ONCE;
         $this->explicit = $explicit;
         $this->requireAll = $requireAll;
+        $this->omitDefault = $omitDefault;
     }
 
     /**
@@ -143,7 +147,89 @@ final class Framing
             $output[$property] = $framedValues;
         }
 
+        $this->injectDefaults($frame, $output);
+
         return $output;
+    }
+
+    /**
+     * Inject defaults for frame properties missing from the node. Unless the
+     * omit-default flag applies, a property declaring a default gets that
+     * value, and any other missing property gets a `@null` sentinel wrapped in
+     * `@preserve` (so it survives compaction and is later cleaned up to `null`
+     * or, for a `@set` term, `[]`).
+     *
+     * @param  array<string, mixed>  $frame
+     * @param  array<string, mixed>  $output  modified in place
+     */
+    private function injectDefaults(array $frame, array &$output): void
+    {
+        foreach ($frame as $frameProp => $pattern) {
+            if (str_starts_with($frameProp, '@') || array_key_exists($frameProp, $output)) {
+                continue;
+            }
+
+            $subFrame = $this->subFrame($frame, $frameProp);
+            $omit = $this->omitDefault;
+            if ($subFrame !== null && array_key_exists(Keyword::OmitDefault->value, $subFrame)) {
+                $omit = $subFrame[Keyword::OmitDefault->value] === true;
+            }
+            if ($omit) {
+                continue;
+            }
+
+            if ($subFrame !== null && array_key_exists(Keyword::Default->value, $subFrame)) {
+                $default = $subFrame[Keyword::Default->value];
+                $output[$frameProp] = is_array($default) && array_is_list($default) ? $default : [$default];
+            } else {
+                $output[$frameProp] = [['@preserve' => ['@null']]];
+            }
+        }
+    }
+
+    /**
+     * Post-compaction cleanup of framing sentinels: unwrap `{@preserve: [x]}`
+     * to `x`, turn the `@null` sentinel into `null`, and drop nulls from arrays
+     * (so an absent `@set` default becomes `[]` and a plain one becomes `null`).
+     */
+    public static function cleanupPreserve(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value === '@null' ? null : $value;
+        }
+
+        if (array_key_exists('@preserve', $value)) {
+            $preserved = $value['@preserve'];
+            $cleaned = self::cleanupPreserve(is_array($preserved) ? $preserved : [$preserved]);
+            if (! is_array($cleaned) || ! array_is_list($cleaned)) {
+                return $cleaned;
+            }
+
+            return match (count($cleaned)) {
+                0 => null,
+                1 => $cleaned[0],
+                default => $cleaned,
+            };
+        }
+
+        if (array_is_list($value)) {
+            $out = [];
+            foreach ($value as $item) {
+                $cleaned = self::cleanupPreserve($item);
+                if ($cleaned !== null) {
+                    $out[] = $cleaned;
+                }
+            }
+
+            return $out;
+        }
+
+        $out = [];
+        foreach ($value as $key => $item) {
+            $out[$key] = self::cleanupPreserve($item);
+        }
+
+        return $out;
     }
 
     /**

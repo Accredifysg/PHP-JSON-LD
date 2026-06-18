@@ -391,6 +391,12 @@ class Compaction
      */
     private function compactObject(array $node, ?string $activeProperty): mixed
     {
+        // A framing @preserve wrapper (from @default injection) passes through
+        // verbatim — it carries the @null sentinel, cleaned up after compaction.
+        if (array_key_exists('@preserve', $node)) {
+            return $node;
+        }
+
         // Value object → value compaction. The result — scalar, rebuilt value
         // object, or {@id} reference — is FINAL: re-running it through the
         // node-object loop would re-compact already-compacted strings (e.g. a

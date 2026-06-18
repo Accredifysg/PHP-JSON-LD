@@ -241,6 +241,7 @@ final class JsonLdProcessor implements Processor
             $embed,
             $options !== null && $options->explicit,
             $options !== null && $options->requireAll,
+            $options !== null && $options->omitDefault,
         ))->frame($frameObject);
 
         // Compact each framed node against the frame's @context, then wrap the
@@ -269,7 +270,10 @@ final class JsonLdProcessor implements Processor
             $result[Keyword::Graph->value] = $graph;
         }
 
+        // Clean up framing sentinels (@preserve / @null) injected for defaults.
         /** @var array<string, mixed> $result */
+        $result = Framing::cleanupPreserve($result);
+
         return new FramedDocument($result);
     }
 }
