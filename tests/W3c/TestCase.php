@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Accredify\JsonLd\Tests\W3c;
 
+use Accredify\JsonLd\Algorithms\Expansion;
 use JsonException;
 use RuntimeException;
+use stdClass;
 
 /**
  * One row in a W3C JSON-LD test manifest, normalised into a value object.
@@ -63,11 +65,66 @@ final class TestCase
     }
 
     /**
+     * Load a frame, preserving empty JSON objects (`{}`) as the wildcard
+     * sentinel. Unlike {@see loadInput()} this decodes to objects first, since
+     * the associative form cannot distinguish a frame's `{}` (wildcard) from
+     * `[]` (match none) — see {@see Expansion::FRAME_WILDCARD}.
+     *
      * @return array<mixed>
      */
     public function loadFrame(): array
     {
-        return $this->loadJson($this->framePath, 'frame');
+        if ($this->framePath === null) {
+            throw new RuntimeException("Test {$this->id} has no frame file");
+        }
+        if (! is_file($this->framePath)) {
+            throw new RuntimeException("frame file not found at {$this->framePath}");
+        }
+
+        try {
+            $decoded = json_decode(
+                (string) file_get_contents($this->framePath),
+                associative: false,
+                flags: JSON_THROW_ON_ERROR,
+            );
+        } catch (JsonException $e) {
+            throw new RuntimeException("Failed to parse frame {$this->framePath}: {$e->getMessage()}", 0, $e);
+        }
+
+        $converted = $this->markEmptyObjects($decoded);
+        if (! is_array($converted)) {
+            throw new RuntimeException("Expected frame at {$this->framePath} to decode to a JSON object/array");
+        }
+
+        return $converted;
+    }
+
+    /**
+     * Recursively convert a frame decoded as objects into associative arrays,
+     * mapping each empty object `{}` to the wildcard sentinel so it survives
+     * (an empty array `[]` — match none — stays an empty array).
+     */
+    private function markEmptyObjects(mixed $value): mixed
+    {
+        if ($value instanceof stdClass) {
+            $properties = get_object_vars($value);
+            if ($properties === []) {
+                return [Expansion::FRAME_WILDCARD => true];
+            }
+
+            $out = [];
+            foreach ($properties as $key => $item) {
+                $out[$key] = $this->markEmptyObjects($item);
+            }
+
+            return $out;
+        }
+
+        if (is_array($value)) {
+            return array_map(fn (mixed $item): mixed => $this->markEmptyObjects($item), $value);
+        }
+
+        return $value;
     }
 
     /**

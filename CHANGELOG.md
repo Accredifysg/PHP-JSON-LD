@@ -41,13 +41,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Documents\FromRdfDocument`, and the `useNativeTypes` / `useRdfType`
   `JsonLdOptions` fields. **49/53 of the W3C fromRdf suite** (remaining:
   list-of-lists conversion `#t0008`/`#tli03`, and two non-normative
-  compound-literal direction cases). W3C total now 1190/1209.
+  compound-literal direction cases).
+
+- **Framing (`frame`)** — a new `Processor::frame()` / `JsonLdProcessor::frame()`
+  implementing the [JSON-LD 1.1 Framing Algorithm](https://www.w3.org/TR/json-ld11-framing/):
+  frames the merged graph (or the default graph when the frame carries a
+  top-level `@graph`), matching subjects by `@type`/`@id`, value patterns, and
+  recursive node patterns (`@requireAll` AND-vs-OR), then embeds referenced
+  nodes per `@embed` (`@once` default, `@never`, `@always`, cycle-guarded),
+  honours `@explicit`, injects `@default` behind `@preserve` (with
+  `@omitDefault`), frames `@graph`/`@included`/`@reverse`, prunes
+  singly-referenced blank-node `@id`s, and compacts against the frame's
+  `@context` with the mode-dependent `omitGraph`. New `Algorithms\Framing`
+  (a faithful port of the reference algorithm, over the existing
+  `Algorithms\NodeMap`), `Documents\FramedDocument`, the `embed` / `explicit` /
+  `requireAll` / `omitDefault` / `omitGraph` `JsonLdOptions` fields, and a
+  frame-expansion mode on `Algorithms\Expansion` (gated, so the existing
+  expand/compact/toRdf output is byte-identical). Because PHP's associative
+  arrays cannot distinguish a frame's `{}` (wildcard) from `[]` (`match none`),
+  an empty frame value is treated as `match none` and a wildcard is carried as
+  the `Expansion::FRAME_WILDCARD` sentinel. **86/92 of the W3C json-ld-framing
+  suite** (remaining: compaction-deferred features `#t0010`/`#t0051`/`#t0062`/
+  `#tg010`, `@language` case-normalization `#t0045`, and the legacy
+  `@embed: @last` `#t0059`). W3C total now 1276/1301.
 
 ### Changed
 
-- **BREAKING:** `Contracts\Processor` gains `flatten()` and `fromRdf()`. Adding
-  methods to the published interface breaks any downstream implementer, so these
-  (and the forthcoming `frame`) land in 2.0.0. No runtime behaviour change for
+- **BREAKING:** `Contracts\Processor` gains `flatten()`, `fromRdf()`, and
+  `frame()`. Adding methods to the published interface breaks any downstream
+  implementer, so these land together in 2.0.0. No runtime behaviour change for
   existing `expand` / `compact` / `toRdf` callers.
 
 ## [1.0.1] - 2026-06-11

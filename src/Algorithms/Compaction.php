@@ -76,7 +76,7 @@ class Compaction
      *                               false, arrays are kept verbatim (#t0070/
      *                               #t0091/#t0093).
      */
-    public function __construct(private TermDefinitions $activeContext, private bool $compactArrays = true)
+    public function __construct(private TermDefinitions $activeContext, private bool $compactArrays = true, private bool $framing = false)
     {
         $this->buildInverse();
     }
@@ -108,6 +108,16 @@ class Compaction
         }
 
         return is_array($result) ? $result : [];
+    }
+
+    /**
+     * The term/alias that `@graph` compacts to under the active context (plain
+     * `@graph` unless a frame's context aliases it). Used by framing to name the
+     * top-level `@graph` wrapper.
+     */
+    public function graphAlias(): string
+    {
+        return $this->compactIri(Keyword::Graph->value, vocab: true);
     }
 
     private function buildInverse(): void
@@ -511,10 +521,12 @@ class Compaction
                 // array (#t0039/#t0016); a SIMPLE graph (only @graph) and
                 // @included unwrap a single member to a bare object (#t0090/
                 // #t0092) — UNLESS the (aliased) key's term carries
-                // @container:@set, which keeps the array (#tin01).
+                // @container:@set, which keeps the array (#tin01). When framing,
+                // a named graph that is a property value also unwraps a single
+                // member, matching the reference framing output (#t0047/8/50).
                 $compactedKey = $this->compactIri($key, vocab: true);
                 $isNamedGraph = $key === Keyword::Graph->value && isset($node[Keyword::Id->value]);
-                $keepArray = $isNamedGraph || ! $this->compactArrays || $this->hasContainer($compactedKey, Keyword::Set->value);
+                $keepArray = ($isNamedGraph && ! $this->framing) || ! $this->compactArrays || $this->hasContainer($compactedKey, Keyword::Set->value);
                 $result[$compactedKey] = (! $keepArray && count($compactedItems) === 1 && is_array($compactedItems[0]))
                     ? $compactedItems[0]
                     : $compactedItems;

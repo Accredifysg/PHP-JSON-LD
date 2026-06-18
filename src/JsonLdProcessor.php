@@ -217,62 +217,70 @@ final class JsonLdProcessor implements Processor
 
     public function frame(array $document, array $frame, ?JsonLdOptions $options = null): FramedDocument
     {
-        // Expand the input and build a node map (default graph) to frame over.
+        // Expand the input and build the full node map (every graph, so named
+        // graphs / @graph framing have their subjects available).
         $expandedInput = $this->expand($document, $options)->toArray();
-        $nodeMap = (new NodeMap(new BlankNodeIssuer))->generate($expandedInput);
-        /** @var array<string, array<string, mixed>> $merged */
-        $merged = $nodeMap[Keyword::Default->value] ?? [];
+        $graphMap = (new NodeMap(new BlankNodeIssuer))->generate($expandedInput);
 
         // Expand the frame against its own @context, in frame-expansion mode
         // (wildcards, @id/@type patterns, and frame keywords are preserved).
         $expandedFrame = $this->runExpansion($frame, $options, frameExpansion: true);
-        $frameObject = $expandedFrame[0] ?? [];
 
-        // Default @embed by processing mode: @last for 1.0 (embed at every
-        // occurrence, cycle-guarded), @once for 1.1 (embed first, reference
-        // after).
         $modeOption = $options?->processingMode;
-        $embedOption = $options?->embed;
         $processingMode = $modeOption ?? 'json-ld-1.1';
-        $embed = $embedOption ?? ($processingMode === 'json-ld-1.0' ? '@last' : '@once');
+        $is11 = $processingMode !== 'json-ld-1.0';
+
+        // @embed defaults to @once; blank-node pruning and the bare (non-@graph)
+        // top level are JSON-LD-1.1 behaviours.
+        $embedOption = $options?->embed;
+        $embed = $embedOption ?? Framing::EMBED_ONCE;
 
         $framed = (new Framing(
-            $merged,
+            $graphMap,
             $embed,
             $options !== null && $options->explicit,
             $options !== null && $options->requireAll,
             $options !== null && $options->omitDefault,
-        ))->frame($frameObject);
+            pruneBnodes: $is11,
+        ))->frame($expandedFrame);
 
-        // Compact each framed node against the frame's @context, then wrap the
-        // result in @graph (unless omitGraph) and prepend that @context.
+        // Compact each framed node against the frame's @context.
         $frameContext = array_key_exists(Keyword::Context->value, $frame) ? $frame[Keyword::Context->value] : [];
         $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options?->base, $options?->processingMode);
-        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $options === null || $options->compactArrays);
+        $compactArrays = $options === null || $options->compactArrays;
+        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $compactArrays, framing: true);
 
         $graph = [];
         foreach ($framed as $node) {
-            $graph[] = $compaction->compact([$node]);
+            if (is_array($node)) {
+                $graph[] = $compaction->compact([$node]);
+            }
         }
+
+        // omitGraph: the explicit option, else the mode default — true for 1.1
+        // (a single top-level node is emitted bare), false for 1.0 (always
+        // @graph-wrapped). compactArrays=false also forces the @graph wrapper.
+        $omitGraphOption = $options?->omitGraph;
+        $omitGraph = $omitGraphOption ?? $is11;
+        $hasContext = $frameContext !== [] && $frameContext !== '' && $frameContext !== null;
+        $graphAlias = $compaction->graphAlias();
 
         $result = [];
-        if ($frameContext !== [] && $frameContext !== '' && $frameContext !== null) {
+        if ($hasContext) {
             $result[Keyword::Context->value] = $frameContext;
         }
-        // omitGraph: the explicit option, else the mode default — true for
-        // JSON-LD 1.1 (a single top-level node is emitted bare), false for 1.0
-        // (always @graph-wrapped).
-        $explicitOmitGraph = $options?->omitGraph;
-        $omitGraph = $explicitOmitGraph ?? ($processingMode !== 'json-ld-1.0');
-        if ($omitGraph && count($graph) === 1) {
-            $result += $graph[0];
+        if ($compactArrays && $omitGraph && count($graph) <= 1) {
+            // 0 nodes → just the context; 1 node → emitted bare.
+            if (count($graph) === 1) {
+                $result += $graph[0];
+            }
         } else {
-            $result[Keyword::Graph->value] = $graph;
+            $result[$graphAlias] = $graph;
         }
 
-        // Clean up framing sentinels (@preserve / @null) injected for defaults.
+        // Replace the @null sentinel with null and drop nulls from arrays.
         /** @var array<string, mixed> $result */
-        $result = Framing::cleanupPreserve($result);
+        $result = Framing::cleanupNull($result);
 
         return new FramedDocument($result);
     }

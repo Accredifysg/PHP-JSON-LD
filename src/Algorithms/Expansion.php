@@ -52,6 +52,15 @@ use Accredify\JsonLd\Internal\IriResolver;
 class Expansion
 {
     /**
+     * Sentinel for a frame wildcard (`{}`). The associative-array document
+     * model cannot tell an empty object `{}` from an empty array `[]`, so a
+     * frame's `{}` is decoded to this marker and carried verbatim through
+     * frame expansion, letting the framing matcher tell a wildcard (match any
+     * present value) from `match none` (the empty list `[]`).
+     */
+    public const FRAME_WILDCARD = '@__wildcard__';
+
+    /**
      * Document-level active context — the term definitions produced by
      * processing the document's `@context`. Stays constant during expansion;
      * nested objects always re-derive their per-object scope from this.
@@ -253,6 +262,12 @@ class Expansion
      */
     private function expandObject(array $obj, ?string $activeProperty): ?array
     {
+        // A frame wildcard ({}) is carried verbatim so the matcher can tell it
+        // from an empty list (match none); see {@see self::FRAME_WILDCARD}.
+        if ($this->frameExpansion && array_key_exists(self::FRAME_WILDCARD, $obj)) {
+            return [self::FRAME_WILDCARD => true];
+        }
+
         $result = [];
 
         // Accumulates reverse relations (from the `@reverse` keyword and from
@@ -823,8 +838,10 @@ class Expansion
 
     /**
      * @type value expansion: each value is expanded as an IRI in vocab mode.
+     *             In frame-expansion mode the result may also carry a wildcard sentinel or a
+     *             `{@default: …}` type frame for the framing matcher.
      *
-     * @return list<string>
+     * @return list<string|array<string, mixed>>
      */
     private function expandTypeValue(mixed $value): array
     {
@@ -836,6 +853,21 @@ class Expansion
             foreach ($typeItems as $typeItem) {
                 if ($typeItem === Keyword::Default->value) {
                     $types[] = Keyword::Default->value;
+                } elseif (is_array($typeItem) && array_key_exists(self::FRAME_WILDCARD, $typeItem)) {
+                    // A wildcard @type ({}): preserve the sentinel for the matcher.
+                    $types[] = [self::FRAME_WILDCARD => true];
+                } elseif (is_array($typeItem) && array_key_exists(Keyword::Default->value, $typeItem)) {
+                    // `@type: {"@default": …}` — keep a default-type frame, with
+                    // its default IRI(s) expanded, for the framing default step.
+                    $defaultValue = $typeItem[Keyword::Default->value];
+                    $defaultItems = is_array($defaultValue) && array_is_list($defaultValue) ? $defaultValue : [$defaultValue];
+                    $expandedDefaults = [];
+                    foreach ($defaultItems as $defaultItem) {
+                        if (is_string($defaultItem) && ($expanded = $this->expandIri($defaultItem, vocab: true, documentRelative: true)) !== null) {
+                            $expandedDefaults[] = $expanded;
+                        }
+                    }
+                    $types[] = [Keyword::Default->value => $expandedDefaults];
                 } elseif (is_string($typeItem) && ($expanded = $this->expandIri($typeItem, vocab: true, documentRelative: true)) !== null) {
                     $types[] = $expanded;
                 }

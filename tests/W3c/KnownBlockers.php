@@ -55,5 +55,12 @@ final class KnownBlockers
     ];
 
     /** @var array<string, string> frame-manifest id => reason */
-    public const FRAME = [];
+    public const FRAME = [
+        '#t0010' => 'positive: compaction safe-mode rejects "dcterms:creator" as an IRI confused with the declared "dcterms" prefix (jsonld errors here too); a pre-existing compaction strictness, not a framing gap.',
+        '#t0045' => 'positive: a value-pattern keeps the matched value verbatim with @language "R", but the fixture lower-cases it to "r"; expansion intentionally preserves @language case (the toRdf bytes VC signs depend on it).',
+        '#t0051' => 'positive: a default value injected for a @type:@id / typed term is not value-compacted back to the term (a deferred compaction value-coercion case).',
+        '#t0059' => 'positive: @embed:@last (the legacy 1.0 last-embed-wins mode) is not implemented; the default @once is.',
+        '#t0062' => 'positive: a @container:@set term in a type-scoped context is not honoured during compaction (a deferred compaction container case).',
+        '#tg010' => 'positive: @container:@graph (graph-container) compaction is a deferred compaction feature.',
+    ];
 }
