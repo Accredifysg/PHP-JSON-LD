@@ -1,5 +1,5 @@
 # PHP-JSON-LD
-
+ 
 <!-- Badges (placeholders — wired up in PR 1.2 / Phase 6) -->
 <!-- ![CI](https://img.shields.io/github/actions/workflow/status/accredifysg/php-json-ld/ci.yml?branch=main) -->
 <!-- ![Packagist Version](https://img.shields.io/packagist/v/accredifysg/php-json-ld) -->
