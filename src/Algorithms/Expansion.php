@@ -83,8 +83,11 @@ class Expansion
      */
     private ?TermDefinitions $freshPropertyScope = null;
 
-    public function __construct(TermDefinitions $termDefinitions, ?DocumentLoader $documentLoader = null)
-    {
+    public function __construct(
+        TermDefinitions $termDefinitions,
+        ?DocumentLoader $documentLoader = null,
+        private readonly bool $frameExpansion = false,
+    ) {
         $this->documentBase = $termDefinitions;
         $this->termDefinitions = $termDefinitions;
         $this->documentLoader = $documentLoader;
@@ -125,7 +128,7 @@ class Expansion
                 if ($item === null) {
                     continue;
                 }
-                if (is_array($item) && ! array_is_list($item) && ! $this->isFreeFloating($item)) {
+                if (is_array($item) && ! array_is_list($item) && ($this->frameExpansion || ! $this->isFreeFloating($item))) {
                     /** @var array<string, mixed> $item */
                     $out[] = $item;
                 }
@@ -136,9 +139,9 @@ class Expansion
 
         // Single object → wrap in list, unless it is free-floating at the top
         // level (a lone value object / @list / @id-only node), which is dropped
-        // (§5.5 step 18 / #t0045).
+        // (§5.5 step 18 / #t0045). Frame expansion keeps such patterns.
         /** @var array<string, mixed> $expanded */
-        return $this->isFreeFloating($expanded) ? [] : [$expanded];
+        return (! $this->frameExpansion && $this->isFreeFloating($expanded)) ? [] : [$expanded];
     }
 
     /**
@@ -632,7 +635,8 @@ class Expansion
         // 14). At the top level (activeProperty === null) this is firm; on
         // nested objects we keep it because the spec allows references.
         if (
-            $activeProperty === null
+            ! $this->frameExpansion
+            && $activeProperty === null
             && count($result) === 1
             && isset($result[Keyword::Id->value])
         ) {
@@ -642,8 +646,9 @@ class Expansion
         // An empty object is dropped only when free-floating (§5.5 step 18:
         // active property null or @graph). As a property value it is kept as
         // an empty node object (e.g. a node whose only term was decoupled by a
-        // scoped @context:null reset).
-        if ($result === [] && ($activeProperty === null || $activeProperty === Keyword::Graph->value)) {
+        // scoped @context:null reset). Under frame expansion an empty map is a
+        // wildcard and is always kept.
+        if (! $this->frameExpansion && $result === [] && ($activeProperty === null || $activeProperty === Keyword::Graph->value)) {
             return null;
         }
 
@@ -660,6 +665,21 @@ class Expansion
     {
         switch ($expandedKey) {
             case Keyword::Id->value:
+                if ($this->frameExpansion) {
+                    // A frame's @id may be a string, an array of IRIs, or {}
+                    // (wildcard); it expands to a list of IRIs (empty = wildcard).
+                    $idItems = is_string($value)
+                        ? [$value]
+                        : (is_array($value) && array_is_list($value) ? $value : []);
+                    $ids = [];
+                    foreach ($idItems as $idItem) {
+                        if (is_string($idItem) && ($expandedId = $this->expandIri($idItem, documentRelative: true)) !== null) {
+                            $ids[] = $expandedId;
+                        }
+                    }
+
+                    return $ids;
+                }
                 if (! is_string($value)) {
                     throw new JsonLdException('Invalid @id value: must be a string');
                 }
@@ -668,6 +688,26 @@ class Expansion
 
             case Keyword::Type->value:
                 return $this->expandTypeValue($value);
+
+            case Keyword::Default->value:
+                if ($this->frameExpansion) {
+                    $expandedDefault = $this->expandElement($value, $activeProperty);
+                    if ($expandedDefault === null) {
+                        return [];
+                    }
+
+                    return array_is_list($expandedDefault) ? $expandedDefault : [$expandedDefault];
+                }
+
+                return null;
+
+            case Keyword::Embed->value:
+            case Keyword::Explicit->value:
+            case Keyword::RequireAll->value:
+            case Keyword::OmitDefault->value:
+                // Frame keywords are preserved verbatim for the framing
+                // algorithm; outside a frame they carry no meaning and drop.
+                return $this->frameExpansion ? $value : null;
 
                 // Note: @value is handled directly in expandObject (recorded
                 // verbatim, including null) and never reaches this method.
@@ -782,6 +822,22 @@ class Expansion
      */
     private function expandTypeValue(mixed $value): array
     {
+        if ($this->frameExpansion) {
+            // A frame's @type may list IRIs, the keyword @default, or {} /[]
+            // (wildcard / match-none — both an empty list to the matcher).
+            $typeItems = is_array($value) && array_is_list($value) ? $value : [$value];
+            $types = [];
+            foreach ($typeItems as $typeItem) {
+                if ($typeItem === Keyword::Default->value) {
+                    $types[] = Keyword::Default->value;
+                } elseif (is_string($typeItem) && ($expanded = $this->expandIri($typeItem, vocab: true, documentRelative: true)) !== null) {
+                    $types[] = $expanded;
+                }
+            }
+
+            return $types;
+        }
+
         // @type IRIs expand with both vocab and document-relative modes
         // (§5.5): @vocab takes precedence if set, otherwise a relative @type
         // resolves against @base.

@@ -49,11 +49,21 @@ final class JsonLdProcessor implements Processor
 
     public function expand(array $document, ?JsonLdOptions $options = null): ExpandedDocument
     {
-        // A missing @context is valid: the document expands against an empty
-        // active context (full-IRI properties survive, unmapped terms drop).
-        // Inject an empty one so ContextProcessor (which requires the key)
-        // does not reject the document. (§5.1 — expand has no @context
-        // precondition; toRdf relies on the same tolerance.)
+        return new ExpandedDocument($this->runExpansion($document, $options, frameExpansion: false));
+    }
+
+    /**
+     * The shared expansion pipeline. A missing @context is valid: the document
+     * expands against an empty active context (full-IRI properties survive,
+     * unmapped terms drop), so an empty one is injected for ContextProcessor.
+     * `$frameExpansion` relaxes the algorithm for a frame document (wildcards,
+     * `@id`/`@type` patterns, frame keywords).
+     *
+     * @param  array<array-key, mixed>  $document
+     * @return list<array<string, mixed>>
+     */
+    private function runExpansion(array $document, ?JsonLdOptions $options, bool $frameExpansion): array
+    {
         $documentForContext = $document;
         if (! isset($documentForContext['@context'])) {
             $documentForContext['@context'] = [];
@@ -65,11 +75,8 @@ final class JsonLdProcessor implements Processor
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);
 
-        $expansion = new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader);
-
-        return new ExpandedDocument(
-            $expansion->expand($documentWithoutContext),
-        );
+        return (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader, $frameExpansion))
+            ->expand($documentWithoutContext);
     }
 
     /**
@@ -216,10 +223,10 @@ final class JsonLdProcessor implements Processor
         /** @var array<string, array<string, mixed>> $merged */
         $merged = $nodeMap[Keyword::Default->value] ?? [];
 
-        // Expand the frame against its own @context.
-        $expandedFrame = $this->expand($frame, $options)->toArray();
-        /** @var array<string, mixed> $frameObject */
-        $frameObject = isset($expandedFrame[0]) && is_array($expandedFrame[0]) ? $expandedFrame[0] : [];
+        // Expand the frame against its own @context, in frame-expansion mode
+        // (wildcards, @id/@type patterns, and frame keywords are preserved).
+        $expandedFrame = $this->runExpansion($frame, $options, frameExpansion: true);
+        $frameObject = $expandedFrame[0] ?? [];
 
         $framed = (new Framing(
             $merged,
