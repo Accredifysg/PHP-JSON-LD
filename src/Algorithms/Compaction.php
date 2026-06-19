@@ -365,11 +365,6 @@ class Compaction
     private function compactElement(mixed $element, ?string $activeProperty): mixed
     {
         if (is_array($element) && array_is_list($element)) {
-            $compactedItems = [];
-            foreach ($element as $item) {
-                $compactedItems[] = $this->compactElement($item, $activeProperty);
-            }
-
             // §5.6: a single-item array compacts to the item unless the
             // active property is a @set container (which always keeps an
             // array) or compactArrays is false (which keeps arrays verbatim,
@@ -377,10 +372,22 @@ class Compaction
             // compactArrays is false — the single {@list: …} element it
             // contains must reach the @list branch of compactObject to become
             // its bare array form.
+            //
+            // The container is resolved BEFORE recursing: a value that is a
+            // nested node object rolls back a type-scoped context (§5.6
+            // non-propagation), which would otherwise hide the property's own
+            // type-scoped `@container` by the time the decision is made (#t0062).
+            $isSetContainer = $this->hasContainer($activeProperty, Keyword::Set->value);
             $isListContainer = $this->hasContainer($activeProperty, Keyword::List->value);
+
+            $compactedItems = [];
+            foreach ($element as $item) {
+                $compactedItems[] = $this->compactElement($item, $activeProperty);
+            }
+
             if (
                 count($compactedItems) === 1
-                && ! $this->hasContainer($activeProperty, Keyword::Set->value)
+                && ! $isSetContainer
                 && ($this->compactArrays || $isListContainer)
             ) {
                 return $compactedItems[0];

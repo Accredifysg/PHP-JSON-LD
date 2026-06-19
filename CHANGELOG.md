@@ -64,9 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is read from the *raw* frame keys (a sole top-level `@graph` is folded away by
   expansion), so a frame with a top-level `@graph` correctly frames the default
   graph rather than the merged one — fixing `@container:@graph` framing (`#tg010`).
-  **87/92 of the W3C json-ld-framing suite** (remaining: compaction-deferred
-  features `#t0010`/`#t0051`/`#t0062`, `@language` case-normalization `#t0045`,
-  and the legacy `@embed: @last` `#t0059`). W3C total now 1277/1301.
+  **89/92 of the W3C json-ld-framing suite** (remaining: compaction safe-mode
+  strictness `#t0010`, `@language` case-normalization `#t0045`, and the legacy
+  `@embed: @last` `#t0059`). W3C total now 1279/1301.
 
 ### Changed
 
@@ -74,6 +74,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `frame()`. Adding methods to the published interface breaks any downstream
   implementer, so these land together in 2.0.0. No runtime behaviour change for
   existing `expand` / `compact` / `toRdf` callers.
+
+### Fixed
+
+- **Compaction: a type-scoped `@container:@set` term now keeps its array.** A
+  property whose `@container:@set` comes from a type-scoped context (activated by
+  the node's `@type`) was unwrapped to a single value, because the array-vs-single
+  decision was made *after* recursing into the value — and a nested node object
+  rolls back the type-scoped context (§5.6 non-propagation), hiding the term's
+  container. The container is now resolved before recursing. Affects plain
+  `compact()` too, not only framing (`#t0062`); the 246/246 compaction suite is
+  unchanged.
 
 ## [1.0.1] - 2026-06-11
 

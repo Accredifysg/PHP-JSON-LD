@@ -707,6 +707,14 @@ final class Framing
         }
 
         if (array_key_exists(Keyword::Value->value, $input)) {
+            // A value object's @type is a single datatype IRI. Frame expansion
+            // leaves an injected `@default` value's @type as a one-element list,
+            // which would block typed-term selection during compaction — collapse
+            // it (a no-op for input value objects, which already carry a scalar).
+            if (isset($input[Keyword::Type->value]) && is_array($input[Keyword::Type->value]) && array_is_list($input[Keyword::Type->value]) && count($input[Keyword::Type->value]) === 1) {
+                $input[Keyword::Type->value] = $input[Keyword::Type->value][0];
+            }
+
             return $input;
         }
 
