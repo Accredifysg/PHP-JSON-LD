@@ -32,6 +32,18 @@ final class W3cDocumentLoader implements DocumentLoader
         );
     }
 
+    /**
+     * Loader for the JSON-LD Framing test suite, whose fixtures live under the
+     * `json-ld-framing` base URL and the `tests/w3c-framing` submodule.
+     */
+    public static function forFraming(): self
+    {
+        return new self(
+            baseUrl: 'https://w3c.github.io/json-ld-framing/tests/',
+            baseDir: __DIR__.'/../../w3c-framing/tests',
+        );
+    }
+
     public function loadDocument(string $url): RemoteDocument
     {
         if (! str_starts_with($url, $this->baseUrl)) {

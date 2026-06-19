@@ -7,6 +7,7 @@ namespace Accredify\JsonLd\Contracts;
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
 use Accredify\JsonLd\Documents\FlattenedDocument;
+use Accredify\JsonLd\Documents\FramedDocument;
 use Accredify\JsonLd\Documents\FromRdfDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Exceptions\JsonLdException;
@@ -15,7 +16,7 @@ use Accredify\JsonLd\JsonLdOptions;
 /**
  * Public entry point for the package's algorithms.
  *
- * `expand`, `compact`, `flatten`, `toRdf`, and `fromRdf` are implemented.
+ * `expand`, `compact`, `flatten`, `toRdf`, `fromRdf`, and `frame` are implemented.
  *
  * Kept as a separate interface from {@see DocumentLoader} so that consumers
  * can mock just the processor in tests without worrying about loader
@@ -103,4 +104,19 @@ interface Processor
      * @throws JsonLdException
      */
     public function fromRdf(RdfDataset|string $input, ?JsonLdOptions $options = null): FromRdfDocument;
+
+    /**
+     * Reshape a document to match a frame (the JSON-LD 1.1 Framing algorithm,
+     * {@link https://www.w3.org/TR/json-ld11-framing/}): match nodes against
+     * the frame, embed referenced nodes inline, and compact the result against
+     * the frame's `@context`.
+     *
+     * @param  array<array-key, mixed>  $document  A JSON-LD document.
+     * @param  array<array-key, mixed>  $frame  A JSON-LD frame.
+     * @param  JsonLdOptions|null  $options  API options (`embed`, `explicit`,
+     *                                       `requireAll`, `omitGraph`, …).
+     *
+     * @throws JsonLdException
+     */
+    public function frame(array $document, array $frame, ?JsonLdOptions $options = null): FramedDocument;
 }

@@ -7,7 +7,9 @@ namespace Accredify\JsonLd;
 use Accredify\JsonLd\Algorithms\Compaction;
 use Accredify\JsonLd\Algorithms\Expansion;
 use Accredify\JsonLd\Algorithms\Flattening;
+use Accredify\JsonLd\Algorithms\Framing;
 use Accredify\JsonLd\Algorithms\FromRdf;
+use Accredify\JsonLd\Algorithms\NodeMap;
 use Accredify\JsonLd\Algorithms\ToRdf;
 use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Contracts\DocumentLoader;
@@ -15,9 +17,11 @@ use Accredify\JsonLd\Contracts\Processor;
 use Accredify\JsonLd\Documents\CompactedDocument;
 use Accredify\JsonLd\Documents\ExpandedDocument;
 use Accredify\JsonLd\Documents\FlattenedDocument;
+use Accredify\JsonLd\Documents\FramedDocument;
 use Accredify\JsonLd\Documents\FromRdfDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Internal\BlankNodeIssuer;
 use Accredify\JsonLd\Rdf\NQuadsParser;
 
 /**
@@ -45,11 +49,21 @@ final class JsonLdProcessor implements Processor
 
     public function expand(array $document, ?JsonLdOptions $options = null): ExpandedDocument
     {
-        // A missing @context is valid: the document expands against an empty
-        // active context (full-IRI properties survive, unmapped terms drop).
-        // Inject an empty one so ContextProcessor (which requires the key)
-        // does not reject the document. (§5.1 — expand has no @context
-        // precondition; toRdf relies on the same tolerance.)
+        return new ExpandedDocument($this->runExpansion($document, $options, frameExpansion: false));
+    }
+
+    /**
+     * The shared expansion pipeline. A missing @context is valid: the document
+     * expands against an empty active context (full-IRI properties survive,
+     * unmapped terms drop), so an empty one is injected for ContextProcessor.
+     * `$frameExpansion` relaxes the algorithm for a frame document (wildcards,
+     * `@id`/`@type` patterns, frame keywords).
+     *
+     * @param  array<array-key, mixed>  $document
+     * @return list<array<string, mixed>>
+     */
+    private function runExpansion(array $document, ?JsonLdOptions $options, bool $frameExpansion): array
+    {
         $documentForContext = $document;
         if (! isset($documentForContext['@context'])) {
             $documentForContext['@context'] = [];
@@ -61,11 +75,8 @@ final class JsonLdProcessor implements Processor
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);
 
-        $expansion = new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader);
-
-        return new ExpandedDocument(
-            $expansion->expand($documentWithoutContext),
-        );
+        return (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader, $frameExpansion))
+            ->expand($documentWithoutContext);
     }
 
     /**
@@ -202,5 +213,75 @@ final class JsonLdProcessor implements Processor
         ))->fromRdf($quads);
 
         return new FromRdfDocument($result);
+    }
+
+    public function frame(array $document, array $frame, ?JsonLdOptions $options = null): FramedDocument
+    {
+        // Expand the input and build the full node map (every graph, so named
+        // graphs / @graph framing have their subjects available).
+        $expandedInput = $this->expand($document, $options)->toArray();
+        $graphMap = (new NodeMap(new BlankNodeIssuer))->generate($expandedInput);
+
+        // Expand the frame against its own @context, in frame-expansion mode
+        // (wildcards, @id/@type patterns, and frame keywords are preserved).
+        $expandedFrame = $this->runExpansion($frame, $options, frameExpansion: true);
+
+        $modeOption = $options?->processingMode;
+        $processingMode = $modeOption ?? 'json-ld-1.1';
+        $is11 = $processingMode !== 'json-ld-1.0';
+
+        // @embed defaults to @once; blank-node pruning and the bare (non-@graph)
+        // top level are JSON-LD-1.1 behaviours.
+        $embedOption = $options?->embed;
+        $embed = $embedOption ?? Framing::EMBED_ONCE;
+
+        $framed = (new Framing(
+            $graphMap,
+            $embed,
+            $options !== null && $options->explicit,
+            $options !== null && $options->requireAll,
+            $options !== null && $options->omitDefault,
+            pruneBnodes: $is11,
+        ))->frame($expandedFrame);
+
+        // Compact each framed node against the frame's @context.
+        $frameContext = array_key_exists(Keyword::Context->value, $frame) ? $frame[Keyword::Context->value] : [];
+        $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options?->base, $options?->processingMode);
+        $compactArrays = $options === null || $options->compactArrays;
+        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $compactArrays, framing: true);
+
+        $graph = [];
+        foreach ($framed as $node) {
+            if (is_array($node)) {
+                $graph[] = $compaction->compact([$node]);
+            }
+        }
+
+        // omitGraph: the explicit option, else the mode default — true for 1.1
+        // (a single top-level node is emitted bare), false for 1.0 (always
+        // @graph-wrapped). compactArrays=false also forces the @graph wrapper.
+        $omitGraphOption = $options?->omitGraph;
+        $omitGraph = $omitGraphOption ?? $is11;
+        $hasContext = $frameContext !== [] && $frameContext !== '' && $frameContext !== null;
+        $graphAlias = $compaction->graphAlias();
+
+        $result = [];
+        if ($hasContext) {
+            $result[Keyword::Context->value] = $frameContext;
+        }
+        if ($compactArrays && $omitGraph && count($graph) <= 1) {
+            // 0 nodes → just the context; 1 node → emitted bare.
+            if (count($graph) === 1) {
+                $result += $graph[0];
+            }
+        } else {
+            $result[$graphAlias] = $graph;
+        }
+
+        // Replace the @null sentinel with null and drop nulls from arrays.
+        /** @var array<string, mixed> $result */
+        $result = Framing::cleanupNull($result);
+
+        return new FramedDocument($result);
     }
 }

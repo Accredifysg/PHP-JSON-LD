@@ -37,4 +37,9 @@ final class NullProcessor implements Processor
     {
         throw new NotImplementedException('fromRdf not implemented');
     }
+
+    public function frame(array $input, array $frame, array $options): array
+    {
+        throw new NotImplementedException('Framing not implemented');
+    }
 }
