@@ -7,14 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> **The next release is 2.0.0.** The JSON-LD 1.1 algorithms still missing from
-> the 1.x line — Flattening and RDF-to-JSON-LD `fromRdf` (below) and the planned
-> `frame` — are added to the public `Contracts\Processor` interface. Adding
-> methods to a published interface is a breaking change for downstream
-> implementers, so these algorithm additions are bundled into one major release
-> rather than shipped piecemeal. Callers using the concrete `JsonLdProcessor`
-> are unaffected, and the expand / compact / toRdf OUTPUT is unchanged
-> throughout.
+## [2.0.0] - 2026-06-19
+
+> **Completes the JSON-LD 1.1 algorithm set.** The three algorithms missing from
+> the 1.x line — Flattening, RDF-to-JSON-LD (`fromRdf`), and Framing — are added
+> to the public `Contracts\Processor` interface. Adding methods to a published
+> interface is a breaking change for downstream implementers, so they ship in one
+> major release rather than piecemeal. Callers using the concrete
+> `JsonLdProcessor` are unaffected, and the expand / compact / toRdf OUTPUT is
+> unchanged. W3C conformance across the six manifests is **1286/1301**
+> (Compaction and Flattening 100%); see the [compliance matrix](README.md#compliance).
 
 ### Added
 
@@ -2710,7 +2712,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/accredifysg/php-json-ld/compare/v1.0.1...v2.0.0
 [1.0.1]: https://github.com/accredifysg/php-json-ld/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/accredifysg/php-json-ld/compare/v0.69.0...v1.0.0
 [0.11.0]: https://github.com/accredifysg/php-json-ld/compare/v0.10.0...v0.11.0
