@@ -12,13 +12,13 @@ jobs:
   # TEMPORARY: run SonarQube on PRs to validate the setup before relying on
   # main.yml. Remove this job once validated on main.
   #
-  # Gated to same-repo PRs only: fork PRs must NOT run on the self-hosted
-  # runner (untrusted code + no access to secrets).
+  # Gated to same-repo PRs only: fork PRs have no access to secrets
+  # (SONAR_TOKEN), so the scan would fail for them anyway.
   sonar:
     needs: ci
     name: SonarQube Analysis
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
