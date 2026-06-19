@@ -8,38 +8,3 @@ jobs:
   ci:
     name: Continuous Integration
     uses: ./.github/workflows/ci.yml
-
-  # TEMPORARY: run SonarQube on PRs to validate the setup before relying on
-  # main.yml. Remove this job once validated on main.
-  #
-  # Gated to same-repo PRs only: fork PRs have no access to secrets
-  # (SONAR_TOKEN), so the scan would fail for them anyway.
-  sonar:
-    needs: ci
-    name: SonarQube Analysis
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0 # full history for SCM blame
-
-      - name: Download Backend Coverage Report
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.ci.outputs.backend-coverage-artifact-name }}
-          path: coverage_BE
-
-      - name: Download Backend JUnit Report
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.ci.outputs.backend-junit-artifact-name }}
-          path: junit_BE
-
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v8.2.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
