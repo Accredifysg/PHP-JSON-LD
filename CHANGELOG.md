@@ -64,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   graph rather than the merged one — fixing `@container:@graph` framing (`#tg010`).
   **89/92 of the W3C json-ld-framing suite** (remaining: compaction safe-mode
   strictness `#t0010`, `@language` case-normalization `#t0045`, and the legacy
-  `@embed: @last` `#t0059`). W3C total now 1282/1301.
+  `@embed: @last` `#t0059`). W3C total now 1286/1301.
 
 ### Changed
 
@@ -94,6 +94,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into `["…"]` (invalid). Scalar keywords are now merged verbatim. Together with
   the scoped-`null` fix this clears the `json.api` example (`#tin06`) across
   **expand, toRdf, and flatten** — flatten is now 58/58 (100%).
+
+- **Relative `@context` URLs now resolve correctly.** Two fixes: (1) the remote-
+  context cycle guard is now path-based, so a context referenced by two sibling
+  contexts (a diamond) loads without a false "circular reference" error while a
+  true A→B→A recursion still throws (`#t0128`/`#te128`); (2) a term's relative
+  scoped `@context` is resolved against the URL of the context that defines it
+  (not the document `@base`), so it loads correctly during expansion (`#tc031`).
+  Expand 379→381, toRdf 461→463.
 
 ## [1.0.1] - 2026-06-11
 

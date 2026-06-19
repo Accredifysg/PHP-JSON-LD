@@ -136,8 +136,16 @@ class ContextProcessor
         $remoteContext = $this->fetchRemoteContext($url);
         $this->processedContexts[] = $remoteContext;
 
-        if (isset($remoteContext['@context'])) {
-            $this->processContextLayer($remoteContext['@context'], $depth + 1);
+        try {
+            if (isset($remoteContext['@context'])) {
+                $this->processContextLayer($remoteContext['@context'], $depth + 1);
+            }
+        } finally {
+            // Path-based cycle guard (§4.1.2): a URL is "in progress" only while
+            // its own sub-contexts load. So a context referenced by two sibling
+            // contexts (a diamond, #t0128) is loaded twice without error, while a
+            // true A→B→A recursion still trips the guard above.
+            unset($this->loadedRemoteContexts[$url]);
         }
     }
 
@@ -159,11 +167,55 @@ class ContextProcessor
         // Accept both shapes a context endpoint may return:
         //   { "@context": { … } }   (the canonical W3C shape)
         //   { … }                    (a flat term map, no @context wrapper)
-        if (isset($document['@context']) && is_array($document['@context'])) {
-            return $this->asStringKeyed($document['@context']);
+        $context = isset($document['@context']) && is_array($document['@context'])
+            ? $this->asStringKeyed($document['@context'])
+            : $this->asStringKeyed($document);
+
+        // A term's scoped @context may be a RELATIVE reference; it resolves
+        // against the URL of the context that defines it (this remote context),
+        // not the document's @base. Resolve it now, while that URL is known, so
+        // expansion-time scoped-context loading sees an absolute URL (#tc031).
+        return $this->resolveScopedContextUrls($context, $url);
+    }
+
+    /**
+     * Resolve relative `@context` references in a context's term definitions
+     * against `$baseUrl` (the defining context's URL).
+     *
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function resolveScopedContextUrls(array $context, string $baseUrl): array
+    {
+        if ($baseUrl === '') {
+            return $context;
+        }
+        foreach ($context as $term => $definition) {
+            if (str_starts_with((string) $term, '@') || ! is_array($definition) || ! array_key_exists('@context', $definition)) {
+                continue;
+            }
+            $definition['@context'] = $this->resolveContextRef($definition['@context'], $baseUrl);
+            $context[$term] = $definition;
         }
 
-        return $this->asStringKeyed($document);
+        return $context;
+    }
+
+    /**
+     * Resolve a single scoped-context reference (a relative string, or a list
+     * of them) against `$baseUrl`; inline-map and absolute references are left
+     * unchanged.
+     */
+    private function resolveContextRef(mixed $ref, string $baseUrl): mixed
+    {
+        if (is_string($ref) && $ref !== '' && filter_var($ref, FILTER_VALIDATE_URL) === false) {
+            return IriResolver::resolve($baseUrl, $ref);
+        }
+        if (is_array($ref) && array_is_list($ref)) {
+            return array_map(fn (mixed $item): mixed => $this->resolveContextRef($item, $baseUrl), $ref);
+        }
+
+        return $ref;
     }
 
     /**

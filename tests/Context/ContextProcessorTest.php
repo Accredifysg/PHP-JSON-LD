@@ -301,4 +301,36 @@ describe('ContextProcessor processing-mode gates', function () {
         );
         expect($processor->getTermDefinitions()->getProcessingMode())->toBe('json-ld-1.1');
     });
+
+    it('loads a shared context referenced by two sibling contexts (a diamond, not a cycle) (#t0128)', function () {
+        $loader = new StubDocumentLoader;
+        $loader->add('https://example.com/a', ['@context' => 'https://example.com/c']);
+        $loader->add('https://example.com/b', ['@context' => 'https://example.com/c']);
+        $loader->add('https://example.com/c', ['@context' => ['shared' => 'https://example.com/Shared']]);
+
+        $processor = new ContextProcessor(
+            ['@context' => ['https://example.com/a', 'https://example.com/b']],
+            $loader,
+        );
+
+        expect($processor->getTermDefinitions()->getTermDefinition('shared'))
+            ->toBe(['@id' => 'https://example.com/Shared']);
+    });
+
+    it('resolves a term\'s relative scoped @context against the defining context URL (#tc031)', function () {
+        $loader = new StubDocumentLoader;
+        // The remote context lives under /dir/; its `outer` term's scoped
+        // @context "../shared.jsonld" must resolve to /shared.jsonld.
+        $loader->add('https://example.com/dir/ctx.jsonld', [
+            '@context' => ['outer' => ['@id' => 'https://example.com/out', '@context' => '../shared.jsonld']],
+        ]);
+
+        $processor = new ContextProcessor(
+            ['@context' => 'https://example.com/dir/ctx.jsonld'],
+            $loader,
+        );
+
+        expect($processor->getTermDefinitions()->getTermDefinition('outer'))
+            ->toBe(['@id' => 'https://example.com/out', '@context' => 'https://example.com/shared.jsonld']);
+    });
 });
