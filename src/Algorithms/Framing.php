@@ -105,9 +105,13 @@ final class Framing
      * `@preserve` unwrapped and singly-referenced blank nodes pruned.
      *
      * @param  list<mixed>  $expandedFrame  the expanded frame (a single-object list)
+     * @param  bool  $merged  frame the merged graph (a frame without a top-level
+     *                        `@graph`) or the default graph (with one). Decided
+     *                        from the *raw* frame by {@see JsonLdProcessor::frame()},
+     *                        since expansion folds away a sole top-level `@graph`.
      * @return list<mixed>
      */
-    public function frame(array $expandedFrame): array
+    public function frame(array $expandedFrame, bool $merged = true): array
     {
         $frameObject = $expandedFrame[0] ?? [];
         if (! is_array($frameObject)) {
@@ -117,11 +121,11 @@ final class Framing
 
         // A frame without a top-level @graph frames the merged graph (all named
         // graphs folded together); one with @graph frames the default graph.
-        if (array_key_exists(Keyword::Graph->value, $frameObject)) {
-            $topGraph = Keyword::Default->value;
-        } else {
+        if ($merged) {
             $this->graphMap['@merged'] = $this->mergeNodeMaps($this->graphMap);
             $topGraph = '@merged';
+        } else {
+            $topGraph = Keyword::Default->value;
         }
         $this->subjects = $this->graphMap[$topGraph] ?? [];
 

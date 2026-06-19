@@ -60,10 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expand/compact/toRdf output is byte-identical). Because PHP's associative
   arrays cannot distinguish a frame's `{}` (wildcard) from `[]` (`match none`),
   an empty frame value is treated as `match none` and a wildcard is carried as
-  the `Expansion::FRAME_WILDCARD` sentinel. **86/92 of the W3C json-ld-framing
-  suite** (remaining: compaction-deferred features `#t0010`/`#t0051`/`#t0062`/
-  `#tg010`, `@language` case-normalization `#t0045`, and the legacy
-  `@embed: @last` `#t0059`). W3C total now 1276/1301.
+  the `Expansion::FRAME_WILDCARD` sentinel. The merged-vs-default graph decision
+  is read from the *raw* frame keys (a sole top-level `@graph` is folded away by
+  expansion), so a frame with a top-level `@graph` correctly frames the default
+  graph rather than the merged one — fixing `@container:@graph` framing (`#tg010`).
+  **87/92 of the W3C json-ld-framing suite** (remaining: compaction-deferred
+  features `#t0010`/`#t0051`/`#t0062`, `@language` case-normalization `#t0045`,
+  and the legacy `@embed: @last` `#t0059`). W3C total now 1277/1301.
 
 ### Changed
 

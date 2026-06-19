@@ -36,7 +36,7 @@ A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) spec
 - [x] Serialize JSON-LD to RDF (§7 / `toRdf`) — **460/467 of the W3C toRdf suite** (the remaining 7 are environment/spec-accommodation blockers); N-Quads output incl. `rdfDirection`, `produceGeneralizedRdf`, and JCS `@json` canonicalization
 - [x] Flattening (§4.6 / `flatten`) — **57/58 of the W3C flatten suite** (the lone blocker, `#tin06`, is the shared `@included` upstream blocker); folds named graphs into `@graph`, with optional compaction when a context is supplied
 - [x] RDF to JSON-LD (§4.9 / `fromRdf`) — **49/53 of the W3C fromRdf suite**; a built-in dependency-free N-Quads parser, `useNativeTypes` / `useRdfType`, `rdf:first`/`rest`/`nil` list reconstruction, and `@json` literals (remaining: list-of-lists conversion + two non-normative compound-literal cases)
-- [x] Framing (`frame`) — **86/92 of the W3C json-ld-framing suite**; merged/default-graph framing, `@type`/`@id`/value/node-pattern matching, wildcard `{}` vs `match none` `[]`, `@embed` (`@once`/`@never`/`@always`), `@explicit`, `@default`/`@omitDefault`/`@requireAll`, `@graph`/`@included`/`@reverse` framing, blank-node pruning, and `omitGraph` (remaining 6 are compaction-deferred features, `@language` case-normalization, and the legacy `@embed: @last`)
+- [x] Framing (`frame`) — **87/92 of the W3C json-ld-framing suite**; merged/default-graph framing, `@type`/`@id`/value/node-pattern matching, wildcard `{}` vs `match none` `[]`, `@embed` (`@once`/`@never`/`@always`), `@explicit`, `@default`/`@omitDefault`/`@requireAll`, `@graph`/`@included`/`@reverse` framing (incl. `@container:@graph`), blank-node pruning, and `omitGraph` (remaining 5 are compaction-deferred features, `@language` case-normalization, and the legacy `@embed: @last`)
 
 > Suite numbers from v0.42.0 use the spec-accurate `toEqual` comparison
 > (object-key order insignificant, array order significant); earlier numbers
@@ -106,11 +106,11 @@ composer test:w3c
 | Serialize to RDF (`toRdf`) | §7          |       467 |     460 | 7 documented blockers    |
 | Flattening                 | §4.6        |        58 |      57 | 1 documented blocker     |
 | RDF to JSON-LD (`fromRdf`) | §4.9        |        53 |      49 | 4 documented blockers    |
-| Framing                    | framing §4  |        92 |      86 | 6 documented blockers    |
+| Framing                    | framing §4  |        92 |      87 | 5 documented blockers    |
 
-**Totals: 1276 / 1301 passing** across the six manifests; Compaction is fully
-conformant. The 25 residual non-conformances (7 in expand, 7 in toRdf, 1 in
-flatten, 4 in fromRdf, 6 in framing) are mostly environment / spec-accommodation
+**Totals: 1277 / 1301 passing** across the six manifests; Compaction is fully
+conformant. The 24 residual non-conformances (7 in expand, 7 in toRdf, 1 in
+flatten, 4 in fromRdf, 5 in framing) are mostly environment / spec-accommodation
 limits, with a few minor validation gaps:
 
 - `#tc031` — context uses a relative URL resolving outside the offline fixture base
@@ -122,7 +122,7 @@ limits, with a few minor validation gaps:
 - `#tjs10` (toRdf only) — JSON-literal structural canonicalization differs
 - `#t0008` / `#tli03` (fromRdf) — list-of-lists conversion (the 1.0 shape / nested ordering); single-level lists are fully supported
 - `#tdi11` / `#tdi12` (fromRdf, non-normative) — compound-literal direction folding
-- `#t0010` / `#t0051` / `#t0062` / `#tg010` (framing) — compaction-deferred features (prefix-confusion safe mode, typed `@default` coercion, `@container:@set` in a type-scoped context, `@container:@graph`)
+- `#t0010` / `#t0051` / `#t0062` (framing) — compaction-deferred features (prefix-confusion safe mode, typed `@default` coercion, `@container:@set` in a type-scoped context)
 - `#t0045` (framing) — `@language` case-normalization (expansion preserves case, which the consensus-critical `toRdf` bytes depend on)
 - `#t0059` (framing) — the legacy `@embed: @last` mode (the `@once` default is implemented)
 

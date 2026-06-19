@@ -61,6 +61,5 @@ final class KnownBlockers
         '#t0051' => 'positive: a default value injected for a @type:@id / typed term is not value-compacted back to the term (a deferred compaction value-coercion case).',
         '#t0059' => 'positive: @embed:@last (the legacy 1.0 last-embed-wins mode) is not implemented; the default @once is.',
         '#t0062' => 'positive: a @container:@set term in a type-scoped context is not honoured during compaction (a deferred compaction container case).',
-        '#tg010' => 'positive: @container:@graph (graph-container) compaction is a deferred compaction feature.',
     ];
 }
