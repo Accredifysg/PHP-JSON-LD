@@ -1752,6 +1752,19 @@ class Expansion
                 continue;
             }
 
+            if ($definition === null) {
+                // A scoped `term: null` removes the term: it maps to null, so
+                // using it as a key drops that entry (e.g. nullifying an inherited
+                // @nest term inside a property-scoped context — #tin06). Clearing
+                // a protected term without override is rejected.
+                if (! $overrideProtected && $target->isProtected($term)) {
+                    throw new JsonLdException("Protected term redefinition: '{$term}' is protected and cannot be cleared by a scoped context");
+                }
+                $target->termDefinitions[$term] = [Keyword::Id->value => null];
+
+                continue;
+            }
+
             if (! is_string($definition) && ! is_array($definition)) {
                 continue;
             }
@@ -2197,6 +2210,14 @@ class Expansion
 
             foreach ($expandedNested as $nestedKey => $nestedValue) {
                 if (! is_string($nestedKey)) {
+                    continue;
+                }
+                // §5.5: scalar keywords (@id / @index) are merged verbatim — a
+                // nested `@id` (e.g. via an `id` alias inside an @nest block) must
+                // stay a scalar, not be wrapped into an array (#tin06).
+                if ($nestedKey === Keyword::Id->value || $nestedKey === Keyword::Index->value) {
+                    $result[$nestedKey] = $nestedValue;
+
                     continue;
                 }
                 $list = is_array($nestedValue) && array_is_list($nestedValue) ? $nestedValue : [$nestedValue];

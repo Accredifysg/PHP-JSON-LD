@@ -601,3 +601,37 @@ describe('expansion validation gates', function () {
             ->and($json)->toContain('http://example.com/dave');
     });
 });
+
+describe('@nest and scoped-null expansion (#tin06)', function () {
+    $expand = function (array $doc): array {
+        return (new JsonLdProcessor(new StubDocumentLoader))->expand($doc)->toArray();
+    };
+
+    it('keeps @id a scalar when an id alias appears inside an @nest block', function () use ($expand) {
+        $first = $expand([
+            '@context' => ['@version' => 1.1, '@vocab' => 'http://ex/', 'id' => '@id', 'nest' => '@nest'],
+            'nest' => ['id' => 'http://ex/1', 'foo' => 'bar'],
+        ])[0] ?? null;
+
+        expect($first)->toBe([
+            '@id' => 'http://ex/1',
+            'http://ex/foo' => [['@value' => 'bar']],
+        ]);
+    });
+
+    it('nullifies an inherited @nest term via a property-scoped term:null', function () use ($expand) {
+        // `data` is @nest globally, but the `comments` term nullifies it, so the
+        // `data` key drops rather than unwrapping its {id, type} as @id/@type.
+        $first = $expand([
+            '@context' => [
+                '@version' => 1.1, '@vocab' => 'http://ex/', 'id' => '@id', 'type' => '@type',
+                'data' => '@nest', 'comments' => ['@context' => ['data' => null]],
+            ],
+            'comments' => ['links' => 'L', 'data' => ['id' => 'http://ex/5', 'type' => 'C']],
+        ])[0] ?? null;
+
+        expect($first)->toBe([
+            'http://ex/comments' => [['http://ex/links' => [['@value' => 'L']]]],
+        ]);
+    });
+});

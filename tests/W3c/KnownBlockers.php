@@ -27,7 +27,6 @@ final class KnownBlockers
         '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its "invalid scoped context" error is not raised (lazy scoped-context evaluation).',
         '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised (lazy scoped-context evaluation).',
         '#ter56' => 'negative: defining a term named @context is not rejected as keyword redefinition. A naive throw conflates with a remote context DOCUMENT ({"@context": …}); the fix must unwrap remote contexts first (breaks #t0127/#te127 otherwise), so it is not a one-liner.',
-        '#tin06' => 'positive: the json.api example expands an `id` alias used inside an `@nest` block to an `@id` ARRAY (`["…"]`) instead of a scalar — a bug in the @nest + keyword-alias expansion path.',
     ];
 
     /** @var array<string, string> toRdf-manifest id => reason */
@@ -37,13 +36,11 @@ final class KnownBlockers
         '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised (lazy scoped-context evaluation).',
         '#te128' => 'positive: a shared context referenced by a RELATIVE URL from two scoped contexts is rejected with "Remote context must be a valid URL" — relative @context-URL resolution is not implemented (toRdf counterpart of #t0128; same root as #tc031, NOT a circular-reference guard).',
         '#ter56' => 'negative: defining a term named @context is not rejected as keyword redefinition. The fix must first unwrap remote context DOCUMENTS ({"@context": …}) or it breaks #t0127/#te127, so it is not a one-liner.',
-        '#tin06' => 'positive: the json.api example expands an `id` alias used inside an `@nest` block to an `@id` ARRAY instead of a scalar, so the N-Quads differ — a bug in the @nest + keyword-alias expansion path.',
         '#tjs10' => 'positive: JSON-literal structural canonicalization differs (PHP json_decode cannot distinguish {} from []).',
     ];
 
     /** @var array<string, string> flatten-manifest id => reason */
     public const FLATTEN = [
-        '#tin06' => 'positive: the same upstream expansion bug as EXPAND/TO_RDF #tin06 — an `id` alias inside an `@nest` block expands to an `@id` ARRAY instead of a scalar.',
     ];
 
     /** @var array<string, string> fromRdf-manifest id => reason */

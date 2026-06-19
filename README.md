@@ -31,10 +31,10 @@ A PHP implementation of the [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) spec
 ## Scope (delivered)
 
 - [x] Custom `DocumentLoader` interface
-- [x] Expansion (§5.5) — **378/385 of the W3C expand suite** (the remaining 7 are environment/spec-accommodation blockers)
+- [x] Expansion (§5.5) — **379/385 of the W3C expand suite** (the remaining 6 are environment/spec-accommodation blockers)
 - [x] Compaction (§5.6) — **246/246 of the W3C compact suite (100%)**: container-maps (incl. property-valued `@index`, `@type`-map node refs), keyword recursion, `@nest`, nested `@list`, `@graph` maps, `@reverse` (incl. per-value term selection and containers), full inverse-context term scoring (list/direction-aware, `@json` literals), property-/type-scoped contexts with scoped `@base`/`@vocab`, IRI relativisation, expand-first normalisation, the `compactArrays` option, §5.7 prefix rules and error conditions
-- [x] Serialize JSON-LD to RDF (§7 / `toRdf`) — **460/467 of the W3C toRdf suite** (the remaining 7 are environment/spec-accommodation blockers); N-Quads output incl. `rdfDirection`, `produceGeneralizedRdf`, and JCS `@json` canonicalization
-- [x] Flattening (§4.6 / `flatten`) — **57/58 of the W3C flatten suite** (the lone blocker, `#tin06`, is the shared `@included` upstream blocker); folds named graphs into `@graph`, with optional compaction when a context is supplied
+- [x] Serialize JSON-LD to RDF (§7 / `toRdf`) — **461/467 of the W3C toRdf suite** (the remaining 6 are environment/spec-accommodation blockers); N-Quads output incl. `rdfDirection`, `produceGeneralizedRdf`, and JCS `@json` canonicalization
+- [x] Flattening (§4.6 / `flatten`) — **58/58 of the W3C flatten suite (100%)**; folds named graphs into `@graph`, with optional compaction when a context is supplied
 - [x] RDF to JSON-LD (§4.9 / `fromRdf`) — **49/53 of the W3C fromRdf suite**; a built-in dependency-free N-Quads parser, `useNativeTypes` / `useRdfType`, `rdf:first`/`rest`/`nil` list reconstruction, and `@json` literals (remaining: list-of-lists conversion + two non-normative compound-literal cases)
 - [x] Framing (`frame`) — **89/92 of the W3C json-ld-framing suite**; merged/default-graph framing, `@type`/`@id`/value/node-pattern matching, wildcard `{}` vs `match none` `[]`, `@embed` (`@once`/`@never`/`@always`), `@explicit`, `@default`/`@omitDefault`/`@requireAll`, `@graph`/`@included`/`@reverse` framing (incl. `@container:@graph`), blank-node pruning, and `omitGraph` (remaining 3 are compaction safe-mode strictness, `@language` case-normalization, and the legacy `@embed: @last`)
 
@@ -101,24 +101,23 @@ composer test:w3c
 
 | Algorithm                  | Spec        | W3C suite | Passing | Conformance              |
 | -------------------------- | ----------- | --------: | ------: | ------------------------ |
-| Expansion                  | §5.5        |       385 |     378 | 7 documented blockers    |
+| Expansion                  | §5.5        |       385 |     379 | 6 documented blockers    |
 | Compaction                 | §5.6        |       246 |     246 | **100%**                 |
-| Serialize to RDF (`toRdf`) | §7          |       467 |     460 | 7 documented blockers    |
-| Flattening                 | §4.6        |        58 |      57 | 1 documented blocker     |
+| Serialize to RDF (`toRdf`) | §7          |       467 |     461 | 6 documented blockers    |
+| Flattening                 | §4.6        |        58 |      58 | **100%**                 |
 | RDF to JSON-LD (`fromRdf`) | §4.9        |        53 |      49 | 4 documented blockers    |
 | Framing                    | framing §4  |        92 |      89 | 3 documented blockers    |
 
-**Totals: 1279 / 1301 passing** across the six manifests; Compaction is fully
-conformant. The 22 residual non-conformances (7 in expand, 7 in toRdf, 1 in
-flatten, 4 in fromRdf, 3 in framing) are mostly environment / spec-accommodation
+**Totals: 1282 / 1301 passing** across the six manifests; Compaction and
+Flattening are fully conformant. The 19 residual non-conformances (6 in expand,
+6 in toRdf, 4 in fromRdf, 3 in framing) are mostly environment / spec-accommodation
 limits, with a few minor validation gaps:
 
-- `#tc031` — context uses a relative URL resolving outside the offline fixture base
+- `#tc031` — a relative `@context` URL is not resolved against the document base before loading
 - `#tc032` / `#tc033` — *unused* embedded contexts aren't validated (negative tests)
 - `#ter56` — redefining the `@context` keyword isn't rejected (negative test)
-- `#t0128` (expand) / `#te128` (toRdf) — two scoped contexts sharing a context trip the offline circular-reference guard
-- `#tin06` — the `json.api` `@included`-blocks example produces a different shape (expand, toRdf, flatten)
-- `#t0122` (expand only) — keyword-shaped (`@`) IRIs are kept rather than ignored
+- `#t0128` (expand) / `#te128` (toRdf) — a shared context referenced by a relative URL (same root as `#tc031`)
+- `#t0122` (expand only) — keyword-shaped (`@`) IRIs are dropped rather than kept as `{@id: null}` (non-normative)
 - `#tjs10` (toRdf only) — JSON-literal structural canonicalization differs
 - `#t0008` / `#tli03` (fromRdf) — list-of-lists conversion (the 1.0 shape / nested ordering); single-level lists are fully supported
 - `#tdi11` / `#tdi12` (fromRdf, non-normative) — compound-literal direction folding
