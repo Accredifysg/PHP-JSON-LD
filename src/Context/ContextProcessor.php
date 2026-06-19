@@ -208,7 +208,12 @@ class ContextProcessor
      */
     private function resolveContextRef(mixed $ref, string $baseUrl): mixed
     {
-        if (is_string($ref) && $ref !== '' && filter_var($ref, FILTER_VALIDATE_URL) === false) {
+        // Resolve only a RELATIVE reference (RFC 3986 §4.2 — no scheme). A ref
+        // that already carries a scheme is absolute (incl. non-URL IRIs such as
+        // `urn:`/`did:`), so it is left as-is rather than resolved against the
+        // base. (FILTER_VALIDATE_URL must not be used here: it rejects scheme-only
+        // IRIs and would misclassify them as relative.)
+        if (is_string($ref) && $ref !== '' && preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*:/', $ref) !== 1) {
             return IriResolver::resolve($baseUrl, $ref);
         }
         if (is_array($ref) && array_is_list($ref)) {

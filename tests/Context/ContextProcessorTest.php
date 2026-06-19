@@ -333,4 +333,24 @@ describe('ContextProcessor processing-mode gates', function () {
         expect($processor->getTermDefinitions()->getTermDefinition('outer'))
             ->toBe(['@id' => 'https://example.com/out', '@context' => 'https://example.com/shared.jsonld']);
     });
+
+    it('leaves an absolute scoped @context (incl. a scheme-only IRI) unresolved', function () {
+        $loader = new StubDocumentLoader;
+        // `urn:`/absolute scoped @context references have a scheme, so they are
+        // NOT resolved against the defining context's URL (PR #12 review).
+        $loader->add('https://example.com/dir/ctx.jsonld', [
+            '@context' => [
+                'u' => ['@id' => 'https://example.com/u', '@context' => 'urn:example:ctx'],
+                'a' => ['@id' => 'https://example.com/a', '@context' => 'https://other.example/ctx.jsonld'],
+            ],
+        ]);
+
+        $defs = (new ContextProcessor(['@context' => 'https://example.com/dir/ctx.jsonld'], $loader))
+            ->getTermDefinitions();
+
+        expect($defs->getTermDefinition('u'))
+            ->toBe(['@id' => 'https://example.com/u', '@context' => 'urn:example:ctx'])
+            ->and($defs->getTermDefinition('a'))
+            ->toBe(['@id' => 'https://example.com/a', '@context' => 'https://other.example/ctx.jsonld']);
+    });
 });
