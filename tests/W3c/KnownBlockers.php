@@ -21,29 +21,29 @@ final class KnownBlockers
 {
     /** @var array<string, string> expand-manifest id => reason */
     public const EXPAND = [
-        '#t0122' => 'positive: a property whose IRI has keyword (@-) form is emitted rather than dropped (spec MUST-ignores such IRIs).',
-        '#t0128' => 'positive: two scoped contexts sharing one referenced context trip our offline circular-reference guard.',
-        '#tc031' => 'positive: a relative @context URL (RFC 3986-resolved) points outside the offline W3C fixture base, so the test loader cannot serve it.',
-        '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its error is not raised.',
-        '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised.',
-        '#ter56' => 'negative: redefining the @context keyword is not rejected.',
-        '#tin06' => 'positive: the json.api @included-blocks example expands @id/@type in a different shape.',
+        '#t0122' => 'positive (non-normative): a keyword-form (@-) IRI as a node @id is dropped along with its node, but the fixture keeps the property with `{"@id": null}` (itself invalid JSON-LD per the test note). Low value.',
+        '#t0128' => 'positive: a shared context referenced by a RELATIVE URL from two scoped contexts is rejected with "Remote context must be a valid URL" — relative @context-URL resolution against the document base is not implemented (same root as #tc031, NOT a circular-reference guard).',
+        '#tc031' => 'positive: a relative @context URL is not resolved against the document base (RFC 3986) before loading, so the offline fixture cannot be served ("Remote context must be a valid URL").',
+        '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its "invalid scoped context" error is not raised (lazy scoped-context evaluation).',
+        '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised (lazy scoped-context evaluation).',
+        '#ter56' => 'negative: defining a term named @context is not rejected as keyword redefinition. A naive throw conflates with a remote context DOCUMENT ({"@context": …}); the fix must unwrap remote contexts first (breaks #t0127/#te127 otherwise), so it is not a one-liner.',
+        '#tin06' => 'positive: the json.api example expands an `id` alias used inside an `@nest` block to an `@id` ARRAY (`["…"]`) instead of a scalar — a bug in the @nest + keyword-alias expansion path.',
     ];
 
     /** @var array<string, string> toRdf-manifest id => reason */
     public const TO_RDF = [
-        '#tc031' => 'positive: a relative @context URL (RFC 3986-resolved) points outside the offline W3C fixture base, so the test loader cannot serve it.',
-        '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its error is not raised.',
-        '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised.',
-        '#te128' => 'positive: two scoped contexts sharing one referenced context trip our offline circular-reference guard (toRdf counterpart of expand #t0128).',
-        '#ter56' => 'negative: redefining the @context keyword is not rejected.',
-        '#tin06' => 'positive: the json.api @included-blocks example serialises to a different N-Quads set.',
+        '#tc031' => 'positive: a relative @context URL is not resolved against the document base (RFC 3986) before loading ("Remote context must be a valid URL").',
+        '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its "invalid scoped context" error is not raised (lazy scoped-context evaluation).',
+        '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised (lazy scoped-context evaluation).',
+        '#te128' => 'positive: a shared context referenced by a RELATIVE URL from two scoped contexts is rejected with "Remote context must be a valid URL" — relative @context-URL resolution is not implemented (toRdf counterpart of #t0128; same root as #tc031, NOT a circular-reference guard).',
+        '#ter56' => 'negative: defining a term named @context is not rejected as keyword redefinition. The fix must first unwrap remote context DOCUMENTS ({"@context": …}) or it breaks #t0127/#te127, so it is not a one-liner.',
+        '#tin06' => 'positive: the json.api example expands an `id` alias used inside an `@nest` block to an `@id` ARRAY instead of a scalar, so the N-Quads differ — a bug in the @nest + keyword-alias expansion path.',
         '#tjs10' => 'positive: JSON-literal structural canonicalization differs (PHP json_decode cannot distinguish {} from []).',
     ];
 
     /** @var array<string, string> flatten-manifest id => reason */
     public const FLATTEN = [
-        '#tin06' => 'positive: the json.api @included-blocks example expands @id/@type in a different shape (same upstream expansion blocker as EXPAND/TO_RDF #tin06).',
+        '#tin06' => 'positive: the same upstream expansion bug as EXPAND/TO_RDF #tin06 — an `id` alias inside an `@nest` block expands to an `@id` ARRAY instead of a scalar.',
     ];
 
     /** @var array<string, string> fromRdf-manifest id => reason */
