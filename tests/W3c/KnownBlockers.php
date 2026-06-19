@@ -21,29 +21,22 @@ final class KnownBlockers
 {
     /** @var array<string, string> expand-manifest id => reason */
     public const EXPAND = [
-        '#t0122' => 'positive: a property whose IRI has keyword (@-) form is emitted rather than dropped (spec MUST-ignores such IRIs).',
-        '#t0128' => 'positive: two scoped contexts sharing one referenced context trip our offline circular-reference guard.',
-        '#tc031' => 'positive: a relative @context URL (RFC 3986-resolved) points outside the offline W3C fixture base, so the test loader cannot serve it.',
-        '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its error is not raised.',
-        '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised.',
-        '#ter56' => 'negative: redefining the @context keyword is not rejected.',
-        '#tin06' => 'positive: the json.api @included-blocks example expands @id/@type in a different shape.',
+        '#t0122' => 'positive (non-normative): a keyword-form (@-) IRI as a node @id is dropped along with its node, but the fixture keeps the property with `{"@id": null}` (itself invalid JSON-LD per the test note). Low value.',
+        '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its "invalid scoped context" error is not raised (lazy scoped-context evaluation).',
+        '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised (lazy scoped-context evaluation).',
+        '#ter56' => 'negative: defining a term named @context is not rejected as keyword redefinition. A naive throw conflates with a remote context DOCUMENT ({"@context": …}); the fix must unwrap remote contexts first (breaks #t0127/#te127 otherwise), so it is not a one-liner.',
     ];
 
     /** @var array<string, string> toRdf-manifest id => reason */
     public const TO_RDF = [
-        '#tc031' => 'positive: a relative @context URL (RFC 3986-resolved) points outside the offline W3C fixture base, so the test loader cannot serve it.',
-        '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its error is not raised.',
-        '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised.',
-        '#te128' => 'positive: two scoped contexts sharing one referenced context trip our offline circular-reference guard (toRdf counterpart of expand #t0128).',
-        '#ter56' => 'negative: redefining the @context keyword is not rejected.',
-        '#tin06' => 'positive: the json.api @included-blocks example serialises to a different N-Quads set.',
+        '#tc032' => 'negative: an embedded context that is never used is not evaluated, so its "invalid scoped context" error is not raised (lazy scoped-context evaluation).',
+        '#tc033' => 'negative: an unused context carrying an embedded-context error is not evaluated, so its error is not raised (lazy scoped-context evaluation).',
+        '#ter56' => 'negative: defining a term named @context is not rejected as keyword redefinition. The fix must first unwrap remote context DOCUMENTS ({"@context": …}) or it breaks #t0127/#te127, so it is not a one-liner.',
         '#tjs10' => 'positive: JSON-literal structural canonicalization differs (PHP json_decode cannot distinguish {} from []).',
     ];
 
     /** @var array<string, string> flatten-manifest id => reason */
     public const FLATTEN = [
-        '#tin06' => 'positive: the json.api @included-blocks example expands @id/@type in a different shape (same upstream expansion blocker as EXPAND/TO_RDF #tin06).',
     ];
 
     /** @var array<string, string> fromRdf-manifest id => reason */
@@ -58,9 +51,6 @@ final class KnownBlockers
     public const FRAME = [
         '#t0010' => 'positive: compaction safe-mode rejects "dcterms:creator" as an IRI confused with the declared "dcterms" prefix (jsonld errors here too); a pre-existing compaction strictness, not a framing gap.',
         '#t0045' => 'positive: a value-pattern keeps the matched value verbatim with @language "R", but the fixture lower-cases it to "r"; expansion intentionally preserves @language case (the toRdf bytes VC signs depend on it).',
-        '#t0051' => 'positive: a default value injected for a @type:@id / typed term is not value-compacted back to the term (a deferred compaction value-coercion case).',
         '#t0059' => 'positive: @embed:@last (the legacy 1.0 last-embed-wins mode) is not implemented; the default @once is.',
-        '#t0062' => 'positive: a @container:@set term in a type-scoped context is not honoured during compaction (a deferred compaction container case).',
-        '#tg010' => 'positive: @container:@graph (graph-container) compaction is a deferred compaction feature.',
     ];
 }

@@ -226,6 +226,28 @@ final class JsonLdProcessor implements Processor
         // (wildcards, @id/@type patterns, and frame keywords are preserved).
         $expandedFrame = $this->runExpansion($frame, $options, frameExpansion: true);
 
+        // Resolve the frame's @context once — used both to decide merged-vs-default
+        // framing (below) and to compact the framed output.
+        $frameContext = array_key_exists(Keyword::Context->value, $frame) ? $frame[Keyword::Context->value] : [];
+        $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options?->base, $options?->processingMode);
+        $frameDefs = $contextProcessor->getTermDefinitions();
+
+        // Frame the merged graph unless a RAW top-level frame key expands to
+        // `@graph` (then frame the default graph). This must be read from the raw
+        // frame: expansion folds away a sole top-level `@graph` entry, so the
+        // expanded frame no longer carries it.
+        $merged = true;
+        foreach (array_keys($frame) as $key) {
+            if (! is_string($key) || $key === Keyword::Context->value) {
+                continue;
+            }
+            $def = $frameDefs->getTermDefinition($key);
+            if ($key === Keyword::Graph->value || (is_array($def) && ($def[Keyword::Id->value] ?? null) === Keyword::Graph->value)) {
+                $merged = false;
+                break;
+            }
+        }
+
         $modeOption = $options?->processingMode;
         $processingMode = $modeOption ?? 'json-ld-1.1';
         $is11 = $processingMode !== 'json-ld-1.0';
@@ -242,13 +264,11 @@ final class JsonLdProcessor implements Processor
             $options !== null && $options->requireAll,
             $options !== null && $options->omitDefault,
             pruneBnodes: $is11,
-        ))->frame($expandedFrame);
+        ))->frame($expandedFrame, merged: $merged);
 
         // Compact each framed node against the frame's @context.
-        $frameContext = array_key_exists(Keyword::Context->value, $frame) ? $frame[Keyword::Context->value] : [];
-        $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options?->base, $options?->processingMode);
         $compactArrays = $options === null || $options->compactArrays;
-        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $compactArrays, framing: true);
+        $compaction = new Compaction($frameDefs, $compactArrays, framing: true);
 
         $graph = [];
         foreach ($framed as $node) {

@@ -26,9 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@graph`-wrapped (reusing the Compaction algorithm). New `Algorithms\Flattening`
   (built on the existing `Algorithms\NodeMap` node-map generation, exactly as
   `toRdf` is), the `Documents\FlattenedDocument` result wrapper, and the
-  `Keyword::Default` case. **57/58 of the W3C flatten suite** (the lone blocker,
-  `#tin06`, is the same `json.api` `@included`-blocks shape difference already
-  carried for expand/toRdf).
+  `Keyword::Default` case. **58/58 of the W3C flatten suite (100%)**.
 
 - **RDF to JSON-LD (`fromRdf`)** — a new `Processor::fromRdf()` /
   `JsonLdProcessor::fromRdf()` implementing the Serialize-RDF-as-JSON-LD
@@ -60,10 +58,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expand/compact/toRdf output is byte-identical). Because PHP's associative
   arrays cannot distinguish a frame's `{}` (wildcard) from `[]` (`match none`),
   an empty frame value is treated as `match none` and a wildcard is carried as
-  the `Expansion::FRAME_WILDCARD` sentinel. **86/92 of the W3C json-ld-framing
-  suite** (remaining: compaction-deferred features `#t0010`/`#t0051`/`#t0062`/
-  `#tg010`, `@language` case-normalization `#t0045`, and the legacy
-  `@embed: @last` `#t0059`). W3C total now 1276/1301.
+  the `Expansion::FRAME_WILDCARD` sentinel. The merged-vs-default graph decision
+  is read from the *raw* frame keys (a sole top-level `@graph` is folded away by
+  expansion), so a frame with a top-level `@graph` correctly frames the default
+  graph rather than the merged one — fixing `@container:@graph` framing (`#tg010`).
+  **89/92 of the W3C json-ld-framing suite** (remaining: compaction safe-mode
+  strictness `#t0010`, `@language` case-normalization `#t0045`, and the legacy
+  `@embed: @last` `#t0059`). W3C total now 1286/1301.
 
 ### Changed
 
@@ -71,6 +72,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `frame()`. Adding methods to the published interface breaks any downstream
   implementer, so these land together in 2.0.0. No runtime behaviour change for
   existing `expand` / `compact` / `toRdf` callers.
+
+### Fixed
+
+- **Compaction: a type-scoped `@container:@set` term now keeps its array.** A
+  property whose `@container:@set` comes from a type-scoped context (activated by
+  the node's `@type`) was unwrapped to a single value, because the array-vs-single
+  decision was made *after* recursing into the value — and a nested node object
+  rolls back the type-scoped context (§5.6 non-propagation), hiding the term's
+  container. The container is now resolved before recursing. Affects plain
+  `compact()` too, not only framing (`#t0062`); the 246/246 compaction suite is
+  unchanged.
+
+- **Expansion: a scoped context's `"term": null` now nullifies the term.** A
+  type-/property-scoped context entry mapping a term to `null` was silently
+  ignored, so an inherited definition (e.g. an `@nest` term) survived. It now
+  drops the term, matching the spec.
+
+- **Expansion: `@id`/`@index` inside an `@nest` block stay scalars.** The `@nest`
+  merge array-wrapped every key, turning a nested `@id` (e.g. via an `id` alias)
+  into `["…"]` (invalid). Scalar keywords are now merged verbatim. Together with
+  the scoped-`null` fix this clears the `json.api` example (`#tin06`) across
+  **expand, toRdf, and flatten** — flatten is now 58/58 (100%).
+
+- **Relative `@context` URLs now resolve correctly.** Two fixes: (1) the remote-
+  context cycle guard is now path-based, so a context referenced by two sibling
+  contexts (a diamond) loads without a false "circular reference" error while a
+  true A→B→A recursion still throws (`#t0128`/`#te128`); (2) a term's relative
+  scoped `@context` is resolved against the URL of the context that defines it
+  (not the document `@base`), so it loads correctly during expansion (`#tc031`).
+  Expand 379→381, toRdf 461→463.
 
 ## [1.0.1] - 2026-06-11
 
