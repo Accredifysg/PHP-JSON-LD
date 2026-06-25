@@ -62,14 +62,14 @@ jobs:
         run: sed -i "s|${GITHUB_WORKSPACE}/||g" coverage/clover.xml coverage/junit.xml
 
       - name: Upload Coverage Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report-${{ matrix.php }}
           path: coverage/clover.xml
           if-no-files-found: error
 
       - name: Upload JUnit Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-report-${{ matrix.php }}
           path: coverage/junit.xml
