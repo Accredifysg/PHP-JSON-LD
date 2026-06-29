@@ -20,13 +20,13 @@ jobs:
           fetch-depth: 0 # full history for SCM blame
 
       - name: Download Backend Coverage Report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ needs.ci.outputs.backend-coverage-artifact-name }}
           path: coverage_BE
 
       - name: Download Backend JUnit Report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ needs.ci.outputs.backend-junit-artifact-name }}
           path: junit_BE
