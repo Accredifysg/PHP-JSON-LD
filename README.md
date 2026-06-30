@@ -7,7 +7,7 @@
 <!-- ![License](https://img.shields.io/packagist/l/accredifysg/php-json-ld) -->
 <!-- ![JSON-LD 1.1 Compliance](https://img.shields.io/badge/JSON--LD%201.1-partial-green) -->
 
-[![Quality Gate Status](https://sonar.eng.accredify.dev/api/project_badges/quality_gate?project=Accredifysg_PHP-JSON-LD&token=sqb_d3cfb3ec6c3775cc91d48ca7b37e3726f5894b21)](https://sonar.eng.accredify.dev/dashboard?id=Accredifysg_PHP-JSON-LD)
+[![Quality Gate Status](https://sonar.eng.accredify.dev/api/project_badges/measure?project=Accredifysg_PHP-JSON-LD&metric=alert_status&token=sqb_d3cfb3ec6c3775cc91d48ca7b37e3726f5894b21)](https://sonar.eng.accredify.dev/dashboard?id=Accredifysg_PHP-JSON-LD)
 [![Coverage](https://sonar.eng.accredify.dev/api/project_badges/measure?project=Accredifysg_PHP-JSON-LD&metric=coverage&token=sqb_d3cfb3ec6c3775cc91d48ca7b37e3726f5894b21)](https://sonar.eng.accredify.dev/dashboard?id=Accredifysg_PHP-JSON-LD)
 [![Maintainability Rating](https://sonar.eng.accredify.dev/api/project_badges/measure?project=Accredifysg_PHP-JSON-LD&metric=sqale_rating&token=sqb_d3cfb3ec6c3775cc91d48ca7b37e3726f5894b21)](https://sonar.eng.accredify.dev/dashboard?id=Accredifysg_PHP-JSON-LD)
 [![Reliability Rating](https://sonar.eng.accredify.dev/api/project_badges/measure?project=Accredifysg_PHP-JSON-LD&metric=reliability_rating&token=sqb_d3cfb3ec6c3775cc91d48ca7b37e3726f5894b21)](https://sonar.eng.accredify.dev/dashboard?id=Accredifysg_PHP-JSON-LD)
