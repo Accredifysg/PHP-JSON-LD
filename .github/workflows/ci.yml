@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -85,7 +85,7 @@ jobs:
 
     steps:
       - name: Checkout (with W3C submodule)
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
 
