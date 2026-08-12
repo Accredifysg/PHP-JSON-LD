@@ -1611,12 +1611,18 @@ class Expansion
 
         $scoped = null;
         foreach ($types as $type) {
-            // Types may be defined inside another term's nested @context
-            // (e.g. DataIntegrityProof inside an imported security context).
-            // We allow recursive lookup HERE so the scope can activate, but
-            // not for regular property resolution where leaking would
-            // violate spec scoping.
-            $typeDef = $this->documentBase->getTermDefinition($type)
+            // §5.5 step 11 resolves the type against the ACTIVE context, so a
+            // type-scoped @context introduced by an embedded node @context
+            // (e.g. an Accredify credential context on a VC nested inside a
+            // VP's verifiableCredential graph) activates. documentBase is the
+            // fallback for types visible only at the document level. Types may
+            // also be defined inside another term's nested @context (e.g.
+            // DataIntegrityProof inside an imported security context); we
+            // allow recursive lookup HERE so the scope can activate, but not
+            // for regular property resolution where leaking would violate
+            // spec scoping.
+            $typeDef = $this->termDefinitions->getTermDefinition($type)
+                ?? $this->documentBase->getTermDefinition($type)
                 ?? $this->findTypeDefRecursive($type, $this->documentBase->termDefinitions);
             if (
                 $typeDef === null
