@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- W3C EARL implementation report (`reports/php-json-ld-earl.ttl`) and its
+  generator (`scripts/generate-earl-report.php`), for inclusion in the
+  [JSON-LD 1.1 implementation report](https://w3c.github.io/json-ld-api/reports/):
+  1,275 assertions (1,262 passed, 13 failed; `specVersion: json-ld-1.0` tests
+  excluded per the consolidated report's scope).
+
+### Changed
+
+- README rewritten around the released feature set: conformance matrix
+  refreshed against the current W3C suite (1,287/1,302), interoperability and
+  implementation-report sections added, development-phase scaffolding removed.
+- `tests/w3c` submodule bumped to the current upstream head so local
+  conformance runs match the published suite (adds fromRdf `#t0028`, which
+  passes: fromRdf 50/54, totals 1,287/1,302).
+
+## [2.1.0] - 2026-08-13
+
+### Fixed
+
+- **Type-scoped context activation now resolves types against the active
+  context** per JSON-LD 1.1 expansion step 11 (#38, #41). Previously a type
+  defined by a nested node's own embedded `@context` never activated its
+  type-scoped context — silently dropping every term it defined (the VC-in-VP
+  shape: embedded credentials' `credentialSubject` claims vanished from
+  canonical N-Quads, so `eddsa-rdfc-2022` signatures failed in conformant
+  verifiers). The document-level fallback and recursive lookup were removed
+  (#41), so a type-scoped context no longer leaks through the VC 2.0
+  `verifiableCredential` `@context: null` isolation. Canonical output for the
+  affected shapes is now identical to jsonld.js and PyLD.
+
+### Added
+
+- Cross-implementation interop corpus (`tests/Interop`, #40): realistic
+  VC 2.0 / Open Badges v3 documents whose RDFC-1.0 canonical N-Quads are
+  pinned to jsonld.js-generated goldens and compared as datasets in CI —
+  catches consistently-wrong canonicalization that internal round-trips and
+  the W3C suite cannot.
+- `@propagate` boundary coverage for scoped contexts in the expansion unit
+  tests (#39).
+
 ## [2.0.0] - 2026-06-19
 
 > **Completes the JSON-LD 1.1 algorithm set.** The three algorithms missing from
@@ -2712,7 +2754,8 @@ change. Spec-compliance work lands incrementally in Phase 4.
 - Hardcoded xsd:string collapse.
 - Only `expand` is implemented; `compact` and `toRdf` land in Phase 4.
 
-[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/accredifysg/php-json-ld/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/accredifysg/php-json-ld/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/accredifysg/php-json-ld/compare/v1.0.1...v2.0.0
 [1.0.1]: https://github.com/accredifysg/php-json-ld/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/accredifysg/php-json-ld/compare/v0.69.0...v1.0.0
