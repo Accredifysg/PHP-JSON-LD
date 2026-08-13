@@ -712,4 +712,47 @@ describe('type-scoped contexts introduced by embedded node contexts', function (
         // could never be reproduced by a conformant processor.
         expect($nQuads)->toContain('<did:example:subject> <http://ex/fullName> "Jane Citizen"');
     });
+
+    it('does not activate a document-level type-scoped context inside a node isolated by a property-scoped @context: null', function () {
+        // The flip side of active-context type resolution: §5.5 step 11 looks
+        // the type up in the ACTIVE context ONLY. After a property-scoped
+        // `@context: null` reset (the VC 2.0 `verifiableCredential` isolation
+        // shape), a type-scoped context that exists solely at the DOCUMENT
+        // level must not activate — its terms stay undefined and drop.
+        // Expectations pinned to jsonld.js 8.3.3 output; see also the
+        // tests/Interop `vc-context-null-isolation` golden.
+        $expanded = (new JsonLdProcessor(new StubDocumentLoader))->expand([
+            '@context' => [
+                '@version' => 1.1,
+                'isolated' => ['@id' => 'http://ex/isolated', '@context' => null],
+                'Thing' => [
+                    '@id' => 'http://ex/Thing',
+                    '@context' => ['label' => 'http://ex/label'],
+                ],
+            ],
+            '@id' => 'http://ex/outer',
+            'isolated' => [
+                '@id' => 'http://ex/inner',
+                '@type' => 'Thing',
+                'label' => 'dropped',
+            ],
+        ])->toArray();
+
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        $values = $first['http://ex/isolated'] ?? null;
+        expect($values)->toBeArray();
+        /** @var list<mixed> $values */
+        $inner = $values[0] ?? null;
+        expect($inner)->toBeArray();
+        /** @var array<string, mixed> $inner */
+        // Post-reset there is no `Thing` term and no @vocab, so the type stays
+        // an unexpanded relative IRI — and, critically, its document-level
+        // scoped context does not activate: `label` must be dropped, not
+        // resurrected as http://ex/label.
+        expect($inner['@type'] ?? null)->toBe(['Thing']);
+        expect($inner)->not->toHaveKey('http://ex/label');
+        expect($inner)->toBe(['@id' => 'http://ex/inner', '@type' => ['Thing']]);
+    });
 });

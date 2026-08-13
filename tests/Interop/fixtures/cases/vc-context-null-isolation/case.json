@@ -1,4 +1,4 @@
 {
   "safe": false,
-  "note": "Intentionally lossy: the embedded credential carries only the bare VC 2.0 context, so per spec its `Individual` subject type (a relative IRI) and the undefined `fullName` term are DROPPED after the `@context: null` isolation on `verifiableCredential`. The golden pins the conformant (jsonld.js) output; safe mode must be off to generate it. Guards the removal of the documentBase fallback in Expansion::activateTypeScopedContexts(), which wrongly resurrects the presentation-level type-scoped context inside the isolated credential."
+  "note": "Intentionally lossy: the embedded credential carries only the bare VC 2.0 context, so per spec its `Individual` subject type (a relative IRI) and the undefined `fullName` term are DROPPED after the `@context: null` isolation on `verifiableCredential`. The golden pins the conformant (jsonld.js) output; safe mode must be off to generate it. Regression guard: a document-level type-scoped context must never activate inside the isolated credential (Expansion::activateTypeScopedContexts() once had a documentBase fallback that leaked it)."
 }

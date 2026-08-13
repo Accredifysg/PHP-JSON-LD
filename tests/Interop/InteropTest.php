@@ -30,9 +30,7 @@ use Accredify\JsonLd\Tests\Interop\Support\NQuadsDataset;
  * listed case that still diverges is SKIPPED, a listed case that starts
  * matching FAILS so the entry (and its workaround) cannot outlive the fix.
  */
-const INTEROP_KNOWN_DEVIATIONS = [
-    'vc-context-null-isolation' => 'Expansion::activateTypeScopedContexts() falls back to the DOCUMENT-level context when resolving a node type, so a presentation-level type-scoped context (Individual) wrongly activates inside a credential isolated by the VC 2.0 `verifiableCredential` @context:null reset. Per spec (and jsonld.js) the isolated credential must not see it. Remove the documentBase fallback to fix.',
-];
+const INTEROP_KNOWN_DEVIATIONS = [];
 
 dataset('interop-cases', function () {
     $dirs = glob(__DIR__.'/fixtures/cases/*', GLOB_ONLYDIR);

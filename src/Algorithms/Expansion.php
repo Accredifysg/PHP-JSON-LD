@@ -1611,19 +1611,18 @@ class Expansion
 
         $scoped = null;
         foreach ($types as $type) {
-            // §5.5 step 11 resolves the type against the ACTIVE context, so a
-            // type-scoped @context introduced by an embedded node @context
-            // (e.g. an Accredify credential context on a VC nested inside a
-            // VP's verifiableCredential graph) activates. documentBase is the
-            // fallback for types visible only at the document level. Types may
-            // also be defined inside another term's nested @context (e.g.
-            // DataIntegrityProof inside an imported security context); we
-            // allow recursive lookup HERE so the scope can activate, but not
-            // for regular property resolution where leaking would violate
-            // spec scoping.
-            $typeDef = $this->termDefinitions->getTermDefinition($type)
-                ?? $this->documentBase->getTermDefinition($type)
-                ?? $this->findTypeDefRecursive($type, $this->documentBase->termDefinitions);
+            // §5.5 step 11 resolves the type against the ACTIVE context and
+            // nothing else. No document-level fallback: after a context reset
+            // (e.g. VC 2.0's `@context: null` isolation on
+            // verifiableCredential) a document-level type-scoped context must
+            // NOT activate, or its terms leak into the isolated node and the
+            // canonical quads diverge from conformant processors
+            // (tests/Interop `vc-context-null-isolation`). Types defined
+            // inside another term's scoped @context (e.g. DataIntegrityProof
+            // in an imported security context) are already visible here: the
+            // property-scoped context is active by the time the typed node is
+            // entered.
+            $typeDef = $this->termDefinitions->getTermDefinition($type);
             if (
                 $typeDef === null
                 || ! array_key_exists('@context', $typeDef)
@@ -1681,35 +1680,6 @@ class Expansion
         }
 
         return $scoped;
-    }
-
-    /**
-     * Recursively searches for a type's term definition by walking into any
-     * nested `@context` entries it encounters. Used ONLY for type lookup
-     * during scope activation — not for general property resolution, where
-     * the spec requires strict scope isolation.
-     *
-     * @param  array<array-key, mixed>  $haystack
-     * @return array<array-key, mixed>|null
-     */
-    private function findTypeDefRecursive(string $type, array $haystack): ?array
-    {
-        foreach ($haystack as $term => $definition) {
-            if (! is_array($definition)) {
-                continue;
-            }
-            if ($term === $type && isset($definition['@context'])) {
-                return $definition;
-            }
-            if (isset($definition['@context']) && is_array($definition['@context'])) {
-                $nested = $this->findTypeDefRecursive($type, $definition['@context']);
-                if ($nested !== null) {
-                    return $nested;
-                }
-            }
-        }
-
-        return null;
     }
 
     /**

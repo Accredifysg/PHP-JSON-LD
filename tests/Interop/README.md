@@ -31,7 +31,7 @@ pins the reference implementation's output for the shapes we actually sign.
 | `minimal-vc-v2` | VC 2.0 credential; subject claims live in a type-scoped context (`Individual`). |
 | `vp-embedded-vc-scoped-claims` | The incident shape: VP whose embedded credentials carry their own `@context`; claims under type-scoped `Individual` / `CorporateEntity`; `@container:@graph` blank-node graphs. |
 | `obv3-achievement` | Open Badges v3 achievement credential over the real 1EdTech context. |
-| `vc-context-null-isolation` | VC 2.0 `verifiableCredential` `@context:null` isolation: a presentation-level type-scoped context must NOT leak into the embedded credential. Currently a known deviation (see `INTEROP_KNOWN_DEVIATIONS` in `InteropTest.php`) guarding the `documentBase`-fallback removal in `Expansion::activateTypeScopedContexts()`. |
+| `vc-context-null-isolation` | VC 2.0 `verifiableCredential` `@context:null` isolation: a presentation-level type-scoped context must NOT leak into the embedded credential (regression guard for the `documentBase`-fallback removal in `Expansion::activateTypeScopedContexts()`). |
 
 ## Regenerating goldens
 
