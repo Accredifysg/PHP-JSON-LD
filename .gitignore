@@ -1,4 +1,5 @@
 /vendor/
+/auth.json
 /coverage/*
 !/coverage/badge.svg
 .phpunit.result.cache
