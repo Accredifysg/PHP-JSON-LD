@@ -1,0 +1,41 @@
+{
+  "@context": "https://www.w3.org/ns/credentials/v2",
+  "id": "urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000002",
+  "type": "VerifiablePresentation",
+  "holder": "did:example:holder-789",
+  "verifiableCredential": [
+    {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://contexts.example.org/individual/v1"
+      ],
+      "id": "urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000003",
+      "type": ["VerifiableCredential", "AccreditationCredential"],
+      "issuer": "did:example:issuer-123",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "credentialSubject": {
+        "id": "did:example:subject-456",
+        "type": "Individual",
+        "fullName": "Jane Citizen",
+        "nationalId": "ID-0000001",
+        "residentialAddress": "1 Example Way, Springfield"
+      }
+    },
+    {
+      "@context": [
+        "https://www.w3.org/ns/credentials/v2",
+        "https://contexts.example.org/individual/v1"
+      ],
+      "id": "urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000004",
+      "type": "VerifiableCredential",
+      "issuer": "did:example:issuer-123",
+      "validFrom": "2026-02-01T00:00:00Z",
+      "credentialSubject": {
+        "id": "did:example:entity-321",
+        "type": "CorporateEntity",
+        "entityName": "Example Holdings Pte Ltd",
+        "registrationNumber": "REG-0000002"
+      }
+    }
+  ]
+}

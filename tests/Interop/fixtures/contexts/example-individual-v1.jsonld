@@ -1,0 +1,29 @@
+{
+  "@context": {
+    "@protected": true,
+    "Individual": {
+      "@id": "https://vocab.example.org/credentials#Individual",
+      "@context": {
+        "@protected": true,
+        "fullName": "https://vocab.example.org/credentials#fullName",
+        "nationalId": "https://vocab.example.org/credentials#nationalId",
+        "residentialAddress": "https://vocab.example.org/credentials#residentialAddress"
+      }
+    },
+    "CorporateEntity": {
+      "@id": "https://vocab.example.org/credentials#CorporateEntity",
+      "@context": {
+        "@protected": true,
+        "entityName": "https://vocab.example.org/credentials#entityName",
+        "registrationNumber": "https://vocab.example.org/credentials#registrationNumber"
+      }
+    },
+    "AccreditationCredential": {
+      "@id": "https://vocab.example.org/credentials#AccreditationCredential",
+      "@context": {
+        "@protected": true,
+        "accreditationLevel": "https://vocab.example.org/credentials#accreditationLevel"
+      }
+    }
+  }
+}

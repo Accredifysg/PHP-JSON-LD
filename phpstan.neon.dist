@@ -10,6 +10,9 @@ parameters:
         # runtime, which PHPStan can't statically follow. The supporting
         # classes (Harness, TestCase, Processor) are still analysed.
         - tests/W3c/Algorithms/*
+        # Same $this-binding pattern (markTestSkipped / fail for the
+        # known-deviations xfail semantics). Support/ is still analysed.
+        - tests/Interop/InteropTest.php
         # Mockery's fluent shouldReceive() chain returns ExpectationInterface
         # | HigherOrderMessage, which loses type information PHPStan needs.
         # Add new Mockery-using test files here. Behaviour is verified via
