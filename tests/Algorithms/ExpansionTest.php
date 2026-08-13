@@ -635,3 +635,81 @@ describe('@nest and scoped-null expansion (#tin06)', function () {
         ]);
     });
 });
+
+describe('type-scoped contexts introduced by embedded node contexts', function () {
+    // §5.5 step 11 resolves a node's types against the ACTIVE context. A type
+    // defined by an embedded @context on a nested node (not present in the
+    // document-level context) must still activate its scoped @context, or the
+    // scoped terms silently drop. This is the VC-in-VP shape: each embedded
+    // credential carries its own @context, and the credentialSubject claims
+    // live in a type-scoped context (e.g. Individual) defined there.
+
+    it('activates a type-scoped context whose type is defined by an embedded @context on a nested node', function () {
+        $expanded = (new JsonLdProcessor(new StubDocumentLoader))->expand([
+            '@context' => ['knows' => 'http://ex/knows'],
+            'knows' => [
+                '@context' => [
+                    'Person' => [
+                        '@id' => 'http://ex/Person',
+                        '@context' => ['name' => 'http://ex/name'],
+                    ],
+                ],
+                '@type' => 'Person',
+                'name' => 'Jane',
+            ],
+        ])->toArray();
+
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        $values = $first['http://ex/knows'] ?? null;
+        expect($values)->toBeArray();
+        /** @var list<mixed> $values */
+        $nested = $values[0] ?? null;
+        expect($nested)->toBeArray();
+        /** @var array<string, mixed> $nested */
+        expect($nested['@type'] ?? null)->toBe(['http://ex/Person']);
+        // Pre-fix the Person type-scoped context never activated (the type was
+        // looked up in the document-level context only), so `name` was dropped.
+        expect($nested)->toHaveKey('http://ex/name');
+        expect($nested['http://ex/name'])->toBe([['@value' => 'Jane']]);
+    });
+
+    it('keeps credentialSubject claims of a credential embedded in a presentation @graph container', function () {
+        // Mirrors a VC 2.0 presentation: the credential sits in a @graph
+        // container and re-declares its own @context (base terms + a
+        // credential context whose subject type carries the claim terms).
+        $baseTerms = [
+            '@version' => 1.1,
+            'type' => '@type',
+            'verifiableCredential' => ['@id' => 'http://ex/verifiableCredential', '@container' => '@graph'],
+            'credentialSubject' => 'http://ex/credentialSubject',
+        ];
+
+        $nQuads = (new JsonLdProcessor(new StubDocumentLoader))->toRdf([
+            '@context' => $baseTerms,
+            'verifiableCredential' => [[
+                '@context' => [
+                    $baseTerms,
+                    [
+                        'Individual' => [
+                            '@id' => 'http://ex/Individual',
+                            '@context' => ['fullName' => 'http://ex/fullName'],
+                        ],
+                    ],
+                ],
+                'credentialSubject' => [
+                    '@id' => 'did:example:subject',
+                    'type' => 'Individual',
+                    'fullName' => 'Jane Citizen',
+                ],
+            ]],
+        ])->toNQuads();
+
+        expect($nQuads)->toContain('<http://ex/Individual>');
+        // Pre-fix every claim under the type-scoped Individual context was
+        // silently dropped from the dataset, so signatures over these quads
+        // could never be reproduced by a conformant processor.
+        expect($nQuads)->toContain('<did:example:subject> <http://ex/fullName> "Jane Citizen"');
+    });
+});
