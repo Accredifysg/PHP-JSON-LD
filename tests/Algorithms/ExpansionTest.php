@@ -268,7 +268,7 @@ describe('scoped context propagation', function () {
 
     it('does not propagate a type-scoped context activated via an embedded node @context', function () use ($expand) {
         // The Person type (and its scoped context) exists only in the nested
-        // node's embedded @context — the lookup path fixed in 577655e. The
+        // node's embedded @context — the lookup path fixed in #38. The
         // scoped `name` must apply on the Person node itself but still roll
         // back inside its nested node, like any other type-scoped context.
         $json = json_encode($expand([
