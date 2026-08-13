@@ -248,11 +248,9 @@ describe('scoped context propagation', function () {
         expect($expanded)->toBe([
             [
                 '@type' => ['http://example.com/Outer'],
-                // Outer's scoped context maps `inner` on the typed node itself…
                 'http://example.com/scoped-inner' => [
                     [
-                        // …and, with @propagate: true, still inside the nested
-                        // node — without it this key would be …com/inner (@vocab).
+                        // still scoped in the nested node (@propagate: true)
                         'http://example.com/scoped-inner' => [['@value' => 'x']],
                     ],
                 ],
@@ -277,12 +275,10 @@ describe('scoped context propagation', function () {
             [
                 'http://example.com/p' => [
                     [
-                        // p's scoped context still applies to its immediate
-                        // value, so this `q` gets the scoped IRI…
+                        // scope applies to p's immediate value…
                         'http://example.com/scoped-q' => [
                             [
-                                // …but @propagate: false rolls it back once a
-                                // nested node is entered: `q` is @vocab again.
+                                // …then rolls back to @vocab in the nested node
                                 'http://example.com/q' => [['@value' => 'deep']],
                             ],
                         ],
@@ -318,13 +314,11 @@ describe('scoped context propagation', function () {
                         '@type' => ['http://ex/Person'],
                         'http://ex/child' => [
                             [
-                                // …but rolls back inside the child, whose
-                                // `name` falls back to @vocab.
+                                // rolled back to @vocab in the child
                                 'http://ex/name' => [['@value' => 'nested']],
                             ],
                         ],
-                        // Person's type-scoped context maps `name` on the
-                        // Person node itself…
+                        // type-scoped term on the Person node itself
                         'http://ex/scoped-name' => [['@value' => 'Jane']],
                     ],
                 ],
