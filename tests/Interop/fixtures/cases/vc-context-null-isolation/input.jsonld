@@ -1,0 +1,23 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://contexts.example.org/individual/v1"
+  ],
+  "id": "urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000005",
+  "type": "VerifiablePresentation",
+  "holder": "did:example:holder-789",
+  "verifiableCredential": [
+    {
+      "@context": "https://www.w3.org/ns/credentials/v2",
+      "id": "urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000006",
+      "type": "VerifiableCredential",
+      "issuer": "did:example:issuer-123",
+      "validFrom": "2026-01-01T00:00:00Z",
+      "credentialSubject": {
+        "id": "did:example:subject-456",
+        "type": "Individual",
+        "fullName": "Jane Citizen"
+      }
+    }
+  ]
+}

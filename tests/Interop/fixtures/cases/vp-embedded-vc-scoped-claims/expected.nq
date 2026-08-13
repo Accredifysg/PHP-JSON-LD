@@ -1,0 +1,20 @@
+<did:example:entity-321> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://vocab.example.org/credentials#CorporateEntity> _:c14n0 .
+<did:example:entity-321> <https://vocab.example.org/credentials#entityName> "Example Holdings Pte Ltd" _:c14n0 .
+<did:example:entity-321> <https://vocab.example.org/credentials#registrationNumber> "REG-0000002" _:c14n0 .
+<did:example:subject-456> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://vocab.example.org/credentials#Individual> _:c14n1 .
+<did:example:subject-456> <https://vocab.example.org/credentials#fullName> "Jane Citizen" _:c14n1 .
+<did:example:subject-456> <https://vocab.example.org/credentials#nationalId> "ID-0000001" _:c14n1 .
+<did:example:subject-456> <https://vocab.example.org/credentials#residentialAddress> "1 Example Way, Springfield" _:c14n1 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000002> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/2018/credentials#VerifiablePresentation> .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000002> <https://www.w3.org/2018/credentials#holder> <did:example:holder-789> .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000002> <https://www.w3.org/2018/credentials#verifiableCredential> _:c14n0 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000002> <https://www.w3.org/2018/credentials#verifiableCredential> _:c14n1 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000003> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://vocab.example.org/credentials#AccreditationCredential> _:c14n1 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000003> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/2018/credentials#VerifiableCredential> _:c14n1 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000003> <https://www.w3.org/2018/credentials#credentialSubject> <did:example:subject-456> _:c14n1 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000003> <https://www.w3.org/2018/credentials#issuer> <did:example:issuer-123> _:c14n1 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000003> <https://www.w3.org/2018/credentials#validFrom> "2026-01-01T00:00:00Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> _:c14n1 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000004> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/2018/credentials#VerifiableCredential> _:c14n0 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000004> <https://www.w3.org/2018/credentials#credentialSubject> <did:example:entity-321> _:c14n0 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000004> <https://www.w3.org/2018/credentials#issuer> <did:example:issuer-123> _:c14n0 .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000004> <https://www.w3.org/2018/credentials#validFrom> "2026-02-01T00:00:00Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> _:c14n0 .

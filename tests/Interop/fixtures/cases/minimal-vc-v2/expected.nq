@@ -1,0 +1,10 @@
+<did:example:subject-456> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://vocab.example.org/credentials#Individual> .
+<did:example:subject-456> <https://vocab.example.org/credentials#fullName> "Jane Citizen" .
+<did:example:subject-456> <https://vocab.example.org/credentials#nationalId> "ID-0000001" .
+<did:example:subject-456> <https://vocab.example.org/credentials#residentialAddress> "1 Example Way, Springfield" .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://vocab.example.org/credentials#AccreditationCredential> .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000001> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/2018/credentials#VerifiableCredential> .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000001> <https://vocab.example.org/credentials#accreditationLevel> "Gold" .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000001> <https://www.w3.org/2018/credentials#credentialSubject> <did:example:subject-456> .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000001> <https://www.w3.org/2018/credentials#issuer> <did:example:issuer-123> .
+<urn:uuid:0f10e1f4-4a8e-4c95-8b7a-000000000001> <https://www.w3.org/2018/credentials#validFrom> "2026-01-01T00:00:00Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .

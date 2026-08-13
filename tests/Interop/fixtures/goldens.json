@@ -1,0 +1,26 @@
+{
+  "generator": "jsonld.js 8.3.3",
+  "algorithm": "URDNA2015",
+  "cases": {
+    "embedded-node-type-scoped-context": {
+      "quads": 3,
+      "safe": true
+    },
+    "minimal-vc-v2": {
+      "quads": 10,
+      "safe": true
+    },
+    "obv3-achievement": {
+      "quads": 15,
+      "safe": true
+    },
+    "vc-context-null-isolation": {
+      "quads": 7,
+      "safe": false
+    },
+    "vp-embedded-vc-scoped-claims": {
+      "quads": 20,
+      "safe": true
+    }
+  }
+}
