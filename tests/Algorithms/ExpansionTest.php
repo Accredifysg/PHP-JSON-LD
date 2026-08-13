@@ -235,7 +235,7 @@ describe('scoped context propagation', function () {
         // Same shape as the non-propagation test above, but the scoped context
         // opts into propagation, so `inner` resolves to the scoped IRI at
         // every depth instead of falling back to @vocab in the nested node.
-        $json = json_encode($expand([
+        $expanded = $expand([
             '@context' => [
                 '@version' => 1.1,
                 '@vocab' => 'http://example.com/',
@@ -243,27 +243,53 @@ describe('scoped context propagation', function () {
             ],
             '@type' => 'Outer',
             'inner' => ['inner' => 'x'],
-        ]), JSON_UNESCAPED_SLASHES);
+        ]);
 
-        expect($json)->toContain('http://example.com/scoped-inner');
-        expect($json)->not->toContain('http://example.com/inner');
+        expect($expanded)->toBe([
+            [
+                '@type' => ['http://example.com/Outer'],
+                // Outer's scoped context maps `inner` on the typed node itself…
+                'http://example.com/scoped-inner' => [
+                    [
+                        // …and, with @propagate: true, still inside the nested
+                        // node — without it this key would be …com/inner (@vocab).
+                        'http://example.com/scoped-inner' => [['@value' => 'x']],
+                    ],
+                ],
+            ],
+        ]);
     });
 
     it('confines a property-scoped context with @propagate: false to the immediate value', function () use ($expand) {
         // The scope applies to p's own value (so its `q` is the scoped IRI)
         // but rolls back when a nested node object is entered, where `q`
         // falls back to @vocab (#tso06 shape).
-        $json = json_encode($expand([
+        $expanded = $expand([
             '@context' => [
                 '@version' => 1.1,
                 '@vocab' => 'http://example.com/',
                 'p' => ['@id' => 'http://example.com/p', '@context' => ['@propagate' => false, 'q' => 'http://example.com/scoped-q']],
             ],
             'p' => ['q' => ['q' => 'deep']],
-        ]), JSON_UNESCAPED_SLASHES);
+        ]);
 
-        expect($json)->toContain('http://example.com/scoped-q');
-        expect($json)->toContain('http://example.com/q');
+        expect($expanded)->toBe([
+            [
+                'http://example.com/p' => [
+                    [
+                        // p's scoped context still applies to its immediate
+                        // value, so this `q` gets the scoped IRI…
+                        'http://example.com/scoped-q' => [
+                            [
+                                // …but @propagate: false rolls it back once a
+                                // nested node is entered: `q` is @vocab again.
+                                'http://example.com/q' => [['@value' => 'deep']],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
     });
 
     it('does not propagate a type-scoped context activated via an embedded node @context', function () use ($expand) {
@@ -271,7 +297,7 @@ describe('scoped context propagation', function () {
         // node's embedded @context — the lookup path fixed in #38. The
         // scoped `name` must apply on the Person node itself but still roll
         // back inside its nested node, like any other type-scoped context.
-        $json = json_encode($expand([
+        $expanded = $expand([
             '@context' => ['knows' => 'http://ex/knows'],
             'knows' => [
                 '@context' => [
@@ -283,12 +309,27 @@ describe('scoped context propagation', function () {
                 'name' => 'Jane',
                 'child' => ['name' => 'nested'],
             ],
-        ]), JSON_UNESCAPED_SLASHES);
+        ]);
 
-        // Jane's name uses the type-scoped term; the nested node's name rolls
-        // back to @vocab.
-        expect($json)->toContain('http://ex/scoped-name');
-        expect($json)->toContain('http://ex/name');
+        expect($expanded)->toBe([
+            [
+                'http://ex/knows' => [
+                    [
+                        '@type' => ['http://ex/Person'],
+                        'http://ex/child' => [
+                            [
+                                // …but rolls back inside the child, whose
+                                // `name` falls back to @vocab.
+                                'http://ex/name' => [['@value' => 'nested']],
+                            ],
+                        ],
+                        // Person's type-scoped context maps `name` on the
+                        // Person node itself…
+                        'http://ex/scoped-name' => [['@value' => 'Jane']],
+                    ],
+                ],
+            ],
+        ]);
     });
 
     it('rejects redefining a protected term in an embedded node context', function () use ($expand) {
