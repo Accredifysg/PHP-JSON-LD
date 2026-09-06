@@ -18,6 +18,10 @@
       "quads": 7,
       "safe": false
     },
+    "vc1-ed25519-2020-protected-proof": {
+      "quads": 10,
+      "safe": true
+    },
     "vp-embedded-vc-scoped-claims": {
       "quads": 20,
       "safe": true

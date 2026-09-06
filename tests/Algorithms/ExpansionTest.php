@@ -350,6 +350,56 @@ describe('scoped context propagation', function () {
             'type' => ['http://example.org/ns/Foo'],
         ]))->toThrow(JsonLdException::class, 'Protected term redefinition');
     });
+
+    it('allows a type-scoped context to restate a protected term with a compact @id spelling', function () use ($expand) {
+        // §4.2.2 judges protected-redefinition identity over the CREATED
+        // definitions (after IRI expansion): the published VC 1.x context
+        // spells its type-scoped `proof` as `sec:proof` while ed25519-2020/v1
+        // protects `proof` under the absolute IRI, and that stack — every
+        // Ed25519Signature2020-signed VCDM 1.1 credential — must process.
+        $expanded = $expand([
+            '@context' => [
+                [
+                    '@version' => 1.1,
+                    '@protected' => true,
+                    'sec' => 'https://w3id.org/security#',
+                    'Thing' => [
+                        '@id' => 'https://example.org/Thing',
+                        '@context' => ['@protected' => true, 'proof' => ['@id' => 'sec:proof', '@type' => '@id', '@container' => '@graph']],
+                    ],
+                ],
+                ['@protected' => true, 'proof' => ['@id' => 'https://w3id.org/security#proof', '@type' => '@id', '@container' => '@graph']],
+            ],
+            '@id' => 'https://example.org/thing',
+            '@type' => 'Thing',
+            'proof' => ['@id' => 'https://example.org/proof-node'],
+        ]);
+
+        $json = json_encode($expanded, JSON_UNESCAPED_SLASHES);
+        expect($json)->toContain('https://w3id.org/security#proof');
+    });
+
+    it('rejects a type-scoped restatement of a protected term that genuinely differs', function () use ($expand) {
+        // Same shape, but the scoped definition drops @container — a real
+        // protected-term redefinition, not a spelling variant.
+        expect(fn () => $expand([
+            '@context' => [
+                [
+                    '@version' => 1.1,
+                    '@protected' => true,
+                    'sec' => 'https://w3id.org/security#',
+                    'Thing' => [
+                        '@id' => 'https://example.org/Thing',
+                        '@context' => ['@protected' => true, 'proof' => ['@id' => 'sec:proof', '@type' => '@id']],
+                    ],
+                ],
+                ['@protected' => true, 'proof' => ['@id' => 'https://w3id.org/security#proof', '@type' => '@id', '@container' => '@graph']],
+            ],
+            '@id' => 'https://example.org/thing',
+            '@type' => 'Thing',
+            'proof' => ['@id' => 'https://example.org/proof-node'],
+        ]))->toThrow(JsonLdException::class, 'Protected term redefinition');
+    });
 });
 
 describe('@graph and map container expansion', function () {

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Protected-term redefinition now compares expanded IRIs, not raw `@id`
+  spellings** (JSON-LD 1.1 API §4.2.2 step 5 judges "identical" over the
+  *created* term definitions, i.e. after IRI expansion). Previously
+  `{"@id": "sec:proof", …}` was rejected as a redefinition of the protected
+  `{"@id": "https://w3id.org/security#proof", …}` even with `sec` mapped to
+  `https://w3id.org/security#`. The published VC 1.x context spells its
+  type-scoped `proof` as `sec:proof` and the ed25519-2020/v1 suite context
+  protects `proof` under the absolute IRI, so every
+  `Ed25519Signature2020`-signed VCDM 1.1 credential —
+  `@context: [credentials/v1, ed25519-2020/v1]` — failed with a false
+  `Protected term redefinition: 'proof'`. The comparison now normalises
+  `@id` / `@type` / `@reverse` through the active context on both write
+  paths (top-level create-term-definition and scoped-context overlays);
+  genuinely different definitions are still rejected. The W3C suite cannot
+  catch this (`#tpr41` only varies string-vs-object of one spelling), so
+  regression tests plus a jsonld.js-pinned interop golden
+  (`vc1-ed25519-2020-protected-proof`, over the published contexts) are
+  added.
+
 ### Added
 
 - W3C EARL implementation report (`reports/php-json-ld-earl.ttl`) and its

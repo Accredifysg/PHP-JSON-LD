@@ -32,6 +32,7 @@ pins the reference implementation's output for the shapes we actually sign.
 | `vp-embedded-vc-scoped-claims` | The incident shape: VP whose embedded credentials carry their own `@context`; claims under type-scoped `Individual` / `CorporateEntity`; `@container:@graph` blank-node graphs. |
 | `obv3-achievement` | Open Badges v3 achievement credential over the real 1EdTech context. |
 | `vc-context-null-isolation` | VC 2.0 `verifiableCredential` `@context:null` isolation: a presentation-level type-scoped context must NOT leak into the embedded credential (regression guard for the `documentBase`-fallback removal in `Expansion::activateTypeScopedContexts()`). |
+| `vc1-ed25519-2020-protected-proof` | VCDM 1.1 credential over the published VC 1.x + ed25519-2020/v1 contexts — the standard `Ed25519Signature2020` stack. VC1's type-scoped `proof` is spelled `sec:proof` while the suite context protects `proof` under the absolute IRI; protected-redefinition identity must be judged over EXPANDED definitions (§4.2.2) or the stack falsely fails. |
 
 ## Regenerating goldens
 
