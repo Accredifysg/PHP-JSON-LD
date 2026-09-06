@@ -335,16 +335,50 @@ class TermDefinitions
     }
 
     /**
+     * §4.2.2 step 5 judges "identical" over the CREATED term definitions —
+     * i.e. after IRI expansion — not over the raw JSON spellings, so
+     * `{"@id": "sec:proof"}` and `{"@id": "https://w3id.org/security#proof"}`
+     * (with `sec` mapped to the security vocabulary) are the SAME definition.
+     * The published VC 1.x context spells its type-scoped `proof` compactly
+     * while suite contexts (e.g. ed25519-2020/v1) protect `proof` under the
+     * absolute IRI; comparing raw spellings falsely rejects that stack.
+     *
      * @param  TermDefinition  $a
      * @param  TermDefinition  $b
      */
     private function sameDefinitionIgnoringProtected(array $a, array $b): bool
     {
-        unset($a['@protected'], $b['@protected']);
-        ksort($a);
-        ksort($b);
+        return $this->comparableDefinition($a) == $this->comparableDefinition($b);
+    }
 
-        return $a == $b;
+    /**
+     * The comparison form of a definition for the protected-redefinition
+     * check: `@protected` is ignored and the IRI-valued entries (`@id`,
+     * `@type`, `@reverse`) are expanded against the active context, so the
+     * comparison operates on created term definitions rather than raw
+     * spellings. {@see localExpandIri} keeps keywords (keyword-alias `@id`s,
+     * `@type` of `@id`/`@vocab`/`@json`/`@none`) and unresolvable values
+     * unchanged, and a nested scoped `@context` is compared as written. Both
+     * sides pass through the same normalisation, so definitions that compare
+     * equal raw still compare equal — only spelling variants of one IRI are
+     * newly tolerated, never genuinely different mappings.
+     *
+     * @param  TermDefinition  $definition
+     * @return TermDefinition
+     */
+    private function comparableDefinition(array $definition): array
+    {
+        unset($definition['@protected']);
+
+        foreach ([Keyword::Id->value, Keyword::Type->value, Keyword::Reverse->value] as $entry) {
+            if (isset($definition[$entry]) && is_string($definition[$entry])) {
+                $definition[$entry] = $this->localExpandIri($definition[$entry]);
+            }
+        }
+
+        ksort($definition);
+
+        return $definition;
     }
 
     /**

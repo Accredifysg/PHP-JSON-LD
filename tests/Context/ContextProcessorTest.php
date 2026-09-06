@@ -252,6 +252,60 @@ describe('@protected term enforcement', function () {
         expect($processor->getTermDefinitions()->getTermDefinition('open'))
             ->toBe(['@id' => 'https://example.com/redefined']);
     });
+
+    // §4.2.2 step 5 judges "identical" over the CREATED definitions (after
+    // IRI expansion), not the raw spellings — the shape of the published
+    // VC 1.x context (type-scoped `proof` spelled `sec:proof`) stacked with
+    // a suite context protecting `proof` under the absolute IRI. The W3C
+    // suite only covers string-vs-object of ONE spelling (#tpr41), so these
+    // compact-vs-absolute cases need their own regression tests.
+
+    it('allows a protected redefinition whose @id is a compact spelling of the same IRI', function () use ($make) {
+        $processor = $make([
+            [
+                '@protected' => true,
+                'sec' => 'https://w3id.org/security#',
+                'proof' => ['@id' => 'https://w3id.org/security#proof', '@type' => '@id', '@container' => '@graph'],
+            ],
+            [
+                'sec' => 'https://w3id.org/security#',
+                'proof' => ['@id' => 'sec:proof', '@type' => '@id', '@container' => '@graph'],
+            ],
+        ]);
+        // Permitted, and the term stays protected.
+        expect($processor->getTermDefinitions()->isProtected('proof'))->toBeTrue();
+    });
+
+    it('allows a protected redefinition whose @type is a compact spelling of the same IRI', function () use ($make) {
+        $processor = $make([
+            [
+                '@protected' => true,
+                'xsd' => 'http://www.w3.org/2001/XMLSchema#',
+                'issued' => ['@id' => 'https://example.org/issued', '@type' => 'http://www.w3.org/2001/XMLSchema#dateTime'],
+            ],
+            [
+                'xsd' => 'http://www.w3.org/2001/XMLSchema#',
+                'issued' => ['@id' => 'https://example.org/issued', '@type' => 'xsd:dateTime'],
+            ],
+        ]);
+        expect($processor->getTermDefinitions()->isProtected('issued'))->toBeTrue();
+    });
+
+    it('rejects a protected redefinition whose compact @id expands to a different IRI', function () use ($make) {
+        // Only spelling variants of ONE IRI are tolerated: here the second
+        // layer remaps `sec` (unprotected), so its `sec:proof` is a genuine
+        // redefinition of the protected `proof`.
+        expect(fn () => $make([
+            [
+                'sec' => 'https://w3id.org/security#',
+                'proof' => ['@id' => 'https://w3id.org/security#proof', '@protected' => true],
+            ],
+            [
+                'sec' => 'https://example.com/other#',
+                'proof' => ['@id' => 'sec:proof'],
+            ],
+        ]))->toThrow(JsonLdException::class, 'Protected term redefinition');
+    });
 });
 
 describe('ContextProcessor processing-mode gates', function () {
