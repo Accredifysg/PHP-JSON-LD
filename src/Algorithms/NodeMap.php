@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Exceptions\DataLossException;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\Internal\BlankNodeIssuer;
+use Accredify\JsonLd\JsonLdOptions;
 
 /**
  * Node Map Generation
@@ -37,9 +39,33 @@ final class NodeMap
     /** @var array<string, array<string, array<string, mixed>>> */
     private array $nodeMap = ['@default' => []];
 
+    /**
+     * @param  bool  $safe  Safe mode ({@see JsonLdOptions::$safe}):
+     *                      elements that vanish from the node map (stray
+     *                      scalars, unattachable value/list objects, and
+     *                      non-string `@id` identities) throw
+     *                      {@see DataLossException} instead of being
+     *                      silently discarded.
+     */
     public function __construct(
         private readonly BlankNodeIssuer $issuer,
+        private readonly bool $safe = false,
     ) {}
+
+    /**
+     * Safe mode: throw for a drop site instead of letting the caller silently
+     * discard the datum. No-op when safe mode is off.
+     *
+     * @param  array<string, mixed>  $details
+     *
+     * @throws DataLossException
+     */
+    private function safeModeDrop(string $eventCode, string $message, array $details = []): void
+    {
+        if ($this->safe) {
+            throw new DataLossException($eventCode, $message, $details);
+        }
+    }
 
     /**
      * @param  array<mixed>  $expanded  The expanded JSON-LD document.
@@ -94,6 +120,17 @@ final class NodeMap
         }
 
         if (! is_array($element)) {
+            if (is_scalar($element)) {
+                // A bare scalar has no node/value-object shape to attach and
+                // vanishes from the node map. (A null element means "absent"
+                // and is not data loss.)
+                $this->safeModeDrop(
+                    'free-floating scalar',
+                    'a bare scalar in the expanded document vanishes from the node map',
+                    ['value' => $element],
+                );
+            }
+
             return;
         }
 
@@ -115,6 +152,14 @@ final class NodeMap
             if ($list === null) {
                 if (is_string($activeSubject) && $activeProperty !== null) {
                     $this->addToNode($activeGraph, $activeSubject, $activeProperty, $element, false);
+                } else {
+                    // e.g. a value object placed directly inside a named
+                    // graph's @graph array — no subject/property to attach to.
+                    $this->safeModeDrop(
+                        'object with only @value',
+                        'a value object with no parent node to attach to vanishes from the node map',
+                        ['object' => $element],
+                    );
                 }
             } else {
                 $list[Keyword::List->value][] = $element;
@@ -134,6 +179,12 @@ final class NodeMap
                 $list[Keyword::List->value][] = $result;
             } elseif (is_string($activeSubject) && $activeProperty !== null) {
                 $this->addToNode($activeGraph, $activeSubject, $activeProperty, $result, true);
+            } else {
+                $this->safeModeDrop(
+                    'object with only @list',
+                    'a list object with no parent node to attach to vanishes from the node map',
+                    ['object' => $element],
+                );
             }
 
             return;
@@ -235,6 +286,15 @@ final class NodeMap
 
         $id = $element[Keyword::Id->value];
         if (! is_string($id)) {
+            // The stated identity is silently replaced with a fresh blank
+            // node — identity loss. (A node with NO @id key is a legitimate
+            // anonymous node and never reaches this branch.)
+            $this->safeModeDrop(
+                'invalid @id value',
+                'a node whose @id is not a string is relabelled as a fresh blank node, losing its identity',
+                ['id' => $id],
+            );
+
             return $this->issuer->getId();
         }
 

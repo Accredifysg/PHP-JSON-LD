@@ -10,6 +10,7 @@ use Accredify\JsonLd\Documents\FlattenedDocument;
 use Accredify\JsonLd\Documents\FramedDocument;
 use Accredify\JsonLd\Documents\FromRdfDocument;
 use Accredify\JsonLd\Documents\RdfDataset;
+use Accredify\JsonLd\Exceptions\DataLossException;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\JsonLdOptions;
 
@@ -29,7 +30,14 @@ interface Processor
      *                                             least an `@context` key.
      * @param  JsonLdOptions|null  $options  API options (base IRI, processing
      *                                       mode, …). Null uses the defaults
-     *                                       (no base, JSON-LD 1.1).
+     *                                       (no base, JSON-LD 1.1). With
+     *                                       `safe: true`, expansion throws
+     *                                       {@see DataLossException}
+     *                                       instead of silently dropping data
+     *                                       (undefined terms, free-floating
+     *                                       values, reserved keyword-shaped
+     *                                       identifiers, …) — see
+     *                                       VC-DATA-INTEGRITY §2.4.3.
      *
      * @throws JsonLdException When `@context` is missing or any sub-algorithm
      *                         raises.
@@ -85,6 +93,17 @@ interface Processor
      * @param  array<array-key, mixed>  $document  A JSON-LD document.
      * @param  JsonLdOptions|null  $options  API options (base IRI, processing
      *                                       mode, …). Null uses the defaults.
+     *                                       With `safe: true`, any statement
+     *                                       the deserialization would silently
+     *                                       drop (relative subject/predicate/
+     *                                       object/graph IRIs, blank-node
+     *                                       predicates, malformed language
+     *                                       tags, …) throws
+     *                                       {@see DataLossException}
+     *                                       instead — the recommended mode
+     *                                       when the dataset feeds RDF
+     *                                       canonicalization for signing
+     *                                       (VC-DATA-INTEGRITY §2.4.3).
      *
      * @throws JsonLdException
      */

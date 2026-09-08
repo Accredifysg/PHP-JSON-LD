@@ -8,8 +8,10 @@ use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Context\TermDefinitions;
 use Accredify\JsonLd\Contracts\DocumentLoader;
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Exceptions\DataLossException;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\Internal\IriResolver;
+use Accredify\JsonLd\JsonLdOptions;
 
 /**
  * JSON-LD 1.1 Expansion Algorithm.
@@ -96,10 +98,47 @@ class Expansion
         TermDefinitions $termDefinitions,
         ?DocumentLoader $documentLoader = null,
         private readonly bool $frameExpansion = false,
+        private readonly bool $safe = false,
     ) {
         $this->documentBase = $termDefinitions;
         $this->termDefinitions = $termDefinitions;
         $this->documentLoader = $documentLoader;
+    }
+
+    /**
+     * Safe mode ({@see JsonLdOptions::$safe}): throw for a
+     * drop site instead of letting the caller silently discard the datum.
+     * No-op when safe mode is off — the caller then performs the default
+     * (spec-sanctioned lossy) drop.
+     *
+     * @param  array<string, mixed>  $details
+     *
+     * @throws DataLossException
+     */
+    private function safeModeDrop(string $eventCode, string $message, array $details = []): void
+    {
+        if ($this->safe) {
+            throw new DataLossException($eventCode, $message, $details);
+        }
+    }
+
+    /**
+     * The jsonld.js event code for a free-floating object about to be dropped
+     * (§5.5 step 18), picked by shape as jsonld.js's `_dropUnsafeObject` does.
+     * Only meaningful for maps that {@see isFreeFloating()} accepted.
+     *
+     * @param  array<array-key, mixed>  $item
+     */
+    private function freeFloatingEventCode(array $item): string
+    {
+        if (array_key_exists(Keyword::Value->value, $item)) {
+            return 'object with only @value';
+        }
+        if (array_key_exists(Keyword::List->value, $item)) {
+            return 'object with only @list';
+        }
+
+        return 'object with only @id';
     }
 
     /**
@@ -137,7 +176,16 @@ class Expansion
                 if ($item === null) {
                     continue;
                 }
-                if (is_array($item) && ! array_is_list($item) && ($this->frameExpansion || ! $this->isFreeFloating($item))) {
+                if (is_array($item) && ! array_is_list($item)) {
+                    if (! $this->frameExpansion && $this->isFreeFloating($item)) {
+                        $this->safeModeDrop(
+                            $this->freeFloatingEventCode($item),
+                            'a free-floating object at the top level carries no statement and is dropped',
+                            ['object' => $item],
+                        );
+
+                        continue;
+                    }
                     /** @var array<string, mixed> $item */
                     $out[] = $item;
                 }
@@ -150,7 +198,17 @@ class Expansion
         // level (a lone value object / @list / @id-only node), which is dropped
         // (§5.5 step 18 / #t0045). Frame expansion keeps such patterns.
         /** @var array<string, mixed> $expanded */
-        return (! $this->frameExpansion && $this->isFreeFloating($expanded)) ? [] : [$expanded];
+        if (! $this->frameExpansion && $this->isFreeFloating($expanded)) {
+            $this->safeModeDrop(
+                $this->freeFloatingEventCode($expanded),
+                'a free-floating object at the top level carries no statement and is dropped',
+                ['object' => $expanded],
+            );
+
+            return [];
+        }
+
+        return [$expanded];
     }
 
     /**
@@ -183,6 +241,12 @@ class Expansion
     private function expandScalar(mixed $element, ?string $activeProperty): ?array
     {
         if ($activeProperty === null || $activeProperty === Keyword::Graph->value) {
+            $this->safeModeDrop(
+                'free-floating scalar',
+                'a scalar at the top level or directly inside @graph carries no statement and is dropped',
+                ['value' => $element],
+            );
+
             return null;
         }
 
@@ -343,6 +407,14 @@ class Expansion
         try {
             foreach ($obj as $key => $value) {
                 if (! is_string($key)) {
+                    // PHP decodes a numeric-string JSON key ("1") to an int
+                    // key, which jsonld.js would process as a normal term.
+                    $this->safeModeDrop(
+                        'invalid property',
+                        "property '{$key}' has a non-string (numeric) key and is dropped",
+                        ['property' => $key],
+                    );
+
                     continue;
                 }
                 if ($key === Keyword::Context->value) {
@@ -372,6 +444,12 @@ class Expansion
                     if ($reverseIri === null) {
                         // A keyword-shaped @reverse (e.g. "@ignoreMe") expands
                         // to null — the term is silently ignored, not an error.
+                        $this->safeModeDrop(
+                            'reserved @reverse value',
+                            "reverse property '{$key}' has @reverse '{$termDef['@reverse']}', which does not expand to an IRI; the property is dropped",
+                            ['term' => $key, 'reverse' => $termDef['@reverse']],
+                        );
+
                         continue;
                     }
                     if (! $this->looksLikeAbsoluteIri($reverseIri) && ! str_starts_with($reverseIri, '_:')) {
@@ -396,8 +474,18 @@ class Expansion
                     continue;
                 }
 
+                // §2.4.3 VC-DATA-INTEGRITY / §5.5 step 13: the two checks below
+                // are the "undefined term is detected in an input document"
+                // clause — the mechanism behind undefined-claim / empty-proof
+                // canonicalization holes when data is silently dropped.
                 $expandedKey = $this->expandIri($key, vocab: true);
                 if ($expandedKey === null) {
+                    $this->safeModeDrop(
+                        'invalid property',
+                        "term '{$key}' does not expand to an absolute IRI or keyword",
+                        ['term' => $key],
+                    );
+
                     continue;
                 }
 
@@ -466,6 +554,12 @@ class Expansion
                 // IRI (no colon) and is not a keyword is an unmapped relative
                 // term — it is dropped, not emitted with a relative predicate.
                 if (! str_contains($expandedKey, ':')) {
+                    $this->safeModeDrop(
+                        'invalid property',
+                        "term '{$key}' does not expand to an absolute IRI or keyword",
+                        ['term' => $key, 'expanded' => $expandedKey],
+                    );
+
                     continue;
                 }
 
@@ -627,6 +721,12 @@ class Expansion
             && (isset($result[Keyword::Language->value]) || isset($result[Keyword::Direction->value]))
             && ! $this->hasNonValueObjectProperty($result)
         ) {
+            $this->safeModeDrop(
+                'object with only @language',
+                'an object carrying only @language/@direction has no @value to attach to and is dropped',
+                ['object' => $result],
+            );
+
             return null;
         }
 
@@ -655,6 +755,12 @@ class Expansion
             && count($result) === 1
             && isset($result[Keyword::Id->value])
         ) {
+            $this->safeModeDrop(
+                'object with only @id',
+                'a node object containing only @id carries no statement at the top level and is dropped',
+                ['object' => $result],
+            );
+
             return null;
         }
 
@@ -664,6 +770,11 @@ class Expansion
         // scoped @context:null reset). Under frame expansion an empty map is a
         // wildcard and is always kept.
         if (! $this->frameExpansion && $result === [] && ($activeProperty === null || $activeProperty === Keyword::Graph->value)) {
+            $this->safeModeDrop(
+                'empty object',
+                'an empty object at the top level or directly inside @graph carries no statement and is dropped',
+            );
+
             return null;
         }
 
@@ -699,7 +810,30 @@ class Expansion
                     throw new JsonLdException('Invalid @id value: must be a string');
                 }
 
-                return $this->expandIri($value, documentRelative: true);
+                $expandedId = $this->expandIri($value, documentRelative: true);
+                if ($this->safe) {
+                    // An @id that expands to null (a keyword-shaped value such
+                    // as "@ignoreMe") evaporates: the node silently becomes a
+                    // blank node, losing its identity. A relative @id survives
+                    // expansion but carries no RDF statement later. Both are
+                    // identity loss on signable data.
+                    if ($expandedId === null) {
+                        throw new DataLossException(
+                            'reserved @id value',
+                            "@id value '{$value}' begins with '@' and is reserved for future use; the identifier is dropped",
+                            ['id' => $value],
+                        );
+                    }
+                    if (! str_starts_with($expandedId, '_:') && ! $this->looksLikeAbsoluteIri($expandedId)) {
+                        throw new DataLossException(
+                            'relative @id reference',
+                            "@id value '{$value}' does not expand to an absolute IRI or blank node",
+                            ['id' => $value, 'expanded' => $expandedId],
+                        );
+                    }
+                }
+
+                return $expandedId;
 
             case Keyword::Type->value:
                 return $this->expandTypeValue($value);
@@ -714,6 +848,12 @@ class Expansion
                     return array_is_list($expandedDefault) ? $expandedDefault : [$expandedDefault];
                 }
 
+                $this->safeModeDrop(
+                    'invalid property',
+                    '@default is only meaningful in a frame and is dropped from a document',
+                    ['keyword' => $expandedKey, 'value' => $value],
+                );
+
                 return null;
 
             case Keyword::Embed->value:
@@ -722,7 +862,17 @@ class Expansion
             case Keyword::OmitDefault->value:
                 // Frame keywords are preserved verbatim for the framing
                 // algorithm; outside a frame they carry no meaning and drop.
-                return $this->frameExpansion ? $value : null;
+                if (! $this->frameExpansion) {
+                    $this->safeModeDrop(
+                        'invalid property',
+                        "{$expandedKey} is only meaningful in a frame and is dropped from a document",
+                        ['keyword' => $expandedKey, 'value' => $value],
+                    );
+
+                    return null;
+                }
+
+                return $value;
 
                 // Note: @value is handled directly in expandObject (recorded
                 // verbatim, including null) and never reaches this method.
@@ -748,7 +898,17 @@ class Expansion
                 return $value;
 
             case Keyword::Direction->value:
-                return is_string($value) ? $value : null;
+                if (! is_string($value)) {
+                    $this->safeModeDrop(
+                        'invalid @direction value',
+                        '@direction must be a string ("ltr"/"rtl"); a non-string value is dropped',
+                        ['direction' => $value],
+                    );
+
+                    return null;
+                }
+
+                return $value;
 
             case Keyword::List->value:
                 // §5.5: @list / @set contents expand under the *active property*
@@ -802,6 +962,12 @@ class Expansion
         }
 
         // Unknown keyword — silently drop.
+        $this->safeModeDrop(
+            'invalid property',
+            "keyword {$expandedKey} is not usable as a node entry here and is dropped",
+            ['keyword' => $expandedKey, 'value' => $value],
+        );
+
         return null;
     }
 
@@ -882,8 +1048,17 @@ class Expansion
         // resolves against @base.
         if (is_string($value)) {
             $expanded = $this->expandIri($value, vocab: true, documentRelative: true);
+            if ($expanded === null) {
+                $this->safeModeDrop(
+                    'relative @type reference',
+                    "@type value '{$value}' does not expand to an IRI and is dropped",
+                    ['type' => $value],
+                );
 
-            return $expanded === null ? [] : [$expanded];
+                return [];
+            }
+
+            return [$expanded];
         }
 
         if (! is_array($value)) {
@@ -896,9 +1071,16 @@ class Expansion
                 throw new JsonLdException('Invalid type value: @type must be a string or an array of strings');
             }
             $expanded = $this->expandIri($item, vocab: true, documentRelative: true);
-            if ($expanded !== null) {
-                $types[] = $expanded;
+            if ($expanded === null) {
+                $this->safeModeDrop(
+                    'relative @type reference',
+                    "@type value '{$item}' does not expand to an IRI and is dropped",
+                    ['type' => $item],
+                );
+
+                continue;
             }
+            $types[] = $expanded;
         }
 
         return $types;
@@ -1164,6 +1346,16 @@ class Expansion
 
         $expanded = $this->expandObject($value, Keyword::Reverse->value);
         if (! is_array($expanded) || array_is_list($expanded)) {
+            if (is_array($expanded) && $expanded !== []) {
+                // e.g. a @set inside @reverse unwraps to a list, which has no
+                // reverse-map shape — the whole @reverse block is dropped.
+                $this->safeModeDrop(
+                    'dropped object',
+                    'the @reverse value expanded to a list instead of a reverse property map and is dropped',
+                    ['value' => $value],
+                );
+            }
+
             return;
         }
 
@@ -1273,6 +1465,12 @@ class Expansion
         // @value: null → the value object is dropped, UNLESS it is a @json
         // literal, where JSON null is a legitimate value to serialise (#tjs22).
         if ($value === null && ! $isJson) {
+            $this->safeModeDrop(
+                'null @value value',
+                'a value object whose @value is null is dropped',
+                ['object' => $result],
+            );
+
             return null;
         }
 
@@ -1559,6 +1757,18 @@ class Expansion
     private function resolveRemoteContext(string|array $layer): array
     {
         if ($this->documentLoader === null) {
+            // Every term the unresolvable context would define stays undefined,
+            // so its data drops one term at a time downstream. Fail closed at
+            // the root cause rather than degrading to an empty term map.
+            $this->safeModeDrop(
+                'context load failed',
+                sprintf(
+                    'scoped context %s cannot be resolved: no document loader is configured',
+                    is_string($layer) ? "'{$layer}'" : 'with @import',
+                ),
+                ['context' => $layer],
+            );
+
             return [];
         }
 
@@ -1566,6 +1776,7 @@ class Expansion
             ['@context' => $layer],
             $this->documentLoader,
             $this->documentBase->getBase(),
+            safe: $this->safe,
         );
 
         return $processor->getTermDefinitions()->termDefinitions;
@@ -1723,8 +1934,19 @@ class Expansion
                 continue;
             }
             if (str_starts_with($term, '@')) {
-                // Other keyword overrides (@language, @direction, etc.) are out
-                // of scope for this PR.
+                // @protected / @propagate / @import / @version are consumed by
+                // the surrounding machinery. @language / @direction overrides
+                // are NOT implemented for scoped contexts: values would be
+                // tagged with the parent's defaults, silently mis-canonicalizing
+                // — in safe mode that must fail closed, not diverge.
+                if ($term === Keyword::Language->value || $term === Keyword::Direction->value) {
+                    $this->safeModeDrop(
+                        'unsupported scoped context entry',
+                        "a scoped context sets {$term}, which this processor ignores; values in its scope would carry the wrong language/direction",
+                        ['entry' => $term, 'value' => $definition],
+                    );
+                }
+
                 continue;
             }
 
@@ -1742,6 +1964,15 @@ class Expansion
             }
 
             if (! is_string($definition) && ! is_array($definition)) {
+                // The document-level equivalent throws unconditionally
+                // (ContextProcessor); scoped processing tolerates the shape by
+                // skipping the term, whose data then drops at use time.
+                $this->safeModeDrop(
+                    'invalid scoped term definition',
+                    "term '{$term}' in a scoped context has a non-string, non-map definition and is ignored",
+                    ['term' => $term, 'definition' => $definition],
+                );
+
                 continue;
             }
 
@@ -1869,6 +2100,14 @@ class Expansion
         $result = [];
         foreach ($map as $language => $entry) {
             if (! is_string($language)) {
+                // PHP decodes a numeric-string JSON key ("1") to an int key;
+                // jsonld.js would keep it as a language tag.
+                $this->safeModeDrop(
+                    'invalid map key',
+                    "language map key '{$language}' is not a string and its entry is dropped",
+                    ['key' => $language],
+                );
+
                 continue;
             }
             // A key whose IRI expansion is @none (the literal keyword or an
@@ -1929,6 +2168,14 @@ class Expansion
         $result = [];
         foreach ($map as $index => $entry) {
             if (! is_string($index)) {
+                // PHP decodes a numeric-string JSON key ("1") to an int key;
+                // jsonld.js would keep it as an @index value.
+                $this->safeModeDrop(
+                    'invalid map key',
+                    "index map key '{$index}' is not a string and its entry is dropped",
+                    ['key' => $index],
+                );
+
                 continue;
             }
             // A key whose IRI expansion is @none (the literal keyword or an
@@ -1994,6 +2241,14 @@ class Expansion
         $result = [];
         foreach ($map as $id => $entry) {
             if (! is_string($id)) {
+                // PHP decodes a numeric-string JSON key ("1") to an int key;
+                // jsonld.js would keep it as the entry's @id.
+                $this->safeModeDrop(
+                    'invalid map key',
+                    "id map key '{$id}' is not a string and its entry is dropped",
+                    ['key' => $id],
+                );
+
                 continue;
             }
             // A key whose IRI expansion is @none (the literal keyword or an
@@ -2022,6 +2277,14 @@ class Expansion
                             $expandedId = $this->expandIri($id, documentRelative: true);
                             if ($expandedId !== null) {
                                 $expandedItem[Keyword::Id->value] = $expandedId;
+                            } else {
+                                // The entry silently loses its identity and
+                                // becomes a blank node — signable-data loss.
+                                $this->safeModeDrop(
+                                    'reserved @id value',
+                                    "id map key '{$id}' does not expand to an IRI; the entry loses its identity",
+                                    ['key' => $id],
+                                );
                             }
                         }
                         ksort($expandedItem);
@@ -2048,12 +2311,28 @@ class Expansion
         $result = [];
         foreach ($map as $type => $entry) {
             if (! is_string($type)) {
+                // PHP decodes a numeric-string JSON key ("1") to an int key;
+                // jsonld.js would keep it as a @type value.
+                $this->safeModeDrop(
+                    'invalid map key',
+                    "type map key '{$type}' is not a string and its entry is dropped",
+                    ['key' => $type],
+                );
+
                 continue;
             }
             // A key whose IRI expansion is @none (the literal keyword or an
             // alias of it) carries no @type metadata.
             $expandedType = $this->expandIri($type, vocab: true);
             $typeIsNone = $expandedType === Keyword::None->value;
+            if ($expandedType === null) {
+                // The entries survive but silently lose their @type.
+                $this->safeModeDrop(
+                    'relative @type reference',
+                    "type map key '{$type}' does not expand to an IRI; its entries lose their @type",
+                    ['key' => $type],
+                );
+            }
 
             // §5.5 step 13.8.3.1: the map context for a @type map is the
             // PREVIOUS context (the context as it stood before the type-scoped
@@ -2085,6 +2364,14 @@ class Expansion
                     $iri = $vocabType
                         ? $this->expandIri($item, vocab: true, documentRelative: true)
                         : $this->expandIri($item, documentRelative: true);
+                    if ($iri === null) {
+                        // The node reference the string denotes is dropped.
+                        $this->safeModeDrop(
+                            'reserved @id value',
+                            "type map entry '{$item}' does not expand to an IRI and its node reference is dropped",
+                            ['value' => $item],
+                        );
+                    }
                     $expanded = $iri !== null ? [Keyword::Id->value => $iri] : null;
                 } else {
                     $expanded = $this->expandElement($item, $activeProperty);
@@ -2181,6 +2468,16 @@ class Expansion
             // then merge its keys into $result.
             $expandedNested = $this->expandObject($nested, null);
             if (! is_array($expandedNested) || array_is_list($expandedNested)) {
+                if (is_array($expandedNested) && $expandedNested !== []) {
+                    // e.g. a @set inside @nest unwraps to a list, which cannot
+                    // be merged as nested properties — the block is dropped.
+                    $this->safeModeDrop(
+                        'dropped object',
+                        'a @nest value expanded to a list instead of a node object and is dropped',
+                        ['value' => $nested],
+                    );
+                }
+
                 continue;
             }
 

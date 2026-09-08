@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Exceptions\DataLossException;
 use Accredify\JsonLd\Internal\BlankNodeIssuer;
+use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\Rdf\RdfQuad;
 use Accredify\JsonLd\Rdf\RdfTerm;
 
@@ -39,11 +41,32 @@ final class ToRdf
      * @param  bool  $produceGeneralizedRdf  When true (§7.1), a blank-node
      *                                       predicate is kept (generalized RDF)
      *                                       instead of dropping the statement.
+     * @param  bool  $safe  Safe mode ({@see JsonLdOptions::$safe}):
+     *                      any node, statement, or literal this algorithm would
+     *                      silently drop (relative IRIs, blank-node predicates,
+     *                      malformed language tags, …) throws
+     *                      {@see DataLossException} instead.
      */
     public function __construct(
         private readonly ?string $rdfDirection = null,
         private readonly bool $produceGeneralizedRdf = false,
+        private readonly bool $safe = false,
     ) {}
+
+    /**
+     * Safe mode: throw for a drop site instead of letting the caller silently
+     * discard the statement. No-op when safe mode is off.
+     *
+     * @param  array<string, mixed>  $details
+     *
+     * @throws DataLossException
+     */
+    private function safeModeDrop(string $eventCode, string $message, array $details = []): void
+    {
+        if ($this->safe) {
+            throw new DataLossException($eventCode, $message, $details);
+        }
+    }
 
     /**
      * @param  array<mixed>  $expanded
@@ -52,19 +75,31 @@ final class ToRdf
     public function toRdf(array $expanded): array
     {
         $issuer = new BlankNodeIssuer;
-        $nodeMap = (new NodeMap($issuer))->generate($expanded);
+        $nodeMap = (new NodeMap($issuer, $this->safe))->generate($expanded);
 
         $quads = [];
 
         foreach ($nodeMap as $graphName => $graph) {
             $graphTerm = $this->graphTerm($graphName);
             if ($graphName !== '@default' && $graphTerm === null) {
+                $this->safeModeDrop(
+                    'relative graph reference',
+                    "graph name '{$graphName}' is not an absolute IRI or blank node; the whole graph is dropped",
+                    ['graph' => $graphName],
+                );
+
                 continue; // graph name was not a well-formed IRI / blank node
             }
 
             foreach ($graph as $subject => $node) {
                 $subjectTerm = $this->nodeTerm($subject);
                 if ($subjectTerm === null) {
+                    $this->safeModeDrop(
+                        'relative subject reference',
+                        "subject '{$subject}' is not an absolute IRI or blank node; all of its statements are dropped",
+                        ['subject' => $subject],
+                    );
+
                     continue; // relative IRI subject — skip
                 }
 
@@ -72,11 +107,23 @@ final class ToRdf
                     if ($property === Keyword::Type->value) {
                         foreach ($this->asList($values) as $type) {
                             if (! is_string($type)) {
+                                $this->safeModeDrop(
+                                    'dropped object',
+                                    "a non-string @type value of subject '{$subject}' carries no RDF statement and is dropped",
+                                    ['subject' => $subject, 'type' => $type],
+                                );
+
                                 continue;
                             }
                             $object = $this->nodeTerm($type);
                             if ($object !== null) {
                                 $quads[] = new RdfQuad($subjectTerm, RdfTerm::iri(RdfTerm::RDF_TYPE), $object, $graphTerm);
+                            } else {
+                                $this->safeModeDrop(
+                                    'relative @type reference',
+                                    "@type '{$type}' of subject '{$subject}' is not an absolute IRI or blank node; its rdf:type statement is dropped",
+                                    ['subject' => $subject, 'type' => $type],
+                                );
                             }
                         }
 
@@ -94,11 +141,23 @@ final class ToRdf
                     $isBlankPredicate = str_starts_with($property, '_:');
                     if ($isBlankPredicate) {
                         if (! $this->produceGeneralizedRdf) {
+                            $this->safeModeDrop(
+                                'blank node predicate',
+                                "predicate '{$property}' is a blank node; its statements are dropped unless produceGeneralizedRdf is set",
+                                ['subject' => $subject, 'predicate' => $property],
+                            );
+
                             continue;
                         }
                         $predicate = RdfTerm::blankNode($property);
                     } else {
                         if (! $this->isAbsoluteIri($property)) {
+                            $this->safeModeDrop(
+                                'relative predicate reference',
+                                "predicate '{$property}' is not an absolute IRI; its statements are dropped",
+                                ['subject' => $subject, 'predicate' => $property],
+                            );
+
                             continue;
                         }
                         $predicate = RdfTerm::iri($property);
@@ -131,14 +190,38 @@ final class ToRdf
     private function objectToRdf(mixed $item, array &$listQuads, BlankNodeIssuer $issuer): ?RdfTerm
     {
         if (! is_array($item)) {
+            $this->safeModeDrop(
+                'dropped object',
+                'a stray non-object value in the node map carries no RDF statement and is dropped',
+                ['value' => $item],
+            );
+
             return null;
         }
 
         // Node reference.
         if (array_key_exists(Keyword::Id->value, $item) && ! array_key_exists(Keyword::Value->value, $item)) {
             $id = $item[Keyword::Id->value];
+            if (! is_string($id)) {
+                $this->safeModeDrop(
+                    'invalid @id value',
+                    'a node reference whose @id is not a string carries no RDF statement and is dropped',
+                    ['id' => $id],
+                );
 
-            return is_string($id) ? $this->nodeTerm($id) : null;
+                return null;
+            }
+
+            $object = $this->nodeTerm($id);
+            if ($object === null) {
+                $this->safeModeDrop(
+                    'relative object reference',
+                    "object '{$id}' is not an absolute IRI or blank node; its statement is dropped",
+                    ['object' => $id],
+                );
+            }
+
+            return $object;
         }
 
         // List object.
@@ -153,6 +236,12 @@ final class ToRdf
             /** @var array<string, mixed> $item */
             return $this->valueToLiteral($item, $listQuads, $issuer);
         }
+
+        $this->safeModeDrop(
+            'dropped object',
+            'an object that is neither a node reference, list object, nor value object carries no RDF statement and is dropped',
+            ['object' => $item],
+        );
 
         return null;
     }
@@ -216,11 +305,29 @@ final class ToRdf
             ? $item[Keyword::Direction->value]
             : null;
 
+        // jsonld.js parity: with @direction present but no rdfDirection mode
+        // selected, the base direction cannot be represented in RDF and is
+        // silently lost from the literal.
+        if ($direction !== null && $this->rdfDirection === null) {
+            $this->safeModeDrop(
+                'rdfDirection not set',
+                "a literal carries @direction '{$direction}' but the rdfDirection option is not set; the direction is dropped",
+                ['value' => $value, 'direction' => $direction],
+            );
+        }
+
         // A base-direction-tagged string under an `rdfDirection` mode (§9):
         // either an i18n datatype IRI or a compound literal (blank node with
         // rdf:value / rdf:language / rdf:direction). Only applies to plain
         // strings (no explicit datatype).
         if ($direction !== null && $this->rdfDirection !== null && $datatype === null) {
+            if (! is_scalar($value)) {
+                $this->safeModeDrop(
+                    'invalid @value serialization',
+                    'a non-scalar @value is coerced to the empty string when serialised as a direction-tagged literal',
+                    ['value' => $value],
+                );
+            }
             $stringValue = is_scalar($value) ? (string) $value : '';
 
             if ($this->rdfDirection === 'i18n-datatype') {
@@ -268,12 +375,25 @@ final class ToRdf
         }
 
         // String value.
+        if (! is_scalar($value)) {
+            $this->safeModeDrop(
+                'invalid @value serialization',
+                'a non-scalar @value is coerced to the empty string when serialised as an RDF literal',
+                ['value' => $value],
+            );
+        }
         $stringValue = is_scalar($value) ? (string) $value : '';
 
         // A language-tagged literal whose tag is not a well-formed BCP47
         // language tag carries no valid RDF language: the statement is dropped
         // (#twf05). A well-formed tag is ALPHA{1,8} (-(ALPHANUM){1,8})*.
         if ($language !== null && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $language) !== 1) {
+            $this->safeModeDrop(
+                'invalid @language value',
+                "language tag '{$language}' is not a well-formed BCP47 tag; the whole statement is dropped",
+                ['value' => $stringValue, 'language' => $language],
+            );
+
             return null;
         }
 
@@ -341,6 +461,12 @@ final class ToRdf
             return '{'.implode(',', $members).'}';
         }
 
+        $this->safeModeDrop(
+            'invalid @json serialization',
+            'a value with no JSON representation inside a @json literal is serialised as null',
+            ['value' => $value],
+        );
+
         return 'null';
     }
 
@@ -352,6 +478,12 @@ final class ToRdf
     private function jcsNumber(float $value): string
     {
         if (is_nan($value) || is_infinite($value)) {
+            $this->safeModeDrop(
+                'invalid @json serialization',
+                'NaN / Infinity cannot be represented in a JSON literal and is serialised as null',
+                ['value' => $value],
+            );
+
             return 'null'; // JSON has no NaN / Infinity
         }
 

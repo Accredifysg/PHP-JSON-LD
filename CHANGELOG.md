@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Safe mode — fail closed on silently dropped data** (`JsonLdOptions`
+  `safe: true`, default `false`; additive and fully backwards-compatible).
+  Implements W3C VC-DATA-INTEGRITY 1.0 §2.4.3 "Securing Data Losslessly"
+  (`DATA_LOSS_DETECTION_ERROR`) for canonicalization/signing pipelines: any
+  algorithm step that would silently drop data now throws the new
+  `Accredify\JsonLd\Exceptions\DataLossException`, carrying a
+  jsonld.js-compatible `$eventCode` (e.g. `invalid property`,
+  `relative subject reference`, `reserved @id value`) and the dropped datum
+  in `$details`. Covered drop families: undefined / null-mapped /
+  keyword-shaped terms (the §2.4.3 clause itself), free-floating
+  scalars/value objects/`@list`/`@id`-only nodes, `@value: null`,
+  identity loss on `@id` (keyword-shaped or relative), `@type` values that
+  fail to expand, reserved (`@`-shaped) term/`@id`/`@reverse` definitions,
+  relative `@vocab`, unresolvable or partially-ignored scoped contexts,
+  container-map keys PHP decodes to integers, and — in RDF deserialization —
+  relative subject/predicate/object/graph IRIs, blank-node predicates
+  (unless `produceGeneralizedRdf`), malformed BCP47 language tags,
+  non-scalar `@value` coercion, `@direction` with no `rdfDirection` mode,
+  and NaN/Infinity in `@json` literals. Threaded through `expand`,
+  `compact`, `flatten`, `toRdf`, and `frame` (`flatten`/`toRdf` now share
+  `expand`'s pipeline internally; behaviour unchanged). Closes the family
+  of canonicalization holes where silently dropped data leaves signable
+  statements unprotected — proof options that canonicalize to the empty
+  dataset, undefined subject claims that sign and verify while remaining
+  editable, and undefined `proofPurpose` values that can be relabelled —
+  at the layer the spec assigns them to. Default-mode output is
+  byte-identical: W3C conformance (1,287/1,302) and characterization
+  snapshots are unchanged.
+
 ### Fixed
 
 - **Protected-term redefinition now compares expanded IRIs, not raw `@id`
