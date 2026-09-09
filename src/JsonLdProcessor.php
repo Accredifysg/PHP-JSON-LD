@@ -153,7 +153,7 @@ final class JsonLdProcessor implements Processor
         // place.
         $expanded = $this->runExpansion($document, $options, frameExpansion: false);
 
-        $flattened = (new Flattening)->flatten($expanded);
+        $flattened = (new Flattening($options !== null && $options->safe))->flatten($expanded);
 
         // §4.6 step 7: with no context, return the expanded-flattened form.
         if ($context === null || $context === [] || $context === '') {
@@ -193,6 +193,7 @@ final class JsonLdProcessor implements Processor
             $options !== null && $options->useNativeTypes,
             $options !== null && $options->useRdfType,
             $options?->rdfDirection,
+            $options !== null && $options->safe,
         ))->fromRdf($quads);
 
         return new FromRdfDocument($result);

@@ -241,11 +241,15 @@ class Expansion
     private function expandScalar(mixed $element, ?string $activeProperty): ?array
     {
         if ($activeProperty === null || $activeProperty === Keyword::Graph->value) {
-            $this->safeModeDrop(
-                'free-floating scalar',
-                'a scalar at the top level or directly inside @graph carries no statement and is dropped',
-                ['value' => $element],
-            );
+            // A frame legitimately places match patterns where a document
+            // cannot place data; dropping them is not data loss.
+            if (! $this->frameExpansion) {
+                $this->safeModeDrop(
+                    'free-floating scalar',
+                    'a scalar at the top level or directly inside @graph carries no statement and is dropped',
+                    ['value' => $element],
+                );
+            }
 
             return null;
         }
@@ -721,11 +725,15 @@ class Expansion
             && (isset($result[Keyword::Language->value]) || isset($result[Keyword::Direction->value]))
             && ! $this->hasNonValueObjectProperty($result)
         ) {
-            $this->safeModeDrop(
-                'object with only @language',
-                'an object carrying only @language/@direction has no @value to attach to and is dropped',
-                ['object' => $result],
-            );
+            // In a frame, {@language: "en"} is a legitimate match pattern —
+            // dropping it is frame semantics, not document data loss.
+            if (! $this->frameExpansion) {
+                $this->safeModeDrop(
+                    'object with only @language',
+                    'an object carrying only @language/@direction has no @value to attach to and is dropped',
+                    ['object' => $result],
+                );
+            }
 
             return null;
         }
@@ -747,17 +755,18 @@ class Expansion
 
         // Free-floating node: an object whose only expanded entry is @id,
         // with no other properties, is dropped during expansion (§5.5 step
-        // 14). At the top level (activeProperty === null) this is firm; on
-        // nested objects we keep it because the spec allows references.
+        // 18: active property null or @graph — a graph's direct members carry
+        // no statement either). On nested objects we keep it because the spec
+        // allows references.
         if (
             ! $this->frameExpansion
-            && $activeProperty === null
+            && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
             && count($result) === 1
             && isset($result[Keyword::Id->value])
         ) {
             $this->safeModeDrop(
                 'object with only @id',
-                'a node object containing only @id carries no statement at the top level and is dropped',
+                'a node object containing only @id carries no statement at the top level or directly inside @graph and is dropped',
                 ['object' => $result],
             );
 
@@ -884,6 +893,17 @@ class Expansion
                 if (! is_string($value)) {
                     throw new JsonLdException('Invalid language-tagged string: @language must be a string');
                 }
+                // A malformed BCP47 tag flows through expansion but its
+                // statement is dropped at toRdf; jsonld.js's safe expansion
+                // already fails closed here, so an expand/flatten-only
+                // pipeline is protected too. Default mode keeps it verbatim.
+                if ($this->safe && ! $this->wellFormedLanguageTag($value)) {
+                    throw new DataLossException(
+                        'invalid @language value',
+                        "@language tag '{$value}' is not a well-formed BCP47 tag; its statement cannot be expressed in RDF",
+                        ['language' => $value],
+                    );
+                }
 
                 return $value;
 
@@ -898,6 +918,9 @@ class Expansion
                 return $value;
 
             case Keyword::Direction->value:
+                if ($this->frameExpansion) {
+                    return $value; // a frame may use {} / a list as a @direction pattern
+                }
                 if (! is_string($value)) {
                     $this->safeModeDrop(
                         'invalid @direction value',
@@ -938,8 +961,11 @@ class Expansion
                 // §5.5 step 13.4.14: @included contents are expanded as node
                 // objects. The result must be a (non-empty) array of node
                 // objects — a scalar, a value object, or a list object is an
-                // "invalid @included value".
-                $expandedIncluded = $this->expandElement($value, null);
+                // "invalid @included value". Expanded under '@included' (not
+                // null) so the free-floating drops don't fire first: a stray
+                // scalar must surface as this unconditional spec error, not as
+                // a safe-mode DataLossException claiming recoverable loss.
+                $expandedIncluded = $this->expandElement($value, Keyword::Included->value);
                 if ($expandedIncluded === null) {
                     throw new JsonLdException('Invalid @included value');
                 }
@@ -1057,6 +1083,7 @@ class Expansion
 
                 return [];
             }
+            $this->assertSafeTypeIsAbsolute($value, $expanded);
 
             return [$expanded];
         }
@@ -1080,10 +1107,36 @@ class Expansion
 
                 continue;
             }
+            $this->assertSafeTypeIsAbsolute($item, $expanded);
             $types[] = $expanded;
         }
 
         return $types;
+    }
+
+    /**
+     * Safe mode: a @type that expands to a RELATIVE IRI survives expansion
+     * (the spec keeps it) but can never become an rdf:type statement — an
+     * external canonicalizer fed the safe-expanded output gets no error, so
+     * fail closed here like jsonld.js's safe expansion does. No-op in default
+     * mode, where only toRdf drops the statement.
+     *
+     * @throws DataLossException
+     */
+    private function assertSafeTypeIsAbsolute(string $raw, string $expanded): void
+    {
+        if (
+            $this->safe
+            && ! $this->isKeyword($expanded)
+            && ! str_starts_with($expanded, '_:')
+            && ! $this->looksLikeAbsoluteIri($expanded)
+        ) {
+            throw new DataLossException(
+                'relative @type reference',
+                "@type value '{$raw}' expands to '{$expanded}', which is not an absolute IRI or blank node; its rdf:type statement cannot be expressed",
+                ['type' => $raw, 'expanded' => $expanded],
+            );
+        }
     }
 
     /**
@@ -1599,6 +1652,16 @@ class Expansion
     }
 
     /**
+     * A well-formed BCP47 language tag: ALPHA{1,8} (-(ALPHANUM){1,8})* —
+     * the same shape {@see ToRdf} requires before emitting a language-tagged
+     * literal, so safe expansion and safe serialization agree.
+     */
+    private function wellFormedLanguageTag(string $tag): bool
+    {
+        return preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $tag) === 1;
+    }
+
+    /**
      * §5.5 step 12: collect the @type values of the object and overlay each
      * type's nested `@context` onto a fresh active context derived from
      * documentBase. Returns null if no types declare a scoped context.
@@ -1709,6 +1772,11 @@ class Expansion
         $layers = is_array($context) && array_is_list($context) ? $context : [$context];
 
         $active = new TermDefinitions($base->termDefinitions);
+        // Safe mode and the processing mode are per-call options, not context
+        // state: they survive scoped copies (and null resets below) so the
+        // definition-time checks in TermDefinitions keep firing in scope.
+        $active->setSafe($this->safe);
+        $active->setProcessingMode($this->documentBase->getProcessingMode());
         $vocab = $base->getVocab();
         if ($vocab !== null) {
             $active->setVocab($vocab);
@@ -1727,6 +1795,8 @@ class Expansion
                     throw new JsonLdException('Invalid context nullification: a null context cannot clear protected terms');
                 }
                 $active = new TermDefinitions;
+                $active->setSafe($this->safe);
+                $active->setProcessingMode($this->documentBase->getProcessingMode());
             } elseif (is_string($layer) || (is_array($layer) && array_key_exists(Keyword::Import->value, $layer))) {
                 // A remote (string) scoped context, or one that sources another
                 // via @import, is resolved through the DocumentLoader; the
@@ -1776,10 +1846,54 @@ class Expansion
             ['@context' => $layer],
             $this->documentLoader,
             $this->documentBase->getBase(),
+            $this->documentBase->getProcessingMode(),
             safe: $this->safe,
         );
 
         return $processor->getTermDefinitions()->termDefinitions;
+    }
+
+    /**
+     * Resolve a scoped `@vocab` value the way {@see ContextProcessor} resolves
+     * a document-level one: empty string → the scope's base, a blank node is
+     * kept, a compact IRI expands via a prefix term of the scope, a bare term
+     * via its definition, and a relative reference is appended to the current
+     * vocab (else resolved against the base).
+     */
+    private function resolveScopedVocab(string $vocab, TermDefinitions $target): string
+    {
+        if ($vocab === '') {
+            return $target->getBase() ?? $this->documentBase->getBase() ?? '';
+        }
+
+        if (str_starts_with($vocab, '_:')) {
+            return $vocab;
+        }
+
+        if (str_contains($vocab, ':')) {
+            [$prefix, $suffix] = explode(':', $vocab, 2);
+            if (! str_starts_with($suffix, '//')) {
+                $prefixDef = $target->getTermDefinition($prefix);
+                if ($prefixDef !== null && isset($prefixDef['@id']) && is_string($prefixDef['@id'])) {
+                    return $prefixDef['@id'].$suffix;
+                }
+            }
+
+            return $vocab; // absolute IRI
+        }
+
+        $termDef = $target->getTermDefinition($vocab);
+        if ($termDef !== null && isset($termDef['@id']) && is_string($termDef['@id'])) {
+            return $termDef['@id'];
+        }
+
+        $currentVocab = $target->getVocab();
+        if ($currentVocab !== null) {
+            return $currentVocab.$vocab;
+        }
+        $base = $target->getBase() ?? $this->documentBase->getBase();
+
+        return $base !== null && $base !== '' ? IriResolver::resolve($base, $vocab) : $vocab;
     }
 
     /**
@@ -1854,6 +1968,8 @@ class Expansion
                 // type-scoped contexts have @propagate = false) — unless an
                 // explicit @propagate:true makes the context propagate.
                 $scoped = new TermDefinitions($this->termDefinitions->termDefinitions);
+                $scoped->setSafe($this->safe);
+                $scoped->setProcessingMode($this->documentBase->getProcessingMode());
                 $vocab = $this->termDefinitions->getVocab();
                 if ($vocab !== null) {
                     $scoped->setVocab($vocab);
@@ -1877,6 +1993,8 @@ class Expansion
                         throw new JsonLdException('Invalid context nullification: a type-scoped context may not clear protected terms');
                     }
                     $scoped = new TermDefinitions;
+                    $scoped->setSafe($this->safe);
+                    $scoped->setProcessingMode($this->documentBase->getProcessingMode());
 
                     continue;
                 }
@@ -1918,7 +2036,29 @@ class Expansion
                 // A scoped @vocab of null RESETS the active vocabulary (so a
                 // relative @type goes document-relative and unmapped terms are
                 // dropped) rather than inheriting the parent's @vocab (#t0059).
-                $definition === null ? $target->setVocab(null) : $target->pushVocab($definition);
+                if ($definition === null) {
+                    $target->setVocab(null);
+                } else {
+                    // Resolve like the document-level path (ContextProcessor
+                    // ::resolveVocab) and apply the same relative-@vocab safe
+                    // check, so a scoped relative @vocab fails closed at the
+                    // root cause instead of surfacing per-term as a misleading
+                    // 'invalid property' — or, when the relative value happens
+                    // to contain a colon, not at all.
+                    $resolved = $this->resolveScopedVocab($definition, $target);
+                    if (
+                        $this->safe
+                        && ! str_starts_with($resolved, '_:')
+                        && ! $this->looksLikeAbsoluteIri($resolved)
+                    ) {
+                        throw new DataLossException(
+                            'relative @vocab reference',
+                            "scoped @vocab '{$definition}' does not resolve to an absolute IRI",
+                            ['vocab' => $definition, 'resolved' => $resolved],
+                        );
+                    }
+                    $target->pushVocab($resolved);
+                }
 
                 continue;
             }
@@ -1938,12 +2078,30 @@ class Expansion
                 // the surrounding machinery. @language / @direction overrides
                 // are NOT implemented for scoped contexts: values would be
                 // tagged with the parent's defaults, silently mis-canonicalizing
-                // — in safe mode that must fail closed, not diverge.
-                if ($term === Keyword::Language->value || $term === Keyword::Direction->value) {
+                // — in safe mode that must fail closed, not diverge. A NULL
+                // value is exempt: it is the standard reset idiom, and this
+                // processor's scoped contexts already apply no default tag, so
+                // nothing drops or diverges.
+                if (
+                    ($term === Keyword::Language->value || $term === Keyword::Direction->value)
+                    && $definition !== null
+                ) {
                     $this->safeModeDrop(
                         'unsupported scoped context entry',
                         "a scoped context sets {$term}, which this processor ignores; values in its scope would carry the wrong language/direction",
                         ['entry' => $term, 'value' => $definition],
+                    );
+                }
+
+                // A keyword-SHAPED term that is not a real keyword is reserved:
+                // it is silently skipped here while the identical definition in
+                // a document-level (or remote scoped) context throws 'reserved
+                // term' — same construct, same rule on both write paths.
+                if (preg_match('/^@[A-Za-z]+$/', $term) === 1 && ! Keyword::contains($term)) {
+                    $this->safeModeDrop(
+                        'reserved term',
+                        "term '{$term}' has the form of a keyword; terms beginning with '@' are reserved for future use and cannot hold data",
+                        ['term' => $term],
                     );
                 }
 
@@ -2116,6 +2274,16 @@ class Expansion
                 || $this->expandIri($language, vocab: true) === Keyword::None->value;
 
             // Each entry can be a single string or a list of strings.
+            // A malformed BCP47 map key produces statements toRdf must drop;
+            // safe mode fails closed at the source (jsonld.js parity).
+            if ($this->safe && ! $langIsNone && ! $this->wellFormedLanguageTag($language)) {
+                throw new DataLossException(
+                    'invalid @language value',
+                    "language map key '{$language}' is not a well-formed BCP47 tag; its entries' statements cannot be expressed in RDF",
+                    ['language' => $language],
+                );
+            }
+
             $items = is_array($entry) && array_is_list($entry) ? $entry : [$entry];
             foreach ($items as $item) {
                 if ($item === null) {
@@ -2276,6 +2444,21 @@ class Expansion
                         if (! $idIsNone && ! array_key_exists(Keyword::Id->value, $expandedItem)) {
                             $expandedId = $this->expandIri($id, documentRelative: true);
                             if ($expandedId !== null) {
+                                // A key that stays a relative IRI is identity
+                                // the RDF layer can never carry — the same
+                                // check the direct @id branch applies. Default
+                                // mode keeps it, per the spec.
+                                if (
+                                    $this->safe
+                                    && ! str_starts_with($expandedId, '_:')
+                                    && ! $this->looksLikeAbsoluteIri($expandedId)
+                                ) {
+                                    throw new DataLossException(
+                                        'relative @id reference',
+                                        "id map key '{$id}' does not expand to an absolute IRI or blank node",
+                                        ['id' => $id, 'expanded' => $expandedId],
+                                    );
+                                }
                                 $expandedItem[Keyword::Id->value] = $expandedId;
                             } else {
                                 // The entry silently loses its identity and
@@ -2283,7 +2466,7 @@ class Expansion
                                 $this->safeModeDrop(
                                     'reserved @id value',
                                     "id map key '{$id}' does not expand to an IRI; the entry loses its identity",
-                                    ['key' => $id],
+                                    ['id' => $id],
                                 );
                             }
                         }
@@ -2332,6 +2515,8 @@ class Expansion
                     "type map key '{$type}' does not expand to an IRI; its entries lose their @type",
                     ['key' => $type],
                 );
+            } elseif (! $typeIsNone) {
+                $this->assertSafeTypeIsAbsolute($type, $expandedType);
             }
 
             // §5.5 step 13.8.3.1: the map context for a @type map is the
@@ -2369,7 +2554,7 @@ class Expansion
                         $this->safeModeDrop(
                             'reserved @id value',
                             "type map entry '{$item}' does not expand to an IRI and its node reference is dropped",
-                            ['value' => $item],
+                            ['id' => $item],
                         );
                     }
                     $expanded = $iri !== null ? [Keyword::Id->value => $iri] : null;

@@ -6,6 +6,7 @@ namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Enums\Keyword;
 use Accredify\JsonLd\Exceptions\DataLossException;
+use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\Internal\BlankNodeIssuer;
 use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\Rdf\RdfQuad;
@@ -51,7 +52,15 @@ final class ToRdf
         private readonly ?string $rdfDirection = null,
         private readonly bool $produceGeneralizedRdf = false,
         private readonly bool $safe = false,
-    ) {}
+    ) {
+        // An unrecognised rdfDirection (a typo, wrong case) would silently
+        // disable BOTH the serialization branch and the "rdfDirection not set"
+        // safe check, dropping base directions with no error. jsonld.js
+        // rejects unknown values up front; so do we.
+        if ($rdfDirection !== null && $rdfDirection !== 'i18n-datatype' && $rdfDirection !== 'compound-literal') {
+            throw new JsonLdException("Invalid rdfDirection value: '{$rdfDirection}' (expected 'i18n-datatype' or 'compound-literal')");
+        }
+    }
 
     /**
      * Safe mode: throw for a drop site instead of letting the caller silently
@@ -80,6 +89,10 @@ final class ToRdf
         $quads = [];
 
         foreach ($nodeMap as $graphName => $graph) {
+            // PHP turns an all-numeric identifier ('123') into an int array
+            // key; cast back so the relative-reference checks below apply
+            // instead of a TypeError under strict_types.
+            $graphName = (string) $graphName;
             $graphTerm = $this->graphTerm($graphName);
             if ($graphName !== '@default' && $graphTerm === null) {
                 $this->safeModeDrop(
@@ -92,6 +105,7 @@ final class ToRdf
             }
 
             foreach ($graph as $subject => $node) {
+                $subject = (string) $subject;
                 $subjectTerm = $this->nodeTerm($subject);
                 if ($subjectTerm === null) {
                     $this->safeModeDrop(
@@ -104,6 +118,7 @@ final class ToRdf
                 }
 
                 foreach ($node as $property => $values) {
+                    $property = (string) $property;
                     if ($property === Keyword::Type->value) {
                         foreach ($this->asList($values) as $type) {
                             if (! is_string($type)) {
@@ -131,7 +146,18 @@ final class ToRdf
                     }
 
                     if (str_starts_with($property, '@')) {
-                        continue; // other keywords carry no RDF statement
+                        // Genuine keywords (@index, …) legitimately carry no RDF
+                        // statement; a keyword-SHAPED property that is not one is
+                        // hand-fed data that silently vanishes.
+                        if (! Keyword::contains($property)) {
+                            $this->safeModeDrop(
+                                'invalid property',
+                                "property '{$property}' has the form of a keyword but is not one; its statements are dropped",
+                                ['subject' => $subject, 'predicate' => $property],
+                            );
+                        }
+
+                        continue; // keywords carry no RDF statement
                     }
 
                     // A blank-node predicate is dropped UNLESS produceGeneralizedRdf
@@ -316,6 +342,22 @@ final class ToRdf
             );
         }
 
+        // A language-tagged literal whose tag is not a well-formed BCP47
+        // language tag carries no valid RDF language: the statement is dropped
+        // (#twf05). Checked BEFORE the direction branch — a malformed tag
+        // interpolated into an i18n datatype IRI (or a compound-literal
+        // rdf:language) would otherwise emit syntactically invalid N-Quads.
+        // A well-formed tag is ALPHA{1,8} (-(ALPHANUM){1,8})*.
+        if ($language !== null && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $language) !== 1) {
+            $this->safeModeDrop(
+                'invalid @language value',
+                "language tag '{$language}' is not a well-formed BCP47 tag; the whole statement is dropped",
+                ['value' => $value, 'language' => $language],
+            );
+
+            return null;
+        }
+
         // A base-direction-tagged string under an `rdfDirection` mode (§9):
         // either an i18n datatype IRI or a compound literal (blank node with
         // rdf:value / rdf:language / rdf:direction). Only applies to plain
@@ -328,7 +370,9 @@ final class ToRdf
                     ['value' => $value],
                 );
             }
-            $stringValue = is_scalar($value) ? (string) $value : '';
+            // §7.3 canonicalizes booleans/numbers BEFORE direction handling; a
+            // raw (string) cast would corrupt them (false → "", 0.5 → "0.5").
+            $stringValue = is_scalar($value) ? $this->canonicalLexicalForm($value) : '';
 
             if ($this->rdfDirection === 'i18n-datatype') {
                 return RdfTerm::literal($stringValue, self::I18N_BASE.strtolower($language ?? '').'_'.$direction);
@@ -384,20 +428,29 @@ final class ToRdf
         }
         $stringValue = is_scalar($value) ? (string) $value : '';
 
-        // A language-tagged literal whose tag is not a well-formed BCP47
-        // language tag carries no valid RDF language: the statement is dropped
-        // (#twf05). A well-formed tag is ALPHA{1,8} (-(ALPHANUM){1,8})*.
-        if ($language !== null && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $language) !== 1) {
-            $this->safeModeDrop(
-                'invalid @language value',
-                "language tag '{$language}' is not a well-formed BCP47 tag; the whole statement is dropped",
-                ['value' => $stringValue, 'language' => $language],
-            );
+        return RdfTerm::literal($stringValue, $datatype, $language);
+    }
 
-            return null;
+    /**
+     * Canonical lexical form of a scalar @value (§7.3 steps 8-10), shared with
+     * the direction-tagged branch: booleans → "true"/"false", integer-valued
+     * numbers below 1e21 → canonical integer, other floats → canonical double.
+     */
+    private function canonicalLexicalForm(bool|int|float|string $value): string
+    {
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        if (is_float($value)) {
+            $isIntegerValued = is_finite($value) && floor($value) === $value && abs($value) < 1.0e21;
+
+            return $isIntegerValued ? $this->canonicalInteger($value) : $this->canonicalDouble($value);
+        }
+        if (is_int($value)) {
+            return (string) $value;
         }
 
-        return RdfTerm::literal($stringValue, $datatype, $language);
+        return $value;
     }
 
     /**

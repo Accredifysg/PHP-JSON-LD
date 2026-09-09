@@ -334,6 +334,37 @@ class TermDefinitions
      */
     public function overlayTerm(string $key, array $termDefinition, bool $protectedContext, bool $overrideProtected): void
     {
+        // Safe mode: the reserved-value rules of addTermDefinition apply to a
+        // scoped (overlay) definition too — the same keyword-shaped @id /
+        // @reverse drops the same data no matter which write path the context
+        // arrived on. Default mode stores verbatim, as before.
+        if ($this->safe) {
+            $id = $termDefinition[Keyword::Id->value] ?? null;
+            if (
+                is_string($id)
+                && preg_match('/^@[A-Za-z]+$/', $id) === 1
+                && ! Keyword::contains($id)
+            ) {
+                throw new DataLossException(
+                    'reserved @id value',
+                    "term '{$key}' maps to '{$id}'; @id values beginning with '@' are reserved for future use and are dropped",
+                    ['term' => $key, 'id' => $id],
+                );
+            }
+            $reverse = $termDefinition[Keyword::Reverse->value] ?? null;
+            if (
+                is_string($reverse)
+                && preg_match('/^@[A-Za-z]+$/', $reverse) === 1
+                && ! Keyword::contains($reverse)
+            ) {
+                throw new DataLossException(
+                    'reserved @reverse value',
+                    "term '{$key}' has @reverse '{$reverse}'; @reverse values beginning with '@' are reserved for future use and the whole term definition is dropped",
+                    ['term' => $key, 'reverse' => $reverse],
+                );
+            }
+        }
+
         $this->storeProtectedAware($key, $termDefinition, $protectedContext, $overrideProtected);
     }
 

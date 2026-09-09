@@ -34,7 +34,6 @@ enum Keyword: string
     case List = '@list';
     case Nest = '@nest';
     case None = '@none';
-    case Null = '@null';
     case OmitDefault = '@omitDefault';
     case Prefix = '@prefix';
     case Propagate = '@propagate';

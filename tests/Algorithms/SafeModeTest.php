@@ -7,6 +7,7 @@ use Accredify\JsonLd\Algorithms\ToRdf;
 use Accredify\JsonLd\Context\ContextProcessor;
 use Accredify\JsonLd\Documents\RdfDataset;
 use Accredify\JsonLd\Exceptions\DataLossException;
+use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\JsonLdProcessor;
 use Accredify\JsonLd\Loaders\CachingDocumentLoader;
@@ -845,6 +846,350 @@ describe('caching must not swallow safe-mode errors (jsonld.js replay lesson)', 
 
         // Safe mode is per-call, not sticky processor state.
         expect($processor->expand($doc)->toArray())->not->toBe([]);
+    });
+});
+
+describe('toRdf: direction-tagged literal integrity', function () {
+    it('canonicalizes boolean and numeric @value under @direction instead of corrupting them with a raw string cast', function () {
+        $expanded = fn (mixed $value) => [[
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => [['@value' => $value, '@direction' => 'rtl']],
+        ]];
+        $toRdf = new ToRdf(rdfDirection: 'i18n-datatype', safe: true);
+
+        // false must not become "" (and true not "1"): canonical xsd forms.
+        expect((new RdfDataset($toRdf->toRdf($expanded(false))))->toNQuads())
+            ->toContain('"false"^^<https://www.w3.org/ns/i18n#_rtl>');
+        expect((new RdfDataset($toRdf->toRdf($expanded(true))))->toNQuads())
+            ->toContain('"true"^^<https://www.w3.org/ns/i18n#_rtl>');
+        expect((new RdfDataset($toRdf->toRdf($expanded(0.5))))->toNQuads())
+            ->toContain('"5.0E-1"^^<https://www.w3.org/ns/i18n#_rtl>');
+    });
+
+    it('throws for a malformed BCP47 tag under @direction instead of emitting an unparseable i18n IRI', function () {
+        $expanded = [[
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => [['@value' => 'v', '@language' => 'en gb', '@direction' => 'ltr']],
+        ]];
+
+        // Default: the statement is dropped (as without @direction), never an
+        // IRIREF containing a raw space.
+        $default = new RdfDataset((new ToRdf(rdfDirection: 'i18n-datatype'))->toRdf($expanded));
+        expect($default->toNQuads())->not->toContain('en gb');
+
+        safeModeExpectDrop(
+            fn () => (new ToRdf(rdfDirection: 'i18n-datatype', safe: true))->toRdf($expanded),
+            'invalid @language value',
+        );
+    });
+
+    it('rejects an unrecognised rdfDirection value up front instead of silently dropping directions', function () {
+        expect(fn () => new ToRdf(rdfDirection: 'bogus'))
+            ->toThrow(JsonLdException::class, 'Invalid rdfDirection value');
+
+        $doc = ['@context' => [], '@id' => 'http://example.com/s', 'http://example.com/p' => ['@value' => 'x', '@direction' => 'rtl']];
+        expect(fn () => safeModeProcessor()->toRdf($doc, new JsonLdOptions(rdfDirection: 'i18n-datatype ')))
+            ->toThrow(JsonLdException::class);
+    });
+});
+
+describe('toRdf: node-map identifier edge cases', function () {
+    it('treats an all-numeric @id as a relative reference instead of crashing with a TypeError', function () {
+        $expanded = [['@id' => '123', 'http://example.com/p' => [['@value' => 'v']]]];
+
+        // Default: dropped like any other relative subject — no crash.
+        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => (new ToRdf(safe: true))->toRdf($expanded),
+            'relative subject reference',
+        );
+
+        // Through the public pipeline (default mode) it must not crash either.
+        $doc = ['@context' => [], '@id' => '123', 'http://example.com/p' => 'v'];
+        expect(safeModeProcessor()->toRdf($doc)->getQuads())->toBe([]);
+    });
+
+    it('throws for a keyword-shaped non-keyword property in the node map', function () {
+        $expanded = [['@id' => 'http://example.com/s', '@bogusProp' => [['@value' => 'v']]]];
+
+        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => (new ToRdf(safe: true))->toRdf($expanded),
+            'invalid property',
+        );
+    });
+});
+
+describe('flatten() and fromRdf() carry safe mode through every stage', function () {
+    it('flatten() fails closed on a node-map drop, exactly like toRdf() on the same document', function () {
+        $doc = [
+            '@context' => [],
+            '@id' => 'http://example.com/g',
+            '@graph' => [['@value' => 'orphan']],
+            'http://example.com/p' => 'v',
+        ];
+
+        // Default: the unattachable value object silently vanishes.
+        $flattened = safeModeProcessor()->flatten($doc)->toArray();
+        expect(json_encode($flattened))->not->toContain('orphan');
+
+        // Safe: the SAME drop that toRdf reports must throw on flatten too.
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->flatten($doc, null, safeOptions()),
+            'object with only @value',
+        );
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->toRdf($doc, safeOptions()),
+            'object with only @value',
+        );
+    });
+
+    it('fromRdf() honours safe mode for a malformed language tag in the RDF input', function () {
+        $nquads = '<http://example.com/s> <http://example.com/p> "x"@abcdefghijklm .'."\n";
+
+        // Default: the tag flows through verbatim.
+        $default = safeModeProcessor()->fromRdf($nquads)->toArray();
+        expect(safeModeDig($default, 0, 'http://example.com/p', 0, '@language'))->toBe('abcdefghijklm');
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->fromRdf($nquads, safeOptions()),
+            'invalid @language value',
+        );
+    });
+});
+
+describe('expansion: §5.5 step 18 under @graph', function () {
+    it('drops an @id-only node directly inside @graph (default) and throws in safe mode', function () {
+        $doc = [
+            '@context' => [],
+            '@id' => 'http://example.com/g',
+            '@graph' => [['@id' => 'http://example.com/x']],
+            'http://example.com/p' => 'v',
+        ];
+
+        // Default: the reference is dropped at expansion (spec/jsonld.js
+        // behaviour) instead of silently vanishing later at toRdf/flatten.
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@graph'))->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @id',
+        );
+    });
+});
+
+describe('expansion: relative identifiers that only fail later', function () {
+    it('throws at safe expansion for a relative @type, which no external canonicalizer could reject', function () {
+        $doc = ['@context' => [], '@id' => 'http://example.com/x', '@type' => 'RelativeType'];
+
+        // Default: expansion keeps the relative type verbatim (spec).
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@type'))->toBe(['RelativeType']);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'relative @type reference',
+        );
+    });
+
+    it('throws for an @id-container map key that expands to a relative IRI, like the direct @id branch', function () {
+        $doc = [
+            '@context' => ['m' => ['@id' => 'http://example.com/m', '@container' => '@id']],
+            '@id' => 'http://example.com/x',
+            'm' => ['relative-key' => ['http://example.com/p' => 'v']],
+        ];
+
+        // Default: the relative identity survives expansion (spec).
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/m', 0, '@id'))->toBe('relative-key');
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'relative @id reference',
+        );
+    });
+});
+
+describe('expansion: BCP47 well-formedness (jsonld.js safe-expansion parity)', function () {
+    it('throws at safe expansion for a malformed @language tag', function () {
+        $doc = [
+            '@context' => [],
+            '@id' => 'http://example.com/x',
+            'http://example.com/p' => ['@value' => 'x', '@language' => 'en gb'],
+        ];
+
+        // Default: kept at expansion (dropped only at toRdf).
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/p', 0, '@language'))->toBe('en gb');
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'invalid @language value',
+        );
+    });
+
+    it('throws at safe expansion for a malformed language-map key', function () {
+        $doc = [
+            '@context' => ['label' => ['@id' => 'http://example.com/label', '@container' => '@language']],
+            '@id' => 'http://example.com/x',
+            'label' => ['en gb' => 'hello'],
+        ];
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'invalid @language value',
+        );
+    });
+});
+
+describe('framing: safe mode must not reject legitimate frame patterns', function () {
+    it('frames with an @language match pattern under safe mode', function () {
+        $doc = [
+            '@context' => ['label' => 'http://example.com/label'],
+            '@id' => 'http://example.com/x',
+            'label' => ['@value' => 'hi', '@language' => 'en'],
+        ];
+        $frame = ['@context' => ['label' => 'http://example.com/label'], 'label' => ['@language' => 'en']];
+
+        $framed = safeModeProcessor()->frame($doc, $frame, safeOptions())->toArray();
+        expect(json_encode($framed))->toContain('hi');
+    });
+
+    it('frames with a non-string @direction pattern and a top-level wildcard under safe mode', function () {
+        $doc = [
+            '@context' => ['label' => 'http://example.com/label'],
+            '@id' => 'http://example.com/x',
+            'label' => 'hi',
+        ];
+        $frame = ['@context' => ['label' => 'http://example.com/label'], 'label' => ['@value' => [], '@direction' => []]];
+
+        // Must not abort with a DataLossException on the frame's own patterns.
+        $framed = safeModeProcessor()->frame($doc, $frame, safeOptions())->toArray();
+        expect($framed)->toBeArray();
+    });
+});
+
+describe('scoped contexts: parity with the document-level write path', function () {
+    it('accepts the standard scoped @language: null reset in safe mode', function () {
+        $doc = [
+            '@context' => [
+                '@language' => 'en',
+                'thing' => ['@id' => 'http://example.com/thing', '@context' => ['@language' => null]],
+            ],
+            '@id' => 'http://example.com/x',
+            'thing' => ['http://example.com/label' => 'plain'],
+        ];
+
+        $safe = safeModeProcessor()->expand($doc, safeOptions())->toArray();
+        expect($safe)->toBe(safeModeProcessor()->expand($doc)->toArray());
+        expect(safeModeDig($safe, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0))
+            ->not->toHaveKey('@language');
+    });
+
+    it('throws the root-cause relative @vocab error for a scoped relative @vocab', function () {
+        $doc = [
+            '@context' => ['t' => ['@id' => 'http://example.com/t', '@context' => ['@vocab' => 'rel/']]],
+            '@id' => 'http://example.com/x',
+            't' => ['name' => 'v'],
+        ];
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'relative @vocab reference',
+        );
+    });
+
+    it('resolves a scoped relative @vocab against the active base, like the document level', function () {
+        $doc = [
+            '@context' => [
+                '@base' => 'http://example.com/doc/',
+                't' => ['@id' => 'http://example.com/t', '@context' => ['@vocab' => '#']],
+            ],
+            '@id' => 'http://example.com/x',
+            't' => ['name' => 'kept'],
+        ];
+
+        $safe = safeModeProcessor()->toRdf($doc, safeOptions())->toNQuads();
+        expect($safe)->toContain('<http://example.com/doc/#name>');
+    });
+
+    it('throws reserved term for a keyword-shaped term in an INLINE scoped context, like a remote one', function () {
+        $doc = [
+            '@context' => ['thing' => ['@id' => 'http://example.com/thing', '@context' => ['@foo' => 'http://example.com/f']]],
+            '@id' => 'http://example.com/x',
+            'thing' => ['http://example.com/p' => 'v'],
+        ];
+
+        expect(safeModeProcessor()->expand($doc)->toArray())->not->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'reserved term',
+        );
+    });
+
+    it('throws reserved @id value for a keyword-shaped @id in an inline scoped context', function () {
+        $doc = [
+            '@context' => ['thing' => ['@id' => 'http://example.com/thing', '@context' => ['bad' => ['@id' => '@keywordish']]]],
+            '@id' => 'http://example.com/x',
+            'thing' => ['http://example.com/p' => 'v'],
+        ];
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'reserved @id value',
+        );
+    });
+});
+
+describe('@included and @null: spec errors are not mislabelled as data loss', function () {
+    it('reports a stray @included value as the Invalid @included value spec error in BOTH modes', function () {
+        $doc = ['@context' => [], '@id' => 'http://example.com/s', '@included' => 'stray'];
+
+        foreach ([null, safeOptions()] as $options) {
+            try {
+                safeModeProcessor()->expand($doc, $options);
+                throw new AssertionFailedError('Expected a JsonLdException for the invalid @included value');
+            } catch (JsonLdException $e) {
+                expect($e)->not->toBeInstanceOf(DataLossException::class);
+                expect($e->getMessage())->toContain('Invalid @included value');
+            }
+        }
+    });
+
+    it('keeps valid @included node objects in safe mode', function () {
+        $doc = [
+            '@context' => [],
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => 'v',
+            '@included' => [['@id' => 'http://example.com/t', 'http://example.com/q' => 'w']],
+        ];
+
+        $safe = safeModeProcessor()->expand($doc, safeOptions())->toArray();
+        expect(safeModeDig($safe, 0, '@included', 0, '@id'))->toBe('http://example.com/t');
+    });
+
+    it('treats @null as a reserved (framing-output) token, not a JSON-LD keyword', function () {
+        // As a term name: safe mode fails closed like any keyword-shaped term.
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand(
+                ['@context' => ['@null' => 'http://example.com/null'], '@id' => 'http://example.com/x'],
+                safeOptions(),
+            ),
+            'reserved term',
+        );
+
+        // As an @id mapping: it must not pass as a keyword alias.
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand(
+                ['@context' => ['x' => ['@id' => '@null']], '@id' => 'http://example.com/x'],
+                safeOptions(),
+            ),
+            'reserved @id value',
+        );
     });
 });
 

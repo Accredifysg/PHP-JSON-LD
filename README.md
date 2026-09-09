@@ -113,12 +113,14 @@ equivalent site exists:
 `free-floating scalar`, `object with only @value`, `object with only @list`,
 `object with only @id`, `object with only @language`, `empty object`,
 `null @value value`, `reserved term`, `reserved @id value`,
-`reserved @reverse value`, `relative @vocab reference`,
-`relative @id reference`, `relative @type reference`,
-`relative subject reference`, `relative predicate reference`,
-`relative object reference`, `relative graph reference`,
+`reserved @reverse value`, `relative @vocab reference` (document-level and
+scoped), `relative @id reference`, `relative @type reference` (at expansion
+and serialization), `relative subject reference`,
+`relative predicate reference`, `relative object reference`,
+`relative graph reference`,
 `blank node predicate` (suppressed by `produceGeneralizedRdf: true`),
-`invalid @language value` (malformed BCP47 tags), `rdfDirection not set`.
+`invalid @language value` (malformed BCP47 tags — at expansion, `toRdf`, and
+`fromRdf`, like jsonld.js), `rdfDirection not set`.
 
 Drop sites specific to this implementation carry their own codes:
 `context load failed` (a scoped context needs a `DocumentLoader` none is
@@ -131,8 +133,16 @@ to `""`), `invalid @json serialization` (NaN/Infinity in a `@json` literal),
 jsonld.js would process), and `dropped object` (residual malformed shapes).
 
 Not flagged, by design: `null` property/entry values (the spec's removal
-semantics, not data loss), `@index` entries that carry no RDF statement
-(spec-correct), and spec-mandated duplicate collapsing in the node map.
+semantics, not data loss), a scoped `'@language': null` / `'@direction': null`
+reset (this processor's output for it is already correct), `@index` entries
+that carry no RDF statement (spec-correct), frame match patterns during
+`frame()` (wildcards and `@value: null` are queries, not data), and
+spec-mandated duplicate collapsing in the node map.
+
+One deliberate divergence from jsonld.js: a genuine keyword used as a node
+entry where it is meaningless (`@default` / `@vocab` / a frame keyword outside
+a frame) throws `invalid property` here, because its value IS dropped from the
+expanded output — jsonld.js safe mode stays silent on those.
 
 ## Conformance
 
