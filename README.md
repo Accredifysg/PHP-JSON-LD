@@ -69,6 +69,81 @@ for a compact example.
 > treats an empty frame value as `match none` and accepts the documented
 > `Expansion::FRAME_WILDCARD` sentinel for a wildcard.
 
+## Safe mode
+
+JSON-LD processing is lossy by design: an undefined term, a relative IRI, or a
+malformed value is silently dropped rather than reported. For documents that
+feed RDF canonicalization and signing, that is a security hole —
+[W3C VC-DATA-INTEGRITY 1.0 §2.4.3 "Securing Data Losslessly"](https://www.w3.org/TR/vc-data-integrity/#securing-data-losslessly)
+makes failing closed a normative requirement:
+
+> Implementations that use JSON-LD processing, such as RDF Dataset
+> Canonicalization [RDF-CANON], MUST throw an error, which SHOULD be
+> `DATA_LOSS_DETECTION_ERROR`, when data is dropped by a JSON-LD processor,
+> such as when an undefined term is detected in an input document.
+
+Pass `safe: true` (mirroring jsonld.js's `safe` option) and every drop site
+throws `Accredify\JsonLd\Exceptions\DataLossException` instead:
+
+```php
+use Accredify\JsonLd\Exceptions\DataLossException;
+use Accredify\JsonLd\JsonLdOptions;
+
+try {
+    $nQuads = $processor->toRdf($document, new JsonLdOptions(safe: true))->toNQuads();
+} catch (DataLossException $e) {
+    // e.g. "Safe mode: term 'alumniOf' does not expand to an absolute IRI
+    //        or keyword (invalid property)"
+    $e->eventCode; // 'invalid property' — jsonld.js-compatible event code
+    $e->details;   // ['term' => 'alumniOf', …] — the dropped datum
+}
+```
+
+The default (`safe: false`) is byte-identical to previous releases and to the
+spec-mandated lossy behaviour the W3C suites expect. Canonicalization/signing
+pipelines should always opt in: an *empty-output* check catches only the
+total-drop case, while safe mode also catches partial drops — an undefined
+`credentialSubject` claim that would otherwise sign, verify, and remain
+attacker-editable.
+
+Event codes use jsonld.js's safe-mode catalog (`lib/events.js`) where an
+equivalent site exists:
+
+`invalid property` (undefined / null-mapped / keyword-shaped terms),
+`free-floating scalar`, `object with only @value`, `object with only @list`,
+`object with only @id`, `object with only @language`, `empty object`,
+`null @value value`, `reserved term`, `reserved @id value`,
+`reserved @reverse value`, `relative @vocab reference` (document-level and
+scoped), `relative @id reference`, `relative @type reference` (at expansion
+and serialization), `relative subject reference`,
+`relative predicate reference`, `relative object reference`,
+`relative graph reference`,
+`blank node predicate` (suppressed by `produceGeneralizedRdf: true`),
+`invalid @language value` (malformed BCP47 tags — at expansion, `toRdf`, and
+`fromRdf`, like jsonld.js), `rdfDirection not set`.
+
+Drop sites specific to this implementation carry their own codes:
+`context load failed` (a scoped context needs a `DocumentLoader` none is
+wired), `unsupported scoped context entry` (scoped `@language`/`@direction`
+overrides this processor ignores), `invalid scoped term definition`,
+`invalid @direction value`, `invalid @id value` (non-string `@id` relabelled
+as a blank node), `invalid @value serialization` (non-scalar `@value` coerced
+to `""`), `invalid @json serialization` (NaN/Infinity in a `@json` literal),
+`invalid map key` (PHP decodes numeric-string JSON keys to integers, which
+jsonld.js would process), and `dropped object` (residual malformed shapes).
+
+Not flagged, by design: `null` property/entry values (the spec's removal
+semantics, not data loss), a scoped `'@language': null` / `'@direction': null`
+reset (this processor's output for it is already correct), `@index` entries
+that carry no RDF statement (spec-correct), frame match patterns during
+`frame()` (wildcards and `@value: null` are queries, not data), and
+spec-mandated duplicate collapsing in the node map.
+
+One deliberate divergence from jsonld.js: a genuine keyword used as a node
+entry where it is meaningless (`@default` / `@vocab` / a frame keyword outside
+a frame) throws `invalid property` here, because its value IS dropped from the
+expanded output — jsonld.js safe mode stays silent on those.
+
 ## Conformance
 
 The package is tested against the

@@ -6,6 +6,7 @@ namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Enums\Keyword;
 use Accredify\JsonLd\Internal\BlankNodeIssuer;
+use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\JsonLdProcessor;
 
 /**
@@ -27,12 +28,23 @@ use Accredify\JsonLd\JsonLdProcessor;
 final class Flattening
 {
     /**
+     * @param  bool  $safe  Safe mode ({@see JsonLdOptions::$safe}):
+     *                      threaded into the internal {@see NodeMap} stage, whose
+     *                      drop sites (unattachable value/list objects, stray
+     *                      scalars, non-string `@id`s) otherwise stay silent on
+     *                      the flatten() path while throwing on toRdf()/frame().
+     */
+    public function __construct(
+        private readonly bool $safe = false,
+    ) {}
+
+    /**
      * @param  array<mixed>  $expanded  The expanded JSON-LD document.
      * @return list<array<string, mixed>> Flattened node objects, ordered by @id.
      */
     public function flatten(array $expanded): array
     {
-        $nodeMap = (new NodeMap(new BlankNodeIssuer))->generate($expanded);
+        $nodeMap = (new NodeMap(new BlankNodeIssuer, $this->safe))->generate($expanded);
 
         // The default graph accumulates every node; each named graph is folded
         // in as a `@graph` entry on its graph-name node (§4.6 step 4).

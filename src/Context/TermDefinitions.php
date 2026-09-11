@@ -7,7 +7,9 @@ namespace Accredify\JsonLd\Context;
 use Accredify\JsonLd\Algorithms\Expansion;
 use Accredify\JsonLd\Enums\ContainerType;
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Exceptions\DataLossException;
 use Accredify\JsonLd\Exceptions\JsonLdException;
+use Accredify\JsonLd\JsonLdOptions;
 
 /**
  * Holds the term → definition mappings produced by processing one or more
@@ -58,6 +60,15 @@ class TermDefinitions
     private string $processingMode = 'json-ld-1.1';
 
     /**
+     * Safe mode ({@see JsonLdOptions::$safe}): when true,
+     * term-definition steps that silently discard data (a keyword-shaped
+     * `@id`/`@reverse`, a keyword-shaped term name) throw
+     * {@see DataLossException} instead. Set by ContextProcessor BEFORE
+     * context processing runs, since the drops happen at definition time.
+     */
+    private bool $safe = false;
+
+    /**
      * The context to roll back to when this context is non-propagating
      * (@propagate: false, e.g. a type-scoped context): on descending into a
      * new node object the active context reverts to this snapshot. Null for a
@@ -96,6 +107,16 @@ class TermDefinitions
     public function isJson10(): bool
     {
         return $this->processingMode === 'json-ld-1.0';
+    }
+
+    public function setSafe(bool $safe): void
+    {
+        $this->safe = $safe;
+    }
+
+    public function isSafe(): bool
+    {
+        return $this->safe;
     }
 
     /**
@@ -206,6 +227,19 @@ class TermDefinitions
     {
         $this->validateTermSyntax($key);
 
+        // §4.2.2: a term that has the FORM of a keyword (@ + letters) but is
+        // not a real keyword is reserved for future use — documents cannot use
+        // it (IRI expansion returns null for keyword-shaped values), so its
+        // data is unreachable. jsonld.js refuses to create the definition
+        // ("reserved term"); safe mode fails closed the same way.
+        if ($this->safe && preg_match('/^@[A-Za-z]+$/', $key) === 1) {
+            throw new DataLossException(
+                'reserved term',
+                "term '{$key}' has the form of a keyword; terms beginning with '@' are reserved for future use and cannot hold data",
+                ['term' => $key],
+            );
+        }
+
         // A SIMPLE term definition is one whose value was a bare string (vs an
         // expanded object definition). It matters for the §5.7 compact-IRI
         // prefix flag below.
@@ -225,6 +259,13 @@ class TermDefinitions
             && preg_match('/^@[A-Za-z]+$/', $termDefinition[Keyword::Id->value]) === 1
             && ! Keyword::contains($termDefinition[Keyword::Id->value])
         ) {
+            if ($this->safe) {
+                throw new DataLossException(
+                    'reserved @id value',
+                    "term '{$key}' maps to '{$termDefinition[Keyword::Id->value]}'; @id values beginning with '@' are reserved for future use and are dropped",
+                    ['term' => $key, 'id' => $termDefinition[Keyword::Id->value]],
+                );
+            }
             unset($termDefinition[Keyword::Id->value]);
         }
 
@@ -238,6 +279,14 @@ class TermDefinitions
             && preg_match('/^@[A-Za-z]+$/', $termDefinition[Keyword::Reverse->value]) === 1
             && ! Keyword::contains($termDefinition[Keyword::Reverse->value])
         ) {
+            if ($this->safe) {
+                throw new DataLossException(
+                    'reserved @reverse value',
+                    "term '{$key}' has @reverse '{$termDefinition[Keyword::Reverse->value]}'; @reverse values beginning with '@' are reserved for future use and the whole term definition is dropped",
+                    ['term' => $key, 'reverse' => $termDefinition[Keyword::Reverse->value]],
+                );
+            }
+
             return;
         }
 
@@ -285,6 +334,37 @@ class TermDefinitions
      */
     public function overlayTerm(string $key, array $termDefinition, bool $protectedContext, bool $overrideProtected): void
     {
+        // Safe mode: the reserved-value rules of addTermDefinition apply to a
+        // scoped (overlay) definition too — the same keyword-shaped @id /
+        // @reverse drops the same data no matter which write path the context
+        // arrived on. Default mode stores verbatim, as before.
+        if ($this->safe) {
+            $id = $termDefinition[Keyword::Id->value] ?? null;
+            if (
+                is_string($id)
+                && preg_match('/^@[A-Za-z]+$/', $id) === 1
+                && ! Keyword::contains($id)
+            ) {
+                throw new DataLossException(
+                    'reserved @id value',
+                    "term '{$key}' maps to '{$id}'; @id values beginning with '@' are reserved for future use and are dropped",
+                    ['term' => $key, 'id' => $id],
+                );
+            }
+            $reverse = $termDefinition[Keyword::Reverse->value] ?? null;
+            if (
+                is_string($reverse)
+                && preg_match('/^@[A-Za-z]+$/', $reverse) === 1
+                && ! Keyword::contains($reverse)
+            ) {
+                throw new DataLossException(
+                    'reserved @reverse value',
+                    "term '{$key}' has @reverse '{$reverse}'; @reverse values beginning with '@' are reserved for future use and the whole term definition is dropped",
+                    ['term' => $key, 'reverse' => $reverse],
+                );
+            }
+        }
+
         $this->storeProtectedAware($key, $termDefinition, $protectedContext, $overrideProtected);
     }
 

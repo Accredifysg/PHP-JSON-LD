@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Accredify\JsonLd\Algorithms;
 
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Exceptions\DataLossException;
 use Accredify\JsonLd\Exceptions\JsonLdException;
+use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\Rdf\RdfQuad;
 use Accredify\JsonLd\Rdf\RdfTerm;
 use JsonException;
@@ -41,12 +43,22 @@ final class FromRdf
      * @param  string|null  $rdfDirection  "i18n-datatype" reverses i18n-typed
      *                                     literals back to `@direction`
      *                                     (non-normative).
+     * @param  bool  $safe  Safe mode ({@see JsonLdOptions::$safe}):
+     *                      RDF input that cannot be represented faithfully in
+     *                      JSON-LD (a malformed BCP47 language tag) throws
+     *                      {@see DataLossException} instead of flowing through,
+     *                      mirroring jsonld.js's safe fromRDF.
      */
     public function __construct(
         private readonly bool $useNativeTypes = false,
         private readonly bool $useRdfType = false,
         private readonly ?string $rdfDirection = null,
-    ) {}
+        private readonly bool $safe = false,
+    ) {
+        if ($rdfDirection !== null && $rdfDirection !== 'i18n-datatype' && $rdfDirection !== 'compound-literal') {
+            throw new JsonLdException("Invalid rdfDirection value: '{$rdfDirection}' (expected 'i18n-datatype' or 'compound-literal')");
+        }
+    }
 
     /**
      * @param  list<RdfQuad>  $quads
@@ -176,8 +188,19 @@ final class FromRdf
             return [Keyword::Value->value => $decoded, Keyword::Type->value => Keyword::Json->value];
         }
 
-        // Language-tagged string.
+        // Language-tagged string. A malformed BCP47 tag has no faithful
+        // JSON-LD representation (re-serialising it would drop the statement);
+        // safe mode fails closed like jsonld.js's safe fromRDF, the default
+        // keeps the tag verbatim.
         if ($language !== null) {
+            if ($this->safe && preg_match('/^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$/', $language) !== 1) {
+                throw new DataLossException(
+                    'invalid @language value',
+                    "language tag '{$language}' in the RDF input is not a well-formed BCP47 tag",
+                    ['value' => $value, 'language' => $language],
+                );
+            }
+
             return [Keyword::Value->value => $value, Keyword::Language->value => $language];
         }
 
