@@ -619,7 +619,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
     it('throws for a relative subject', function () {
         $expanded = [['@id' => 'relative-subject', 'http://example.com/p' => [['@value' => 'v']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -630,7 +630,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
     it('throws for a relative predicate', function () {
         $expanded = [['@id' => 'http://example.com/s', 'rel-pred' => [['@value' => 'v']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -641,7 +641,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
     it('throws for a relative object reference', function () {
         $expanded = [['@id' => 'http://example.com/s', 'http://example.com/p' => [['@id' => 'rel-obj']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -667,7 +667,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
     it('throws for a blank-node predicate unless produceGeneralizedRdf is set', function () {
         $expanded = [['@id' => 'http://example.com/s', '_:p' => [['@value' => 'v']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -699,7 +699,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
         $expanded = [['@id' => 'http://example.com/s', 'http://example.com/p' => [['@value' => ['not' => 'scalar']]]]];
 
         // Default: not even a drop — corruption. The literal becomes "".
-        $default = new RdfDataset((new ToRdf)->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false))->toRdf($expanded));
         expect($default->toNQuads())->toContain('""');
 
         safeModeExpectDrop(
@@ -713,7 +713,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
 
         // Default: the collection scaffolding is emitted but the member is
         // silently missing.
-        $default = new RdfDataset((new ToRdf)->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false))->toRdf($expanded));
         expect($default->toNQuads())->toContain('rdf-syntax-ns#rest');
         expect($default->toNQuads())->not->toContain('rdf-syntax-ns#first');
 
@@ -727,7 +727,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
         $expanded = [['@id' => 'http://example.com/s', 'http://example.com/p' => [['@value' => 'x', '@language' => 'ar', '@direction' => 'rtl']]]];
 
         // Default: the literal is emitted without its base direction.
-        $default = new RdfDataset((new ToRdf)->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false))->toRdf($expanded));
         expect($default->toNQuads())->toContain('"x"@ar');
 
         safeModeExpectDrop(
@@ -745,7 +745,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
         $expanded = [['@id' => 12345, 'http://example.com/p' => [['@value' => 'v']]]];
 
         // Default: identity silently replaced with a fresh blank node.
-        $default = new RdfDataset((new ToRdf)->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false))->toRdf($expanded));
         expect($default->toNQuads())->toContain('_:b0');
 
         safeModeExpectDrop(
@@ -859,7 +859,7 @@ describe('toRdf: direction-tagged literal integrity', function () {
 
         // Default: the statement is dropped (as without @direction), never an
         // IRIREF containing a raw space.
-        $default = new RdfDataset((new ToRdf(rdfDirection: 'i18n-datatype'))->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false, rdfDirection: 'i18n-datatype'))->toRdf($expanded));
         expect($default->toNQuads())->not->toContain('en gb');
 
         safeModeExpectDrop(
@@ -869,7 +869,7 @@ describe('toRdf: direction-tagged literal integrity', function () {
     });
 
     it('rejects an unrecognised rdfDirection value up front instead of silently dropping directions', function () {
-        expect(fn () => new ToRdf(rdfDirection: 'bogus'))
+        expect(fn () => new ToRdf(safe: false, rdfDirection: 'bogus'))
             ->toThrow(JsonLdException::class, 'Invalid rdfDirection value');
 
         $doc = ['@context' => [], '@id' => 'http://example.com/s', 'http://example.com/p' => ['@value' => 'x', '@direction' => 'rtl']];
@@ -883,7 +883,7 @@ describe('toRdf: node-map identifier edge cases', function () {
         $expanded = [['@id' => '123', 'http://example.com/p' => [['@value' => 'v']]]];
 
         // Default: dropped like any other relative subject — no crash.
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -898,7 +898,7 @@ describe('toRdf: node-map identifier edge cases', function () {
     it('throws for a keyword-shaped non-keyword property in the node map', function () {
         $expanded = [['@id' => 'http://example.com/s', '@bogusProp' => [['@value' => 'v']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -1132,8 +1132,8 @@ describe('expansion: §5.5 step 18 under @graph', function () {
     it('keeps free-floating value patterns when expanding a frame', function () {
         // A frame legitimately places {@value: ...} match patterns where a
         // document cannot place data; frame expansion must not drop them.
-        $contextProcessor = new ContextProcessor(['@context' => []], new StubDocumentLoader);
-        $expansion = new Expansion($contextProcessor->getTermDefinitions(), documentLoader: null, frameExpansion: true);
+        $contextProcessor = new ContextProcessor(['@context' => []], new StubDocumentLoader, safe: false);
+        $expansion = new Expansion($contextProcessor->getTermDefinitions(), safe: false, documentLoader: null, frameExpansion: true);
 
         $frame = ['@id' => 'http://example.com/g', '@graph' => [['@value' => []]]];
 
@@ -1324,8 +1324,9 @@ describe('expansion: free-floating values under @graph containers (§5.5 step 18
         $contextProcessor = new ContextProcessor(
             ['@context' => ['input' => ['@id' => 'http://example.com/input', '@container' => '@graph']]],
             new StubDocumentLoader,
+            safe: false,
         );
-        $expansion = new Expansion($contextProcessor->getTermDefinitions(), documentLoader: null, frameExpansion: true);
+        $expansion = new Expansion($contextProcessor->getTermDefinitions(), safe: false, documentLoader: null, frameExpansion: true);
 
         $frame = ['@id' => 'http://example.com/s', 'input' => ['@value' => []]];
 

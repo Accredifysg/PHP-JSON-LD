@@ -96,9 +96,9 @@ class Expansion
 
     public function __construct(
         TermDefinitions $termDefinitions,
+        private readonly bool $safe,
         ?DocumentLoader $documentLoader = null,
         private readonly bool $frameExpansion = false,
-        private readonly bool $safe = false,
     ) {
         $this->documentBase = $termDefinitions;
         $this->termDefinitions = $termDefinitions;
@@ -1875,11 +1875,10 @@ class Expansion
     {
         $layers = is_array($context) && array_is_list($context) ? $context : [$context];
 
-        $active = new TermDefinitions($base->termDefinitions);
         // Safe mode and the processing mode are per-call options, not context
         // state: they survive scoped copies (and null resets below) so the
         // definition-time checks in TermDefinitions keep firing in scope.
-        $active->setSafe($this->safe);
+        $active = new TermDefinitions($base->termDefinitions, $this->safe);
         $active->setProcessingMode($this->documentBase->getProcessingMode());
         $vocab = $base->getVocab();
         if ($vocab !== null) {
@@ -1911,8 +1910,7 @@ class Expansion
                 if (! $overrideProtected && $active->hasAnyProtected()) {
                     throw new JsonLdException('Invalid context nullification: a null context cannot clear protected terms');
                 }
-                $active = new TermDefinitions;
-                $active->setSafe($this->safe);
+                $active = new TermDefinitions([], $this->safe);
                 $active->setProcessingMode($this->documentBase->getProcessingMode());
             } elseif (is_string($layer) || (is_array($layer) && array_key_exists(Keyword::Import->value, $layer))) {
                 // A remote (string) scoped context, or one that sources another
@@ -1957,15 +1955,15 @@ class Expansion
                 ['context' => $layer],
             );
 
-            return new TermDefinitions;
+            return new TermDefinitions([], $this->safe);
         }
 
         $processor = new ContextProcessor(
             ['@context' => $layer],
             $this->documentLoader,
+            $this->safe,
             $this->documentBase->getBase(),
             $this->documentBase->getProcessingMode(),
-            safe: $this->safe,
         );
 
         return $processor->getTermDefinitions();
@@ -2112,8 +2110,7 @@ class Expansion
                 // node object rolls type-scoped terms back (§5.5 step 7;
                 // type-scoped contexts have @propagate = false) — unless an
                 // explicit @propagate:true makes the context propagate.
-                $scoped = new TermDefinitions($this->termDefinitions->termDefinitions);
-                $scoped->setSafe($this->safe);
+                $scoped = new TermDefinitions($this->termDefinitions->termDefinitions, $this->safe);
                 $scoped->setProcessingMode($this->documentBase->getProcessingMode());
                 $vocab = $this->termDefinitions->getVocab();
                 if ($vocab !== null) {
@@ -2141,8 +2138,7 @@ class Expansion
                     if ($scoped->hasAnyProtected()) {
                         throw new JsonLdException('Invalid context nullification: a type-scoped context may not clear protected terms');
                     }
-                    $scoped = new TermDefinitions;
-                    $scoped->setSafe($this->safe);
+                    $scoped = new TermDefinitions([], $this->safe);
                     $scoped->setProcessingMode($this->documentBase->getProcessingMode());
 
                     continue;

@@ -69,6 +69,13 @@ class Compaction
     private ?array $previousContext = null;
 
     /**
+     * @param  bool  $safe  Safe mode ({@see JsonLdOptions::$safe}). REQUIRED
+     *                      and AUTHORITATIVE: compaction's fail-closed checks
+     *                      live in the active context's definition-time
+     *                      machinery (scoped-context overlays), so the flag is
+     *                      stamped onto the context — previously it rode along
+     *                      implicitly inside the TermDefinitions instance, and
+     *                      a hand-built context silently ran with safe off.
      * @param  bool  $compactArrays  When true (the default, §5.6.2), a
      *                               single-element array is unwrapped to its
      *                               item and `@graph`/`@set` array wrappers are
@@ -76,8 +83,9 @@ class Compaction
      *                               false, arrays are kept verbatim (#t0070/
      *                               #t0091/#t0093).
      */
-    public function __construct(private TermDefinitions $activeContext, private bool $compactArrays = true, private bool $framing = false)
+    public function __construct(private TermDefinitions $activeContext, bool $safe, private bool $compactArrays = true, private bool $framing = false)
     {
+        $this->activeContext = $activeContext->withSafe($safe);
         $this->buildInverse();
     }
 
