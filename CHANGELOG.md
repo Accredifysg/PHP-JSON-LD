@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scalars/value objects/`@list`/`@id`-only nodes, `@value: null`,
   identity loss on `@id` (keyword-shaped or relative), `@type` values that
   fail to expand, reserved (`@`-shaped) term/`@id`/`@reverse` definitions,
-  relative `@vocab`, unresolvable or partially-ignored scoped contexts,
+  relative `@vocab`, unresolvable scoped contexts,
   container-map keys PHP decodes to integers, and — in RDF deserialization —
   relative subject/predicate/object/graph IRIs, blank-node predicates
   (unless `produceGeneralizedRdf`), malformed BCP47 language tags,
@@ -100,6 +100,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   graph node retained); `toRdf`, `flatten`, and framing output are
   byte-identical because NodeMap already discarded the orphans. Frame
   expansion still keeps `@value`/`@list` match patterns.
+- **Scoped contexts now inherit the parent's default `@language`, and scoped
+  `@language`/`@direction` entries are applied** instead of ignored. Activating
+  any scoped context (property-scoped, type-scoped, embedded node `@context`,
+  or a remote one) previously shed the outer context's default language, so
+  plain strings in scope expanded untagged — `"hello"` where jsonld.js (and
+  the spec's context copying) produce `"hello"@en` — yielding different
+  N-Quads and different canonical hashes. Scoped `@language: "fr"` /
+  `@direction: "ltr"` overrides and their `null` resets now behave exactly
+  like the document-level entries (same validation: a malformed value is an
+  unconditional error at both levels, where it was previously ignored in
+  default mode), including in remote scoped contexts, where an explicit
+  `@language: null` reset is now distinguished from the entry being absent.
+  **Default-mode `expand()`/`toRdf()` output changes — signature-relevant —
+  for documents that combine a default `@language` with scoped contexts**
+  (published VC context stacks set no default language; both corpus replays
+  found no affected documents). Deliberate deviation from the spec, matching
+  jsonld.js: the default `@direction` is NOT inherited into scopes (jsonld.js'
+  active-context clone omits `@direction` — reported upstream as
+  [digitalbazaar/jsonld.js#586](https://github.com/digitalbazaar/jsonld.js/issues/586)),
+  because byte-parity with the reference implementation is what signing
+  pipelines verify against; scoped explicit `@direction` set/reset works. The fork-specific
+  `unsupported scoped context entry` safe-mode event code is retired — the
+  behaviour it flagged is now implemented.
+- **Free-floating values under `@container: @graph` terms are dropped at
+  expansion**, matching jsonld.js (which extends §5.5 step 18 to
+  graph-container terms — beyond the literal spec, but semantically sound: a
+  graph whose members carry no statement otherwise fabricates a dangling
+  graph-name quad). Previously a scalar, value object, `@id`-only reference,
+  `@list` object, or empty map as the direct value of a plain `@graph`
+  container was wrapped anyway, and **`toRdf` emitted an
+  `<s> <p> _:emptyGraph .` quad where jsonld.js emits nothing — a
+  default-mode N-Quads divergence** (the `@container: @graph`
+  `verifiableCredential` pattern makes this VC-presentation-adjacent, though
+  only malformed members are affected). Now: under a plain `@graph` (or
+  `[@graph, @set]`) container every free-floating member is dropped (safe
+  mode: the matching `object with only @value`/`@id`/`@list`/`empty object`
+  codes) and the property is omitted when nothing survives; free-floating
+  *object* members of `[@graph, @index]` / `[@graph, @id]` maps are dropped
+  with the property kept as an empty list; and a `@type: @json` +
+  `@graph`-container term drops its JSON literal (jsonld.js's wrap filter
+  does the same — such a term always loses its data). Deliberate jsonld.js
+  byte-parity quirk, pinned by test: raw **scalar** members of the map forms
+  still become wrapped value objects and emit the dangling graph-name quad,
+  exactly as jsonld.js does — but safe `toRdf` here still fails closed on
+  the value the node map then discards, where jsonld.js's safe mode emits
+  the quad silently. Default-mode `expand()`, `flatten()`, and `toRdf()`
+  output changes for the affected shapes; real graph-container content
+  (actual node objects) is byte-identical before and after.
 - **`@null` is no longer treated as a JSON-LD keyword** (it is a framing
   *output* sentinel, not a §1.7 syntax token): `{"@id": "@null"}` no longer
   passes as a keyword alias, and a `@null` term definition fails closed in
@@ -133,6 +181,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Safe-mode threading is now structural** (internal refactor, zero
+  behaviour change — the full W3C, interop, and characterization suites are
+  byte-identical): the `safe` flag is a REQUIRED constructor parameter on
+  every internal pipeline class (`Expansion`, `Compaction`, `Flattening`,
+  `NodeMap`, `ToRdf`, `FromRdf`, `ContextProcessor`, `TermDefinitions` —
+  where it replaces the removed `setSafe()` mutator; `withSafe()` provides
+  an immutable copy). A construction site that forgets to thread the flag is
+  now a hard error instead of a silent safe-mode gap — the failure shape
+  behind the `Flattening`→`NodeMap` and `fromRdf()` holes closed earlier in
+  this release. `Compaction`, whose safe behaviour previously rode along
+  implicitly inside the `TermDefinitions` instance, takes an explicit
+  authoritative flag and stamps it onto its context, so a hand-built context
+  can no longer silently run compaction with safe off. A reflection guard
+  test keeps the defaulted-flag pattern from returning. **BC note:** these
+  are signature changes to internal (though public) classes — `safe` also
+  moved ahead of the optional parameters — landing in the same release as
+  the safe-mode feature itself; the public `JsonLdProcessor` / `JsonLdOptions`
+  API is unchanged.
 - README rewritten around the released feature set: conformance matrix
   refreshed against the current W3C suite (1,287/1,302), interoperability and
   implementation-report sections added, development-phase scaffolding removed.

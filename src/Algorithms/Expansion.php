@@ -96,9 +96,9 @@ class Expansion
 
     public function __construct(
         TermDefinitions $termDefinitions,
+        private readonly bool $safe,
         ?DocumentLoader $documentLoader = null,
         private readonly bool $frameExpansion = false,
-        private readonly bool $safe = false,
     ) {
         $this->documentBase = $termDefinitions;
         $this->termDefinitions = $termDefinitions;
@@ -594,6 +594,25 @@ class Expansion
                     // regardless of the value's shape (scalar, array, or
                     // object). It bypasses normal node/value expansion.
                     if ($this->isJsonTyped($termDef)) {
+                        // …unless the term ALSO has a plain @graph container:
+                        // the JSON literal is a value object, which the
+                        // graph-container wrap filters out as free-floating —
+                        // such a term loses every value (jsonld.js parity; its
+                        // wrap filter drops the literal the same way).
+                        if (
+                            ! $this->frameExpansion
+                            && $this->hasContainer($termDef, Keyword::Graph->value)
+                            && ! $this->hasContainer($termDef, Keyword::Index->value)
+                            && ! $this->hasContainer($termDef, Keyword::Id->value)
+                        ) {
+                            $this->safeModeDrop(
+                                'object with only @value',
+                                'a JSON literal under a @graph container carries no statement and is dropped',
+                                ['value' => $value],
+                            );
+
+                            continue;
+                        }
                         $this->mergeProperty($result, $expandedKey, [[
                             Keyword::Value->value => $value,
                             Keyword::Type->value => Keyword::Json->value,
@@ -608,6 +627,20 @@ class Expansion
                     // / expandKeywordValue.
                     $containerHandled = $this->expandContainerValue($key, $value, $termDef);
                     if ($containerHandled !== null) {
+                        // A plain @graph container (no @index/@id map) whose
+                        // members were all dropped as free-floating — or whose
+                        // raw value was empty — omits the property entirely
+                        // (jsonld.js `continue`s its wrap); the parent may then
+                        // fall to the step-18 drops itself. Map containers keep
+                        // the key with an empty list instead (also jsonld.js).
+                        if (
+                            $containerHandled === []
+                            && $this->hasContainer($termDef, Keyword::Graph->value)
+                            && ! $this->hasContainer($termDef, Keyword::Index->value)
+                            && ! $this->hasContainer($termDef, Keyword::Id->value)
+                        ) {
+                            continue;
+                        }
                         $this->mergeProperty($result, $expandedKey, $containerHandled);
 
                         continue;
@@ -715,21 +748,22 @@ class Expansion
         if (array_key_exists(Keyword::Value->value, $result)) {
             $valueObject = $this->finalizeValueObject($result);
 
-            // §5.5 step 18: a value object at the top level or directly inside
-            // @graph is free-floating — it carries no statement — and is
-            // dropped, after validation (an invalid value object is still a
-            // syntax error, matching jsonld.js). The top-level case is also
-            // caught in expand(); this covers named graphs, whose members
-            // never pass through that top-level filter. Frame expansion keeps
-            // value patterns.
+            // §5.5 step 18: a value object at the top level, directly inside
+            // @graph, or as the direct value of a @graph-container term is
+            // free-floating — it carries no statement — and is dropped, after
+            // validation (an invalid value object is still a syntax error,
+            // matching jsonld.js). The top-level case is also caught in
+            // expand(); this covers named graphs and graph containers, whose
+            // members never pass through that top-level filter. Frame
+            // expansion keeps value patterns.
             if (
                 $valueObject !== null
                 && ! $this->frameExpansion
-                && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
+                && $this->dropsFreeFloating($activeProperty)
             ) {
                 $this->safeModeDrop(
                     'object with only @value',
-                    'a value object at the top level or directly inside @graph carries no statement and is dropped',
+                    'a value object at the top level or in graph position carries no statement and is dropped',
                     ['object' => $valueObject],
                 );
 
@@ -772,19 +806,20 @@ class Expansion
                 }
             }
 
-            // §5.5 step 18: a @list object at the top level or directly inside
-            // @graph is free-floating and dropped — a list carries no
-            // statement outside a property (#t0047), and everything inside
-            // goes with it, including node objects that would survive on
-            // their own. Validation above still applies first (jsonld.js
-            // parity). Frame expansion keeps list patterns.
+            // §5.5 step 18: a @list object at the top level, directly inside
+            // @graph, or as the direct value of a @graph-container term is
+            // free-floating and dropped — a list carries no statement outside
+            // a property (#t0047), and everything inside goes with it,
+            // including node objects that would survive on their own.
+            // Validation above still applies first (jsonld.js parity). Frame
+            // expansion keeps list patterns.
             if (
                 ! $this->frameExpansion
-                && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
+                && $this->dropsFreeFloating($activeProperty)
             ) {
                 $this->safeModeDrop(
                     'object with only @list',
-                    'a @list object at the top level or directly inside @graph carries no statement and is dropped',
+                    'a @list object at the top level or in graph position carries no statement and is dropped',
                     ['object' => $result],
                 );
 
@@ -798,18 +833,19 @@ class Expansion
 
         // Free-floating node: an object whose only expanded entry is @id,
         // with no other properties, is dropped during expansion (§5.5 step
-        // 18: active property null or @graph — a graph's direct members carry
-        // no statement either). On nested objects we keep it because the spec
-        // allows references.
+        // 18: active property null or @graph, or a @graph-container term — a
+        // graph's direct members carry no statement wherever the graph comes
+        // from). On nested objects we keep it because the spec allows
+        // references.
         if (
             ! $this->frameExpansion
-            && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
+            && $this->dropsFreeFloating($activeProperty)
             && count($result) === 1
             && isset($result[Keyword::Id->value])
         ) {
             $this->safeModeDrop(
                 'object with only @id',
-                'a node object containing only @id carries no statement at the top level or directly inside @graph and is dropped',
+                'a node object containing only @id carries no statement in graph position and is dropped',
                 ['object' => $result],
             );
 
@@ -817,14 +853,15 @@ class Expansion
         }
 
         // An empty object is dropped only when free-floating (§5.5 step 18:
-        // active property null or @graph). As a property value it is kept as
-        // an empty node object (e.g. a node whose only term was decoupled by a
-        // scoped @context:null reset). Under frame expansion an empty map is a
-        // wildcard and is always kept.
-        if (! $this->frameExpansion && $result === [] && ($activeProperty === null || $activeProperty === Keyword::Graph->value)) {
+        // active property null or @graph, or a @graph-container term). As a
+        // normal property value it is kept as an empty node object (e.g. a
+        // node whose only term was decoupled by a scoped @context:null
+        // reset). Under frame expansion an empty map is a wildcard and is
+        // always kept.
+        if (! $this->frameExpansion && $result === [] && $this->dropsFreeFloating($activeProperty)) {
             $this->safeModeDrop(
                 'empty object',
-                'an empty object at the top level or directly inside @graph carries no statement and is dropped',
+                'an empty object in graph position carries no statement and is dropped',
             );
 
             return null;
@@ -1739,6 +1776,30 @@ class Expansion
     }
 
     /**
+     * True when the free-floating drops of §5.5 step 18 apply for this active
+     * property: at the top level (null), directly inside `@graph`, or — going
+     * beyond the literal spec, matching jsonld.js — as the direct value of a
+     * term whose container mapping includes `@graph` (a graph's members carry
+     * no statement wherever the graph comes from). jsonld.js applies the
+     * container condition to any `@graph`-bearing container, including the
+     * `[@graph, @id]` / `[@graph, @index]` map forms, so free-floating OBJECT
+     * members of those maps drop while raw scalars (which value expansion
+     * turns into value objects without ever passing through here) survive to
+     * be wrapped — byte parity requires mirroring that asymmetry.
+     */
+    private function dropsFreeFloating(?string $activeProperty): bool
+    {
+        if ($activeProperty === null || $activeProperty === Keyword::Graph->value) {
+            return true;
+        }
+        if (str_starts_with($activeProperty, '@')) {
+            return false;
+        }
+
+        return $this->hasContainer($this->termDefinitions->getTermDefinition($activeProperty), Keyword::Graph->value);
+    }
+
+    /**
      * True if any key of $obj IRI-expands to `@value` under $context. Used to
      * decide whether a non-propagating (type-scoped) context is rolled back
      * when entering a nested object (§5.5 step 7): the rollback is skipped when
@@ -1814,11 +1875,10 @@ class Expansion
     {
         $layers = is_array($context) && array_is_list($context) ? $context : [$context];
 
-        $active = new TermDefinitions($base->termDefinitions);
         // Safe mode and the processing mode are per-call options, not context
         // state: they survive scoped copies (and null resets below) so the
         // definition-time checks in TermDefinitions keep firing in scope.
-        $active->setSafe($this->safe);
+        $active = new TermDefinitions($base->termDefinitions, $this->safe);
         $active->setProcessingMode($this->documentBase->getProcessingMode());
         $vocab = $base->getVocab();
         if ($vocab !== null) {
@@ -1831,22 +1891,32 @@ class Expansion
         if ($parentBase !== null) {
             $active->setBase($parentBase);
         }
+        // The parent's default @language is inherited (spec §4.1: context
+        // processing starts from a copy of the active context), so plain
+        // strings in the scope keep their language tag — jsonld.js parity;
+        // its N-Quads (and so VC signatures) depend on it. The default
+        // @direction is deliberately NOT inherited: jsonld.js's active-context
+        // clone (_cloneActiveContext) carries @base/@vocab/@language but omits
+        // @direction — an upstream deviation from the spec, reported as
+        // https://github.com/digitalbazaar/jsonld.js/issues/586 — and matching
+        // the reference implementation's bytes wins for signing pipelines;
+        // revisit when that issue is fixed. A scoped context's own explicit
+        // @language/@direction entries are applied by overlayContextOnto
+        // either way.
+        $active->setDefaultLanguage($base->getDefaultLanguage());
 
         foreach ($layers as $layer) {
             if ($layer === null) {
                 if (! $overrideProtected && $active->hasAnyProtected()) {
                     throw new JsonLdException('Invalid context nullification: a null context cannot clear protected terms');
                 }
-                $active = new TermDefinitions;
-                $active->setSafe($this->safe);
+                $active = new TermDefinitions([], $this->safe);
                 $active->setProcessingMode($this->documentBase->getProcessingMode());
             } elseif (is_string($layer) || (is_array($layer) && array_key_exists(Keyword::Import->value, $layer))) {
                 // A remote (string) scoped context, or one that sources another
-                // via @import, is resolved through the DocumentLoader; the
-                // resolved term map is then overlaid.
-                foreach ($this->resolveRemoteContext($layer) as $term => $definition) {
-                    $this->overlayContextOnto($active, [$term => $definition], $overrideProtected);
-                }
+                // via @import, is resolved through the DocumentLoader, then
+                // overlaid (terms and remote-set @language/@direction defaults).
+                $this->overlayRemoteScopedContext($active, $layer, $overrideProtected);
             } elseif (is_array($layer)) {
                 $this->overlayContextOnto($active, $layer, $overrideProtected);
             }
@@ -1860,14 +1930,17 @@ class Expansion
     }
 
     /**
-     * Resolve a string (remote) or `@import`-bearing scoped context to a flat
-     * term-definition map via {@see ContextProcessor} (which handles loading
-     * and `@import` reverse-merge). Returns an empty map if no loader is wired.
+     * Resolve a string (remote) or `@import`-bearing scoped context via
+     * {@see ContextProcessor} (which handles loading and `@import`
+     * reverse-merge). The full resolved {@see TermDefinitions} is returned —
+     * not just the term map — so the caller can also apply the remote
+     * context's own default `@language`/`@direction` (whose presence flags
+     * distinguish an explicit null reset from the entry being absent).
+     * Returns an empty context if no loader is wired.
      *
      * @param  string|array<array-key, mixed>  $layer
-     * @return array<string, mixed>
      */
-    private function resolveRemoteContext(string|array $layer): array
+    private function resolveRemoteContext(string|array $layer): TermDefinitions
     {
         if ($this->documentLoader === null) {
             // Every term the unresolvable context would define stays undefined,
@@ -1882,18 +1955,45 @@ class Expansion
                 ['context' => $layer],
             );
 
-            return [];
+            return new TermDefinitions([], $this->safe);
         }
 
         $processor = new ContextProcessor(
             ['@context' => $layer],
             $this->documentLoader,
+            $this->safe,
             $this->documentBase->getBase(),
             $this->documentBase->getProcessingMode(),
-            safe: $this->safe,
         );
 
-        return $processor->getTermDefinitions()->termDefinitions;
+        return $processor->getTermDefinitions();
+    }
+
+    /**
+     * Overlay a remote / `@import`-bearing scoped context layer onto $target:
+     * every resolved term definition is overlaid, and a default
+     * `@language`/`@direction` the remote context itself sets is applied — an
+     * explicit null there clears the inherited default, while an absent entry
+     * leaves it untouched (the presence flags on the resolved
+     * {@see TermDefinitions} tell the two apart). Matches jsonld.js, which
+     * runs a remote scoped context through full context processing.
+     *
+     * @param  string|array<array-key, mixed>  $layer
+     */
+    private function overlayRemoteScopedContext(TermDefinitions $target, string|array $layer, bool $overrideProtected): void
+    {
+        $resolved = $this->resolveRemoteContext($layer);
+
+        foreach ($resolved->termDefinitions as $term => $definition) {
+            $this->overlayContextOnto($target, [$term => $definition], $overrideProtected);
+        }
+
+        if ($resolved->wasDefaultLanguageSet()) {
+            $target->setDefaultLanguage($resolved->getDefaultLanguage());
+        }
+        if ($resolved->wasDefaultDirectionSet()) {
+            $target->setDefaultDirection($resolved->getDefaultDirection());
+        }
     }
 
     /**
@@ -2010,13 +2110,16 @@ class Expansion
                 // node object rolls type-scoped terms back (§5.5 step 7;
                 // type-scoped contexts have @propagate = false) — unless an
                 // explicit @propagate:true makes the context propagate.
-                $scoped = new TermDefinitions($this->termDefinitions->termDefinitions);
-                $scoped->setSafe($this->safe);
+                $scoped = new TermDefinitions($this->termDefinitions->termDefinitions, $this->safe);
                 $scoped->setProcessingMode($this->documentBase->getProcessingMode());
                 $vocab = $this->termDefinitions->getVocab();
                 if ($vocab !== null) {
                     $scoped->setVocab($vocab);
                 }
+                // Inherit the default @language, NOT @direction — same
+                // jsonld.js-parity rule as the property-scoped copy in
+                // {@see applyScopedContext}.
+                $scoped->setDefaultLanguage($this->termDefinitions->getDefaultLanguage());
                 if (! $this->contextPropagateTrue($typeContext)) {
                     $scoped->setPreviousContext($this->termDefinitions);
                 }
@@ -2035,16 +2138,13 @@ class Expansion
                     if ($scoped->hasAnyProtected()) {
                         throw new JsonLdException('Invalid context nullification: a type-scoped context may not clear protected terms');
                     }
-                    $scoped = new TermDefinitions;
-                    $scoped->setSafe($this->safe);
+                    $scoped = new TermDefinitions([], $this->safe);
                     $scoped->setProcessingMode($this->documentBase->getProcessingMode());
 
                     continue;
                 }
                 if (is_string($layer) || (is_array($layer) && array_key_exists(Keyword::Import->value, $layer))) {
-                    foreach ($this->resolveRemoteContext($layer) as $term => $definition) {
-                        $this->overlayContextOnto($scoped, [$term => $definition], false);
-                    }
+                    $this->overlayRemoteScopedContext($scoped, $layer, overrideProtected: false);
                 } elseif (is_array($layer)) {
                     $this->overlayContextOnto($scoped, $layer, overrideProtected: false);
                 }
@@ -2117,25 +2217,35 @@ class Expansion
                 continue;
             }
             if (str_starts_with($term, '@')) {
-                // @protected / @propagate / @import / @version are consumed by
-                // the surrounding machinery. @language / @direction overrides
-                // are NOT implemented for scoped contexts: values would be
-                // tagged with the parent's defaults, silently mis-canonicalizing
-                // — in safe mode that must fail closed, not diverge. A NULL
-                // value is exempt: it is the standard reset idiom, and this
-                // processor's scoped contexts already apply no default tag, so
-                // nothing drops or diverges.
-                if (
-                    ($term === Keyword::Language->value || $term === Keyword::Direction->value)
-                    && $definition !== null
-                ) {
-                    $this->safeModeDrop(
-                        'unsupported scoped context entry',
-                        "a scoped context sets {$term}, which this processor ignores; values in its scope would carry the wrong language/direction",
-                        ['entry' => $term, 'value' => $definition],
-                    );
+                // Scoped @language / @direction set (or, with null, reset) the
+                // scope's default for plain string values, exactly like the
+                // document-level entries in ContextProcessor — same validation,
+                // same case-preserving storage. jsonld.js applies scoped
+                // defaults through full context processing; it reports an
+                // invalid value as 'invalid scoped context', here it raises the
+                // document-level error for the entry.
+                if ($term === Keyword::Language->value) {
+                    if ($definition !== null && (! is_string($definition) || ! $this->wellFormedLanguageTag($definition))) {
+                        $repr = is_scalar($definition) ? (string) $definition : gettype($definition);
+                        throw new JsonLdException("Invalid @language value: {$repr}");
+                    }
+                    /** @var string|null $definition */
+                    $target->setDefaultLanguage($definition);
+
+                    continue;
+                }
+                if ($term === Keyword::Direction->value) {
+                    if ($definition !== null && $definition !== 'ltr' && $definition !== 'rtl') {
+                        $repr = is_scalar($definition) ? (string) $definition : gettype($definition);
+                        throw new JsonLdException("Invalid @direction value: {$repr}");
+                    }
+                    $target->setDefaultDirection($definition);
+
+                    continue;
                 }
 
+                // @protected / @propagate / @import / @version are consumed by
+                // the surrounding machinery.
                 // A keyword-SHAPED term that is not a real keyword is reserved:
                 // it is silently skipped here while the identical definition in
                 // a document-level (or remote scoped) context throws 'reserved
@@ -2272,9 +2382,11 @@ class Expansion
         }
 
         // @graph container (graph-only or [@graph, @set]): value is wrapped in
-        // a graph object, per element.
+        // a graph object, per element. An all-dropped / empty result comes
+        // back as [] — null from expandGraphContainer would read as "not a
+        // container value" here; the key loop turns the [] into omission.
         if ($wrapGraph) {
-            return $this->expandGraphContainer($key, $value);
+            return $this->expandGraphContainer($key, $value) ?? [];
         }
 
         return null;
@@ -2641,11 +2753,18 @@ class Expansion
      *
      * @return list<array<string, mixed>>
      */
-    private function expandGraphContainer(string $activeProperty, mixed $value): array
+    /**
+     * Returns null when nothing survives to be wrapped — the caller then
+     * omits the property entirely (jsonld.js parity: its @graph-container
+     * wrap `continue`s when every element is filtered out).
+     *
+     * @return list<mixed>|null
+     */
+    private function expandGraphContainer(string $activeProperty, mixed $value): ?array
     {
         $expanded = $this->expandElement($value, $activeProperty);
         if ($expanded === null) {
-            return [];
+            return null;
         }
         $elements = array_is_list($expanded) ? $expanded : [$expanded];
 
@@ -2653,12 +2772,34 @@ class Expansion
         // object, unconditionally — an element that is already a graph object
         // is wrapped one further level. (Multiple objects therefore become
         // multiple separate {@graph: […]} objects, not one shared graph.)
+        //
+        // Wrap-time free-floating filter (jsonld.js parity, beyond the
+        // literal spec): object-shaped values were already judged during
+        // their own expansion ({@see dropsFreeFloating} covers graph-container
+        // terms), so what this catches is value objects that VALUE expansion
+        // built after that judgement — raw scalars, @set-unwrapped scalars —
+        // which would otherwise become a graph whose only member carries no
+        // statement, leaving a dangling graph-name quad in the RDF output.
+        // Frames keep such patterns.
         $result = [];
         foreach ($elements as $element) {
+            if (
+                ! $this->frameExpansion
+                && is_array($element)
+                && ($element === [] || (! array_is_list($element) && $this->isFreeFloating($element)))
+            ) {
+                $this->safeModeDrop(
+                    $element === [] ? 'empty object' : $this->freeFloatingEventCode($element),
+                    'a free-floating object under a @graph container carries no statement and is dropped',
+                    ['object' => $element],
+                );
+
+                continue;
+            }
             $result[] = [Keyword::Graph->value => is_array($element) && array_is_list($element) ? $element : [$element]];
         }
 
-        return $result;
+        return $result === [] ? null : $result;
     }
 
     /**
