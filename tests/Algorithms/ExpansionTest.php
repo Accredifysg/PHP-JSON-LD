@@ -27,9 +27,9 @@ function makeExpansion(array $contextDoc, array $loaderMap = []): Expansion
     foreach ($loaderMap as $url => $document) {
         $loader->add($url, $document);
     }
-    $processor = new ContextProcessor($contextDoc, $loader);
+    $processor = new ContextProcessor($contextDoc, $loader, safe: false);
 
-    return new Expansion($processor->getTermDefinitions());
+    return new Expansion($processor->getTermDefinitions(), safe: false);
 }
 
 describe('Expansion::expand', function () {

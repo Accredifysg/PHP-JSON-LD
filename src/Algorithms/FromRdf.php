@@ -50,10 +50,10 @@ final class FromRdf
      *                      mirroring jsonld.js's safe fromRDF.
      */
     public function __construct(
+        private readonly bool $safe,
         private readonly bool $useNativeTypes = false,
         private readonly bool $useRdfType = false,
         private readonly ?string $rdfDirection = null,
-        private readonly bool $safe = false,
     ) {
         if ($rdfDirection !== null && $rdfDirection !== 'i18n-datatype' && $rdfDirection !== 'compound-literal') {
             throw new JsonLdException("Invalid rdfDirection value: '{$rdfDirection}' (expected 'i18n-datatype' or 'compound-literal')");

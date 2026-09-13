@@ -62,15 +62,18 @@ class ContextProcessor
      *                      context-processing steps that silently discard data
      *                      (keyword-shaped term names / @id / @reverse, a
      *                      relative @vocab) throw {@see DataLossException}
-     *                      instead. Must be a ctor param (not a setter) because
-     *                      context processing runs inside this constructor.
+     *                      instead. REQUIRED (and a ctor param, not a setter):
+     *                      context processing runs inside this constructor,
+     *                      and every construction site must state its safe
+     *                      mode so a missed site is a hard error rather than
+     *                      a silent gap.
      */
     public function __construct(
         private readonly array $jsonLd,
         private readonly DocumentLoader $documentLoader,
+        private readonly bool $safe,
         ?string $baseIri = null,
         ?string $processingMode = null,
-        private readonly bool $safe = false,
     ) {
         if (! isset($jsonLd['@context'])) {
             throw new JsonLdException('Invalid JSON-LD: Missing @context');
@@ -78,9 +81,8 @@ class ContextProcessor
 
         $this->processingMode = $processingMode ?? 'json-ld-1.1';
 
-        $this->termDefinitions = new TermDefinitions;
+        $this->termDefinitions = new TermDefinitions([], $safe);
         $this->termDefinitions->setProcessingMode($this->processingMode);
-        $this->termDefinitions->setSafe($safe);
 
         // The initial base is the document location (or a caller-supplied
         // base). `@base` declarations in the context can override it.
