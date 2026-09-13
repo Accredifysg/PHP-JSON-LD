@@ -979,6 +979,181 @@ describe('expansion: §5.5 step 18 under @graph', function () {
             'object with only @id',
         );
     });
+
+    it('drops a value object directly inside a named graph (default) and throws at expand in safe mode', function () {
+        // Previously only NodeMap caught this shape, so an expand-only safe
+        // pipeline handed the orphan to an external canonicalizer that then
+        // silently lost it.
+        $doc = [
+            '@context' => [],
+            '@id' => 'http://example.com/g',
+            '@graph' => [['@value' => 'orphan']],
+            'http://example.com/p' => 'v',
+        ];
+
+        // Default: jsonld.js parity — the graph node survives with an empty
+        // @graph; only the free-floating member is dropped.
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect($expanded)->toBe([[
+            '@graph' => [],
+            '@id' => 'http://example.com/g',
+            'http://example.com/p' => [['@value' => 'v']],
+        ]]);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @value',
+        );
+    });
+
+    it('drops a value object carrying @language or @index inside @graph — @value presence is what counts', function () {
+        foreach ([
+            ['@value' => 'x', '@language' => 'en'],
+            ['@value' => 'x', '@index' => 'i'],
+        ] as $member) {
+            $doc = ['@id' => 'http://example.com/g', '@graph' => [$member], 'http://example.com/p' => 'v'];
+
+            $expanded = safeModeProcessor()->expand($doc)->toArray();
+            expect(safeModeDig($expanded, 0, '@graph'))->toBe([]);
+
+            safeModeExpectDrop(
+                fn () => safeModeProcessor()->expand($doc, safeOptions()),
+                'object with only @value',
+            );
+        }
+    });
+
+    it('drops a @list object directly inside @graph, taking node objects inside the list with it', function () {
+        // Mirrors #t0047 at the named-graph level: everything inside a
+        // free-floating list is removed with the list, even nodes with
+        // properties that would survive on their own. The member node keeps
+        // the item-level drops quiet so the safe throw pins the LIST site.
+        $doc = [
+            '@id' => 'http://example.com/g',
+            '@graph' => [['@list' => [['@id' => 'http://example.com/n', 'http://example.com/q' => 'inside']]]],
+            'http://example.com/p' => 'v',
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@graph'))->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @list',
+        );
+    });
+
+    it('reports the item-level drop first for a free-floating @list whose members are themselves free-floating', function () {
+        // jsonld.js parity: list members expand before the list object is
+        // judged, so a scalar member surfaces as 'free-floating scalar' and a
+        // value-object member as 'object with only @value'. Default mode ends
+        // at the same place either way: the whole list vanishes.
+        foreach ([
+            ['x', 'free-floating scalar'],
+            [['@value' => 'x'], 'object with only @value'],
+        ] as [$member, $eventCode]) {
+            $doc = ['@id' => 'http://example.com/g', '@graph' => [['@list' => [$member]]], 'http://example.com/p' => 'v'];
+
+            $expanded = safeModeProcessor()->expand($doc)->toArray();
+            expect(safeModeDig($expanded, 0, '@graph'))->toBe([]);
+
+            safeModeExpectDrop(
+                fn () => safeModeProcessor()->expand($doc, safeOptions()),
+                $eventCode,
+            );
+        }
+    });
+
+    it('drops a @list object with @index inside @graph — the @index does not keep it alive', function () {
+        $doc = [
+            '@id' => 'http://example.com/g',
+            '@graph' => [['@list' => [['@id' => 'http://example.com/n', 'http://example.com/q' => 'inside']], '@index' => 'i']],
+            'http://example.com/p' => 'v',
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@graph'))->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @list',
+        );
+    });
+
+    it('drops a value object reached through @set directly inside @graph', function () {
+        // @set unwraps in place, so its members sit directly in the graph and
+        // are judged with the graph's active property (jsonld.js parity).
+        $doc = [
+            '@id' => 'http://example.com/g',
+            '@graph' => [['@set' => [['@value' => 'x']]]],
+            'http://example.com/p' => 'v',
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@graph'))->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @value',
+        );
+    });
+
+    it('drops free-floating members of a graph nested inside another graph', function () {
+        $doc = [
+            '@id' => 'http://example.com/outer',
+            '@graph' => [[
+                '@id' => 'http://example.com/inner',
+                '@graph' => [['@value' => 'x']],
+                'http://example.com/p' => 'v',
+            ]],
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@graph', 0, '@graph'))->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @value',
+        );
+    });
+
+    it('keeps the graph node itself when every @graph member is dropped', function () {
+        // jsonld.js parity: the named graph is not re-judged as free-floating
+        // after its members drop — @graph:[] plus @id is still two entries.
+        $doc = ['@id' => 'http://example.com/g', '@graph' => [['@value' => 'x']]];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect($expanded)->toBe([['@graph' => [], '@id' => 'http://example.com/g']]);
+    });
+
+    it('keeps value objects and lists under real properties of graph members', function () {
+        $doc = [
+            '@id' => 'http://example.com/g',
+            '@graph' => [[
+                '@id' => 'http://example.com/n',
+                'http://example.com/q' => ['@value' => 'kept'],
+                'http://example.com/r' => ['@list' => ['kept too']],
+            ]],
+            'http://example.com/p' => 'v',
+        ];
+
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+            expect(safeModeDig($expanded, 0, '@graph', 0, 'http://example.com/q', 0, '@value'))->toBe('kept')
+                ->and(safeModeDig($expanded, 0, '@graph', 0, 'http://example.com/r', 0, '@list', 0, '@value'))->toBe('kept too');
+        }
+    });
+
+    it('keeps free-floating value patterns when expanding a frame', function () {
+        // A frame legitimately places {@value: ...} match patterns where a
+        // document cannot place data; frame expansion must not drop them.
+        $contextProcessor = new ContextProcessor(['@context' => []], new StubDocumentLoader);
+        $expansion = new Expansion($contextProcessor->getTermDefinitions(), documentLoader: null, frameExpansion: true);
+
+        $frame = ['@id' => 'http://example.com/g', '@graph' => [['@value' => []]]];
+
+        expect(safeModeDig($expansion->expand($frame), 0, '@graph', 0))->toBe(['@value' => []]);
+    });
 });
 
 describe('expansion: relative identifiers that only fail later', function () {

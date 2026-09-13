@@ -84,6 +84,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expansion** per §5.5 step 18 (active property `null` *or* `@graph`),
   matching jsonld.js — previously they survived expansion only to silently
   vanish at `toRdf`/`flatten`, invisible even to safe mode.
+- **Value objects and `@list` objects directly inside `@graph` are dropped at
+  expansion** — the remaining two free-floating shapes of §5.5 step 18,
+  completing the fix above. Previously `{"@value": …}` / `{"@list": […]}`
+  directly under a *named* graph's `@graph` survived `expand()` (the existing
+  filter only ran at the document's top level), so a safe expand-only
+  pipeline handed the orphan to an external canonicalizer that then silently
+  lost it: `toRdf`/`flatten`/`frame` caught the drop in NodeMap, but
+  `expand(safe: true)` did not throw. Now expansion drops them (default) or
+  throws `object with only @value` / `object with only @list` (safe) in
+  graph position, after value/list validation, exactly like jsonld.js — a
+  free-floating list's members are judged first, so a scalar member still
+  surfaces as `free-floating scalar`. Default-mode `expand()` output changes
+  only for such documents (jsonld.js parity, e.g. `@graph: []` with the
+  graph node retained); `toRdf`, `flatten`, and framing output are
+  byte-identical because NodeMap already discarded the orphans. Frame
+  expansion still keeps `@value`/`@list` match patterns.
 - **`@null` is no longer treated as a JSON-LD keyword** (it is a framing
   *output* sentinel, not a §1.7 syntax token): `{"@id": "@null"}` no longer
   passes as a keyword alias, and a `@null` term definition fails closed in

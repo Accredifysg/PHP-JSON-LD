@@ -713,7 +713,30 @@ class Expansion
         // Value-object finalization (§5.5 step 15). If @value is present,
         // the object is a value object and is validated + normalised.
         if (array_key_exists(Keyword::Value->value, $result)) {
-            return $this->finalizeValueObject($result);
+            $valueObject = $this->finalizeValueObject($result);
+
+            // §5.5 step 18: a value object at the top level or directly inside
+            // @graph is free-floating — it carries no statement — and is
+            // dropped, after validation (an invalid value object is still a
+            // syntax error, matching jsonld.js). The top-level case is also
+            // caught in expand(); this covers named graphs, whose members
+            // never pass through that top-level filter. Frame expansion keeps
+            // value patterns.
+            if (
+                $valueObject !== null
+                && ! $this->frameExpansion
+                && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
+            ) {
+                $this->safeModeDrop(
+                    'object with only @value',
+                    'a value object at the top level or directly inside @graph carries no statement and is dropped',
+                    ['object' => $valueObject],
+                );
+
+                return null;
+            }
+
+            return $valueObject;
         }
 
         // A bare {@language}/{@direction} object with no @value is a
@@ -748,6 +771,26 @@ class Expansion
                     throw new JsonLdException('Invalid set or list object: a @list object may only contain @list and @index');
                 }
             }
+
+            // §5.5 step 18: a @list object at the top level or directly inside
+            // @graph is free-floating and dropped — a list carries no
+            // statement outside a property (#t0047), and everything inside
+            // goes with it, including node objects that would survive on
+            // their own. Validation above still applies first (jsonld.js
+            // parity). Frame expansion keeps list patterns.
+            if (
+                ! $this->frameExpansion
+                && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
+            ) {
+                $this->safeModeDrop(
+                    'object with only @list',
+                    'a @list object at the top level or directly inside @graph carries no statement and is dropped',
+                    ['object' => $result],
+                );
+
+                return null;
+            }
+
             ksort($result);
 
             return $result;
