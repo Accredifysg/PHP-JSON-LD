@@ -181,6 +181,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Safe-mode threading is now structural** (internal refactor, zero
+  behaviour change — the full W3C, interop, and characterization suites are
+  byte-identical): the `safe` flag is a REQUIRED constructor parameter on
+  every internal pipeline class (`Expansion`, `Compaction`, `Flattening`,
+  `NodeMap`, `ToRdf`, `FromRdf`, `ContextProcessor`, `TermDefinitions` —
+  where it replaces the removed `setSafe()` mutator; `withSafe()` provides
+  an immutable copy). A construction site that forgets to thread the flag is
+  now a hard error instead of a silent safe-mode gap — the failure shape
+  behind the `Flattening`→`NodeMap` and `fromRdf()` holes closed earlier in
+  this release. `Compaction`, whose safe behaviour previously rode along
+  implicitly inside the `TermDefinitions` instance, takes an explicit
+  authoritative flag and stamps it onto its context, so a hand-built context
+  can no longer silently run compaction with safe off. A reflection guard
+  test keeps the defaulted-flag pattern from returning. **BC note:** these
+  are signature changes to internal (though public) classes — `safe` also
+  moved ahead of the optional parameters — landing in the same release as
+  the safe-mode feature itself; the public `JsonLdProcessor` / `JsonLdOptions`
+  API is unchanged.
 - README rewritten around the released feature set: conformance matrix
   refreshed against the current W3C suite (1,287/1,302), interoperability and
   implementation-report sections added, development-phase scaffolding removed.
