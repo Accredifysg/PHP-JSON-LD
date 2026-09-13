@@ -71,12 +71,12 @@ final class JsonLdProcessor implements Processor
         $documentForContext['@context'] = $this->withExpandContext($documentForContext['@context'], $options);
 
         $safe = $options !== null && $options->safe;
-        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode, $safe);
+        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $safe, $options?->base, $options?->processingMode);
 
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);
 
-        return (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader, $frameExpansion, $safe))
+        return (new Expansion($contextProcessor->getTermDefinitions(), $safe, $this->documentLoader, $frameExpansion))
             ->expand($documentWithoutContext);
     }
 
@@ -129,8 +129,9 @@ final class JsonLdProcessor implements Processor
             $contextDocument = ['@context' => $context];
         }
 
-        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, $options?->base, $options?->processingMode, $options !== null && $options->safe);
-        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $options !== null ? $options->compactArrays : true);
+        $safe = $options !== null && $options->safe;
+        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, $safe, $options?->base, $options?->processingMode);
+        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $safe, $options !== null ? $options->compactArrays : true);
 
         $compacted = $compaction->compact($expandedInput);
 
@@ -177,9 +178,9 @@ final class JsonLdProcessor implements Processor
         $expanded = $this->runExpansion($document, $options, frameExpansion: false);
 
         return new RdfDataset((new ToRdf(
+            $options !== null && $options->safe,
             $options?->rdfDirection,
             $options !== null && $options->produceGeneralizedRdf,
-            $options !== null && $options->safe,
         ))->toRdf($expanded));
     }
 
@@ -190,10 +191,10 @@ final class JsonLdProcessor implements Processor
         $quads = is_string($input) ? (new NQuadsParser)->parse($input) : $input->getQuads();
 
         $result = (new FromRdf(
+            $options !== null && $options->safe,
             $options !== null && $options->useNativeTypes,
             $options !== null && $options->useRdfType,
             $options?->rdfDirection,
-            $options !== null && $options->safe,
         ))->fromRdf($quads);
 
         return new FromRdfDocument($result);
@@ -213,7 +214,7 @@ final class JsonLdProcessor implements Processor
         // Resolve the frame's @context once — used both to decide merged-vs-default
         // framing (below) and to compact the framed output.
         $frameContext = array_key_exists(Keyword::Context->value, $frame) ? $frame[Keyword::Context->value] : [];
-        $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options?->base, $options?->processingMode, $options !== null && $options->safe);
+        $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options !== null && $options->safe, $options?->base, $options?->processingMode);
         $frameDefs = $contextProcessor->getTermDefinitions();
 
         // Frame the merged graph unless a RAW top-level frame key expands to
@@ -252,7 +253,7 @@ final class JsonLdProcessor implements Processor
 
         // Compact each framed node against the frame's @context.
         $compactArrays = $options === null || $options->compactArrays;
-        $compaction = new Compaction($frameDefs, $compactArrays, framing: true);
+        $compaction = new Compaction($frameDefs, $options !== null && $options->safe, $compactArrays, framing: true);
 
         $graph = [];
         foreach ($framed as $node) {

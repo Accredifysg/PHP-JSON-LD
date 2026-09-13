@@ -49,9 +49,9 @@ final class ToRdf
      *                      {@see DataLossException} instead.
      */
     public function __construct(
+        private readonly bool $safe,
         private readonly ?string $rdfDirection = null,
         private readonly bool $produceGeneralizedRdf = false,
-        private readonly bool $safe = false,
     ) {
         // An unrecognised rdfDirection (a typo, wrong case) would silently
         // disable BOTH the serialization branch and the "rdfDirection not set"

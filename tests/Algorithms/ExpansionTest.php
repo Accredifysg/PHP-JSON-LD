@@ -27,9 +27,9 @@ function makeExpansion(array $contextDoc, array $loaderMap = []): Expansion
     foreach ($loaderMap as $url => $document) {
         $loader->add($url, $document);
     }
-    $processor = new ContextProcessor($contextDoc, $loader);
+    $processor = new ContextProcessor($contextDoc, $loader, safe: false);
 
-    return new Expansion($processor->getTermDefinitions());
+    return new Expansion($processor->getTermDefinitions(), safe: false);
 }
 
 describe('Expansion::expand', function () {
@@ -372,7 +372,10 @@ describe('scoped context propagation', function () {
             ],
             '@id' => 'https://example.org/thing',
             '@type' => 'Thing',
-            'proof' => ['@id' => 'https://example.org/proof-node'],
+            // The proof node needs a real property: an @id-only member of a
+            // @graph container is free-floating and dropped (jsonld.js
+            // parity), which would erase the very term this test asserts on.
+            'proof' => ['@id' => 'https://example.org/proof-node', 'sec:created' => 'now'],
         ]);
 
         $json = json_encode($expanded, JSON_UNESCAPED_SLASHES);

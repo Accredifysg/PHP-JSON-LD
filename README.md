@@ -124,8 +124,7 @@ and serialization), `relative subject reference`,
 
 Drop sites specific to this implementation carry their own codes:
 `context load failed` (a scoped context needs a `DocumentLoader` none is
-wired), `unsupported scoped context entry` (scoped `@language`/`@direction`
-overrides this processor ignores), `invalid scoped term definition`,
+wired), `invalid scoped term definition`,
 `invalid @direction value`, `invalid @id value` (non-string `@id` relabelled
 as a blank node), `invalid @value serialization` (non-scalar `@value` coerced
 to `""`), `invalid @json serialization` (NaN/Infinity in a `@json` literal),

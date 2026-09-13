@@ -11,7 +11,7 @@ describe('ContextProcessor::__construct', function () {
     it('throws when @context is missing', function () {
         $loader = new StubDocumentLoader;
 
-        expect(fn () => new ContextProcessor(['id' => 'urn:1'], $loader))
+        expect(fn () => new ContextProcessor(['id' => 'urn:1'], $loader, safe: false))
             ->toThrow(JsonLdException::class, 'Invalid JSON-LD: Missing @context');
     });
 
@@ -24,6 +24,7 @@ describe('ContextProcessor::__construct', function () {
         $processor = new ContextProcessor(
             ['@context' => 'https://example.com/ctx.jsonld', 'id' => 'urn:1'],
             $loader,
+            safe: false,
         );
 
         expect($loader->requestedUrls)->toBe(['https://example.com/ctx.jsonld']);
@@ -39,6 +40,7 @@ describe('ContextProcessor::__construct', function () {
         $processor = new ContextProcessor(
             ['@context' => ['https://example.com/a', 'https://example.com/b'], 'id' => 'urn:1'],
             $loader,
+            safe: false,
         );
 
         expect($loader->requestedUrls)->toBe(['https://example.com/a', 'https://example.com/b']);
@@ -54,6 +56,7 @@ describe('ContextProcessor::__construct', function () {
         $processor = new ContextProcessor(
             ['@context' => ['name' => 'https://schema.org/name'], 'id' => 'urn:1'],
             $loader,
+            safe: false,
         );
 
         expect($loader->requestedUrls)->toBe([]);
@@ -69,6 +72,7 @@ describe('ContextProcessor::__construct', function () {
         $processor = new ContextProcessor(
             ['@context' => 'https://example.com/ctx', 'id' => 'urn:1'],
             $loader,
+            safe: false,
         );
 
         expect($processor->getTermDefinitions()->getTermDefinition('name'))
@@ -90,6 +94,7 @@ describe('ContextProcessor::__construct', function () {
         $processor = new ContextProcessor(
             ['@context' => 'https://example.com/outer'],
             $loader,
+            safe: false,
         );
 
         expect($loader->requestedUrls)->toBe(['https://example.com/outer', 'https://example.com/inner']);
@@ -109,6 +114,7 @@ describe('ContextProcessor::__construct', function () {
         expect(fn () => new ContextProcessor(
             ['@context' => 'https://example.com/a'],
             $loader,
+            safe: false,
         ))->toThrow(JsonLdException::class, 'Circular reference detected: https://example.com/a');
     });
 
@@ -118,6 +124,7 @@ describe('ContextProcessor::__construct', function () {
         expect(fn () => new ContextProcessor(
             ['@context' => 'not-a-url'],
             $loader,
+            safe: false,
         ))->toThrow(JsonLdException::class, 'Remote context must be a valid URL');
     });
 
@@ -127,6 +134,7 @@ describe('ContextProcessor::__construct', function () {
         expect(fn () => new ContextProcessor(
             ['@context' => 'https://example.com/missing.jsonld'],
             $loader,
+            safe: false,
         ))->toThrow(JsonLdException::class, 'Failed to load context from https://example.com/missing.jsonld');
     });
 
@@ -136,6 +144,7 @@ describe('ContextProcessor::__construct', function () {
         expect(fn () => new ContextProcessor(
             ['@context' => 123],
             $loader,
+            safe: false,
         ))->toThrow(JsonLdException::class, 'Context must be string or array');
     });
 });
@@ -146,7 +155,7 @@ describe('ContextProcessor keyword validation', function () {
      */
     function process(array $context): ContextProcessor
     {
-        return new ContextProcessor(['@context' => $context], new StubDocumentLoader);
+        return new ContextProcessor(['@context' => $context], new StubDocumentLoader, safe: false);
     }
 
     it('accepts @version 1.1 and rejects 1.0', function () {
@@ -209,6 +218,7 @@ describe('ContextProcessor::getTermDefinitions', function () {
         $processor = new ContextProcessor(
             ['@context' => ['name' => 'https://schema.org/name']],
             new StubDocumentLoader,
+            safe: false,
         );
 
         expect($processor->getTermDefinitions())->toBeInstanceOf(TermDefinitions::class);
@@ -217,7 +227,7 @@ describe('ContextProcessor::getTermDefinitions', function () {
 
 describe('@protected term enforcement', function () {
     $make = function (array $contextLayers) {
-        return new ContextProcessor(['@context' => $contextLayers, 'id' => 'urn:1'], new StubDocumentLoader);
+        return new ContextProcessor(['@context' => $contextLayers, 'id' => 'urn:1'], new StubDocumentLoader, safe: false);
     };
 
     it('rejects redefining a protected term in a later context layer', function () use ($make) {
@@ -313,8 +323,8 @@ describe('ContextProcessor processing-mode gates', function () {
         return fn () => new ContextProcessor(
             ['@context' => $context, 'id' => 'urn:1'],
             new StubDocumentLoader,
-            null,
-            'json-ld-1.0',
+            safe: false,
+            processingMode: 'json-ld-1.0',
         );
     };
 
@@ -352,6 +362,7 @@ describe('ContextProcessor processing-mode gates', function () {
         $processor = new ContextProcessor(
             ['@context' => ['@version' => 1.1, '@propagate' => true, '@vocab' => 'http://example.com/'], 'id' => 'urn:1'],
             new StubDocumentLoader,
+            safe: false,
         );
         expect($processor->getTermDefinitions()->getProcessingMode())->toBe('json-ld-1.1');
     });
@@ -365,6 +376,7 @@ describe('ContextProcessor processing-mode gates', function () {
         $processor = new ContextProcessor(
             ['@context' => ['https://example.com/a', 'https://example.com/b']],
             $loader,
+            safe: false,
         );
 
         expect($processor->getTermDefinitions()->getTermDefinition('shared'))
@@ -382,6 +394,7 @@ describe('ContextProcessor processing-mode gates', function () {
         $processor = new ContextProcessor(
             ['@context' => 'https://example.com/dir/ctx.jsonld'],
             $loader,
+            safe: false,
         );
 
         expect($processor->getTermDefinitions()->getTermDefinition('outer'))
@@ -399,7 +412,7 @@ describe('ContextProcessor processing-mode gates', function () {
             ],
         ]);
 
-        $defs = (new ContextProcessor(['@context' => 'https://example.com/dir/ctx.jsonld'], $loader))
+        $defs = (new ContextProcessor(['@context' => 'https://example.com/dir/ctx.jsonld'], $loader, safe: false))
             ->getTermDefinitions();
 
         expect($defs->getTermDefinition('u'))
