@@ -1379,9 +1379,10 @@ describe('scoped contexts: default @language/@direction (inherit, set, reset)', 
 
     it('does NOT inherit the default @direction into a scope — jsonld.js parity over spec purity', function () {
         // jsonld.js's _cloneActiveContext copies @base/@vocab/@language but
-        // omits @direction (an upstream deviation from §4.1 context copying);
+        // omits @direction (an upstream deviation from §4.1 context copying,
+        // reported as https://github.com/digitalbazaar/jsonld.js/issues/586);
         // matching the reference implementation's N-Quads wins for signing
-        // pipelines. Revisit if upstream fixes the clone.
+        // pipelines. Revisit when upstream fixes the clone.
         $doc = [
             '@context' => ['@direction' => 'rtl', 'thing' => ['@id' => 'http://example.com/thing', '@context' => ['other' => 'http://example.com/other']]],
             '@id' => 'http://example.com/x',

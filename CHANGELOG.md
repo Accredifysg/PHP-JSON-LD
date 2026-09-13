@@ -117,9 +117,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (published VC context stacks set no default language; both corpus replays
   found no affected documents). Deliberate deviation from the spec, matching
   jsonld.js: the default `@direction` is NOT inherited into scopes (jsonld.js'
-  active-context clone omits `@direction`), because byte-parity with the
-  reference implementation is what signing pipelines verify against; scoped
-  explicit `@direction` set/reset works. The fork-specific
+  active-context clone omits `@direction` — reported upstream as
+  [digitalbazaar/jsonld.js#586](https://github.com/digitalbazaar/jsonld.js/issues/586)),
+  because byte-parity with the reference implementation is what signing
+  pipelines verify against; scoped explicit `@direction` set/reset works. The fork-specific
   `unsupported scoped context entry` safe-mode event code is retired — the
   behaviour it flagged is now implemented.
   *output* sentinel, not a §1.7 syntax token): `{"@id": "@null"}` no longer

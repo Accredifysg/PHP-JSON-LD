@@ -1837,10 +1837,12 @@ class Expansion
         // its N-Quads (and so VC signatures) depend on it. The default
         // @direction is deliberately NOT inherited: jsonld.js's active-context
         // clone (_cloneActiveContext) carries @base/@vocab/@language but omits
-        // @direction — an upstream deviation from the spec — and matching the
-        // reference implementation's bytes wins for signing pipelines. A
-        // scoped context's own explicit @language/@direction entries are
-        // applied by overlayContextOnto either way.
+        // @direction — an upstream deviation from the spec, reported as
+        // https://github.com/digitalbazaar/jsonld.js/issues/586 — and matching
+        // the reference implementation's bytes wins for signing pipelines;
+        // revisit when that issue is fixed. A scoped context's own explicit
+        // @language/@direction entries are applied by overlayContextOnto
+        // either way.
         $active->setDefaultLanguage($base->getDefaultLanguage());
 
         foreach ($layers as $layer) {
