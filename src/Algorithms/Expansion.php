@@ -1831,6 +1831,17 @@ class Expansion
         if ($parentBase !== null) {
             $active->setBase($parentBase);
         }
+        // The parent's default @language is inherited (spec §4.1: context
+        // processing starts from a copy of the active context), so plain
+        // strings in the scope keep their language tag — jsonld.js parity;
+        // its N-Quads (and so VC signatures) depend on it. The default
+        // @direction is deliberately NOT inherited: jsonld.js's active-context
+        // clone (_cloneActiveContext) carries @base/@vocab/@language but omits
+        // @direction — an upstream deviation from the spec — and matching the
+        // reference implementation's bytes wins for signing pipelines. A
+        // scoped context's own explicit @language/@direction entries are
+        // applied by overlayContextOnto either way.
+        $active->setDefaultLanguage($base->getDefaultLanguage());
 
         foreach ($layers as $layer) {
             if ($layer === null) {
@@ -1842,11 +1853,9 @@ class Expansion
                 $active->setProcessingMode($this->documentBase->getProcessingMode());
             } elseif (is_string($layer) || (is_array($layer) && array_key_exists(Keyword::Import->value, $layer))) {
                 // A remote (string) scoped context, or one that sources another
-                // via @import, is resolved through the DocumentLoader; the
-                // resolved term map is then overlaid.
-                foreach ($this->resolveRemoteContext($layer) as $term => $definition) {
-                    $this->overlayContextOnto($active, [$term => $definition], $overrideProtected);
-                }
+                // via @import, is resolved through the DocumentLoader, then
+                // overlaid (terms and remote-set @language/@direction defaults).
+                $this->overlayRemoteScopedContext($active, $layer, $overrideProtected);
             } elseif (is_array($layer)) {
                 $this->overlayContextOnto($active, $layer, $overrideProtected);
             }
@@ -1860,14 +1869,17 @@ class Expansion
     }
 
     /**
-     * Resolve a string (remote) or `@import`-bearing scoped context to a flat
-     * term-definition map via {@see ContextProcessor} (which handles loading
-     * and `@import` reverse-merge). Returns an empty map if no loader is wired.
+     * Resolve a string (remote) or `@import`-bearing scoped context via
+     * {@see ContextProcessor} (which handles loading and `@import`
+     * reverse-merge). The full resolved {@see TermDefinitions} is returned —
+     * not just the term map — so the caller can also apply the remote
+     * context's own default `@language`/`@direction` (whose presence flags
+     * distinguish an explicit null reset from the entry being absent).
+     * Returns an empty context if no loader is wired.
      *
      * @param  string|array<array-key, mixed>  $layer
-     * @return array<string, mixed>
      */
-    private function resolveRemoteContext(string|array $layer): array
+    private function resolveRemoteContext(string|array $layer): TermDefinitions
     {
         if ($this->documentLoader === null) {
             // Every term the unresolvable context would define stays undefined,
@@ -1882,7 +1894,7 @@ class Expansion
                 ['context' => $layer],
             );
 
-            return [];
+            return new TermDefinitions;
         }
 
         $processor = new ContextProcessor(
@@ -1893,7 +1905,34 @@ class Expansion
             safe: $this->safe,
         );
 
-        return $processor->getTermDefinitions()->termDefinitions;
+        return $processor->getTermDefinitions();
+    }
+
+    /**
+     * Overlay a remote / `@import`-bearing scoped context layer onto $target:
+     * every resolved term definition is overlaid, and a default
+     * `@language`/`@direction` the remote context itself sets is applied — an
+     * explicit null there clears the inherited default, while an absent entry
+     * leaves it untouched (the presence flags on the resolved
+     * {@see TermDefinitions} tell the two apart). Matches jsonld.js, which
+     * runs a remote scoped context through full context processing.
+     *
+     * @param  string|array<array-key, mixed>  $layer
+     */
+    private function overlayRemoteScopedContext(TermDefinitions $target, string|array $layer, bool $overrideProtected): void
+    {
+        $resolved = $this->resolveRemoteContext($layer);
+
+        foreach ($resolved->termDefinitions as $term => $definition) {
+            $this->overlayContextOnto($target, [$term => $definition], $overrideProtected);
+        }
+
+        if ($resolved->wasDefaultLanguageSet()) {
+            $target->setDefaultLanguage($resolved->getDefaultLanguage());
+        }
+        if ($resolved->wasDefaultDirectionSet()) {
+            $target->setDefaultDirection($resolved->getDefaultDirection());
+        }
     }
 
     /**
@@ -2017,6 +2056,10 @@ class Expansion
                 if ($vocab !== null) {
                     $scoped->setVocab($vocab);
                 }
+                // Inherit the default @language, NOT @direction — same
+                // jsonld.js-parity rule as the property-scoped copy in
+                // {@see applyScopedContext}.
+                $scoped->setDefaultLanguage($this->termDefinitions->getDefaultLanguage());
                 if (! $this->contextPropagateTrue($typeContext)) {
                     $scoped->setPreviousContext($this->termDefinitions);
                 }
@@ -2042,9 +2085,7 @@ class Expansion
                     continue;
                 }
                 if (is_string($layer) || (is_array($layer) && array_key_exists(Keyword::Import->value, $layer))) {
-                    foreach ($this->resolveRemoteContext($layer) as $term => $definition) {
-                        $this->overlayContextOnto($scoped, [$term => $definition], false);
-                    }
+                    $this->overlayRemoteScopedContext($scoped, $layer, overrideProtected: false);
                 } elseif (is_array($layer)) {
                     $this->overlayContextOnto($scoped, $layer, overrideProtected: false);
                 }
@@ -2117,25 +2158,35 @@ class Expansion
                 continue;
             }
             if (str_starts_with($term, '@')) {
-                // @protected / @propagate / @import / @version are consumed by
-                // the surrounding machinery. @language / @direction overrides
-                // are NOT implemented for scoped contexts: values would be
-                // tagged with the parent's defaults, silently mis-canonicalizing
-                // — in safe mode that must fail closed, not diverge. A NULL
-                // value is exempt: it is the standard reset idiom, and this
-                // processor's scoped contexts already apply no default tag, so
-                // nothing drops or diverges.
-                if (
-                    ($term === Keyword::Language->value || $term === Keyword::Direction->value)
-                    && $definition !== null
-                ) {
-                    $this->safeModeDrop(
-                        'unsupported scoped context entry',
-                        "a scoped context sets {$term}, which this processor ignores; values in its scope would carry the wrong language/direction",
-                        ['entry' => $term, 'value' => $definition],
-                    );
+                // Scoped @language / @direction set (or, with null, reset) the
+                // scope's default for plain string values, exactly like the
+                // document-level entries in ContextProcessor — same validation,
+                // same case-preserving storage. jsonld.js applies scoped
+                // defaults through full context processing; it reports an
+                // invalid value as 'invalid scoped context', here it raises the
+                // document-level error for the entry.
+                if ($term === Keyword::Language->value) {
+                    if ($definition !== null && (! is_string($definition) || ! $this->wellFormedLanguageTag($definition))) {
+                        $repr = is_scalar($definition) ? (string) $definition : gettype($definition);
+                        throw new JsonLdException("Invalid @language value: {$repr}");
+                    }
+                    /** @var string|null $definition */
+                    $target->setDefaultLanguage($definition);
+
+                    continue;
+                }
+                if ($term === Keyword::Direction->value) {
+                    if ($definition !== null && $definition !== 'ltr' && $definition !== 'rtl') {
+                        $repr = is_scalar($definition) ? (string) $definition : gettype($definition);
+                        throw new JsonLdException("Invalid @direction value: {$repr}");
+                    }
+                    $target->setDefaultDirection($definition);
+
+                    continue;
                 }
 
+                // @protected / @propagate / @import / @version are consumed by
+                // the surrounding machinery.
                 // A keyword-SHAPED term that is not a real keyword is reserved:
                 // it is silently skipped here while the identical definition in
                 // a document-level (or remote scoped) context throws 'reserved
