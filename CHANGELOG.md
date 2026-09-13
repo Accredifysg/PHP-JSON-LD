@@ -123,6 +123,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipelines verify against; scoped explicit `@direction` set/reset works. The fork-specific
   `unsupported scoped context entry` safe-mode event code is retired — the
   behaviour it flagged is now implemented.
+- **Free-floating values under `@container: @graph` terms are dropped at
+  expansion**, matching jsonld.js (which extends §5.5 step 18 to
+  graph-container terms — beyond the literal spec, but semantically sound: a
+  graph whose members carry no statement otherwise fabricates a dangling
+  graph-name quad). Previously a scalar, value object, `@id`-only reference,
+  `@list` object, or empty map as the direct value of a plain `@graph`
+  container was wrapped anyway, and **`toRdf` emitted an
+  `<s> <p> _:emptyGraph .` quad where jsonld.js emits nothing — a
+  default-mode N-Quads divergence** (the `@container: @graph`
+  `verifiableCredential` pattern makes this VC-presentation-adjacent, though
+  only malformed members are affected). Now: under a plain `@graph` (or
+  `[@graph, @set]`) container every free-floating member is dropped (safe
+  mode: the matching `object with only @value`/`@id`/`@list`/`empty object`
+  codes) and the property is omitted when nothing survives; free-floating
+  *object* members of `[@graph, @index]` / `[@graph, @id]` maps are dropped
+  with the property kept as an empty list; and a `@type: @json` +
+  `@graph`-container term drops its JSON literal (jsonld.js's wrap filter
+  does the same — such a term always loses its data). Deliberate jsonld.js
+  byte-parity quirk, pinned by test: raw **scalar** members of the map forms
+  still become wrapped value objects and emit the dangling graph-name quad,
+  exactly as jsonld.js does — but safe `toRdf` here still fails closed on
+  the value the node map then discards, where jsonld.js's safe mode emits
+  the quad silently. Default-mode `expand()`, `flatten()`, and `toRdf()`
+  output changes for the affected shapes; real graph-container content
+  (actual node objects) is byte-identical before and after.
+- **`@null` is no longer treated as a JSON-LD keyword** (it is a framing
   *output* sentinel, not a §1.7 syntax token): `{"@id": "@null"}` no longer
   passes as a keyword alias, and a `@null` term definition fails closed in
   safe mode as `reserved term`, matching jsonld.js.

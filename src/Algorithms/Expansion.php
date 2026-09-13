@@ -594,6 +594,25 @@ class Expansion
                     // regardless of the value's shape (scalar, array, or
                     // object). It bypasses normal node/value expansion.
                     if ($this->isJsonTyped($termDef)) {
+                        // …unless the term ALSO has a plain @graph container:
+                        // the JSON literal is a value object, which the
+                        // graph-container wrap filters out as free-floating —
+                        // such a term loses every value (jsonld.js parity; its
+                        // wrap filter drops the literal the same way).
+                        if (
+                            ! $this->frameExpansion
+                            && $this->hasContainer($termDef, Keyword::Graph->value)
+                            && ! $this->hasContainer($termDef, Keyword::Index->value)
+                            && ! $this->hasContainer($termDef, Keyword::Id->value)
+                        ) {
+                            $this->safeModeDrop(
+                                'object with only @value',
+                                'a JSON literal under a @graph container carries no statement and is dropped',
+                                ['value' => $value],
+                            );
+
+                            continue;
+                        }
                         $this->mergeProperty($result, $expandedKey, [[
                             Keyword::Value->value => $value,
                             Keyword::Type->value => Keyword::Json->value,
@@ -608,6 +627,20 @@ class Expansion
                     // / expandKeywordValue.
                     $containerHandled = $this->expandContainerValue($key, $value, $termDef);
                     if ($containerHandled !== null) {
+                        // A plain @graph container (no @index/@id map) whose
+                        // members were all dropped as free-floating — or whose
+                        // raw value was empty — omits the property entirely
+                        // (jsonld.js `continue`s its wrap); the parent may then
+                        // fall to the step-18 drops itself. Map containers keep
+                        // the key with an empty list instead (also jsonld.js).
+                        if (
+                            $containerHandled === []
+                            && $this->hasContainer($termDef, Keyword::Graph->value)
+                            && ! $this->hasContainer($termDef, Keyword::Index->value)
+                            && ! $this->hasContainer($termDef, Keyword::Id->value)
+                        ) {
+                            continue;
+                        }
                         $this->mergeProperty($result, $expandedKey, $containerHandled);
 
                         continue;
@@ -715,21 +748,22 @@ class Expansion
         if (array_key_exists(Keyword::Value->value, $result)) {
             $valueObject = $this->finalizeValueObject($result);
 
-            // §5.5 step 18: a value object at the top level or directly inside
-            // @graph is free-floating — it carries no statement — and is
-            // dropped, after validation (an invalid value object is still a
-            // syntax error, matching jsonld.js). The top-level case is also
-            // caught in expand(); this covers named graphs, whose members
-            // never pass through that top-level filter. Frame expansion keeps
-            // value patterns.
+            // §5.5 step 18: a value object at the top level, directly inside
+            // @graph, or as the direct value of a @graph-container term is
+            // free-floating — it carries no statement — and is dropped, after
+            // validation (an invalid value object is still a syntax error,
+            // matching jsonld.js). The top-level case is also caught in
+            // expand(); this covers named graphs and graph containers, whose
+            // members never pass through that top-level filter. Frame
+            // expansion keeps value patterns.
             if (
                 $valueObject !== null
                 && ! $this->frameExpansion
-                && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
+                && $this->dropsFreeFloating($activeProperty)
             ) {
                 $this->safeModeDrop(
                     'object with only @value',
-                    'a value object at the top level or directly inside @graph carries no statement and is dropped',
+                    'a value object at the top level or in graph position carries no statement and is dropped',
                     ['object' => $valueObject],
                 );
 
@@ -772,19 +806,20 @@ class Expansion
                 }
             }
 
-            // §5.5 step 18: a @list object at the top level or directly inside
-            // @graph is free-floating and dropped — a list carries no
-            // statement outside a property (#t0047), and everything inside
-            // goes with it, including node objects that would survive on
-            // their own. Validation above still applies first (jsonld.js
-            // parity). Frame expansion keeps list patterns.
+            // §5.5 step 18: a @list object at the top level, directly inside
+            // @graph, or as the direct value of a @graph-container term is
+            // free-floating and dropped — a list carries no statement outside
+            // a property (#t0047), and everything inside goes with it,
+            // including node objects that would survive on their own.
+            // Validation above still applies first (jsonld.js parity). Frame
+            // expansion keeps list patterns.
             if (
                 ! $this->frameExpansion
-                && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
+                && $this->dropsFreeFloating($activeProperty)
             ) {
                 $this->safeModeDrop(
                     'object with only @list',
-                    'a @list object at the top level or directly inside @graph carries no statement and is dropped',
+                    'a @list object at the top level or in graph position carries no statement and is dropped',
                     ['object' => $result],
                 );
 
@@ -798,18 +833,19 @@ class Expansion
 
         // Free-floating node: an object whose only expanded entry is @id,
         // with no other properties, is dropped during expansion (§5.5 step
-        // 18: active property null or @graph — a graph's direct members carry
-        // no statement either). On nested objects we keep it because the spec
-        // allows references.
+        // 18: active property null or @graph, or a @graph-container term — a
+        // graph's direct members carry no statement wherever the graph comes
+        // from). On nested objects we keep it because the spec allows
+        // references.
         if (
             ! $this->frameExpansion
-            && ($activeProperty === null || $activeProperty === Keyword::Graph->value)
+            && $this->dropsFreeFloating($activeProperty)
             && count($result) === 1
             && isset($result[Keyword::Id->value])
         ) {
             $this->safeModeDrop(
                 'object with only @id',
-                'a node object containing only @id carries no statement at the top level or directly inside @graph and is dropped',
+                'a node object containing only @id carries no statement in graph position and is dropped',
                 ['object' => $result],
             );
 
@@ -817,14 +853,15 @@ class Expansion
         }
 
         // An empty object is dropped only when free-floating (§5.5 step 18:
-        // active property null or @graph). As a property value it is kept as
-        // an empty node object (e.g. a node whose only term was decoupled by a
-        // scoped @context:null reset). Under frame expansion an empty map is a
-        // wildcard and is always kept.
-        if (! $this->frameExpansion && $result === [] && ($activeProperty === null || $activeProperty === Keyword::Graph->value)) {
+        // active property null or @graph, or a @graph-container term). As a
+        // normal property value it is kept as an empty node object (e.g. a
+        // node whose only term was decoupled by a scoped @context:null
+        // reset). Under frame expansion an empty map is a wildcard and is
+        // always kept.
+        if (! $this->frameExpansion && $result === [] && $this->dropsFreeFloating($activeProperty)) {
             $this->safeModeDrop(
                 'empty object',
-                'an empty object at the top level or directly inside @graph carries no statement and is dropped',
+                'an empty object in graph position carries no statement and is dropped',
             );
 
             return null;
@@ -1739,6 +1776,30 @@ class Expansion
     }
 
     /**
+     * True when the free-floating drops of §5.5 step 18 apply for this active
+     * property: at the top level (null), directly inside `@graph`, or — going
+     * beyond the literal spec, matching jsonld.js — as the direct value of a
+     * term whose container mapping includes `@graph` (a graph's members carry
+     * no statement wherever the graph comes from). jsonld.js applies the
+     * container condition to any `@graph`-bearing container, including the
+     * `[@graph, @id]` / `[@graph, @index]` map forms, so free-floating OBJECT
+     * members of those maps drop while raw scalars (which value expansion
+     * turns into value objects without ever passing through here) survive to
+     * be wrapped — byte parity requires mirroring that asymmetry.
+     */
+    private function dropsFreeFloating(?string $activeProperty): bool
+    {
+        if ($activeProperty === null || $activeProperty === Keyword::Graph->value) {
+            return true;
+        }
+        if (str_starts_with($activeProperty, '@')) {
+            return false;
+        }
+
+        return $this->hasContainer($this->termDefinitions->getTermDefinition($activeProperty), Keyword::Graph->value);
+    }
+
+    /**
      * True if any key of $obj IRI-expands to `@value` under $context. Used to
      * decide whether a non-propagating (type-scoped) context is rolled back
      * when entering a nested object (§5.5 step 7): the rollback is skipped when
@@ -2325,9 +2386,11 @@ class Expansion
         }
 
         // @graph container (graph-only or [@graph, @set]): value is wrapped in
-        // a graph object, per element.
+        // a graph object, per element. An all-dropped / empty result comes
+        // back as [] — null from expandGraphContainer would read as "not a
+        // container value" here; the key loop turns the [] into omission.
         if ($wrapGraph) {
-            return $this->expandGraphContainer($key, $value);
+            return $this->expandGraphContainer($key, $value) ?? [];
         }
 
         return null;
@@ -2694,11 +2757,18 @@ class Expansion
      *
      * @return list<array<string, mixed>>
      */
-    private function expandGraphContainer(string $activeProperty, mixed $value): array
+    /**
+     * Returns null when nothing survives to be wrapped — the caller then
+     * omits the property entirely (jsonld.js parity: its @graph-container
+     * wrap `continue`s when every element is filtered out).
+     *
+     * @return list<mixed>|null
+     */
+    private function expandGraphContainer(string $activeProperty, mixed $value): ?array
     {
         $expanded = $this->expandElement($value, $activeProperty);
         if ($expanded === null) {
-            return [];
+            return null;
         }
         $elements = array_is_list($expanded) ? $expanded : [$expanded];
 
@@ -2706,12 +2776,34 @@ class Expansion
         // object, unconditionally — an element that is already a graph object
         // is wrapped one further level. (Multiple objects therefore become
         // multiple separate {@graph: […]} objects, not one shared graph.)
+        //
+        // Wrap-time free-floating filter (jsonld.js parity, beyond the
+        // literal spec): object-shaped values were already judged during
+        // their own expansion ({@see dropsFreeFloating} covers graph-container
+        // terms), so what this catches is value objects that VALUE expansion
+        // built after that judgement — raw scalars, @set-unwrapped scalars —
+        // which would otherwise become a graph whose only member carries no
+        // statement, leaving a dangling graph-name quad in the RDF output.
+        // Frames keep such patterns.
         $result = [];
         foreach ($elements as $element) {
+            if (
+                ! $this->frameExpansion
+                && is_array($element)
+                && ($element === [] || (! array_is_list($element) && $this->isFreeFloating($element)))
+            ) {
+                $this->safeModeDrop(
+                    $element === [] ? 'empty object' : $this->freeFloatingEventCode($element),
+                    'a free-floating object under a @graph container carries no statement and is dropped',
+                    ['object' => $element],
+                );
+
+                continue;
+            }
             $result[] = [Keyword::Graph->value => is_array($element) && array_is_list($element) ? $element : [$element]];
         }
 
-        return $result;
+        return $result === [] ? null : $result;
     }
 
     /**
