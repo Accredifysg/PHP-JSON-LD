@@ -331,9 +331,44 @@ final class ToRdf
             ? $item[Keyword::Direction->value]
             : null;
 
+        // @json literal: serialised with the JSON Canonicalization Scheme and
+        // typed as rdf:JSON.
+        if ($datatype === Keyword::Json->value) {
+            return RdfTerm::literal($this->canonicalJson($value), RdfTerm::RDF_JSON);
+        }
+
+        // jsonld.js branch-order parity: boolean and numeric values serialise
+        // on their own xsd branches BEFORE any @language/@direction handling —
+        // a @direction on such a value is silently ignored in every mode (no
+        // 'rdfDirection not set' event, no i18n datatype), matching jsonld.js
+        // _objectToRDF exactly.
+        if (is_bool($value)) {
+            return RdfTerm::literal($value ? 'true' : 'false', $datatype ?? RdfTerm::XSD_BOOLEAN);
+        }
+
+        if (is_float($value) || (is_int($value) && $datatype === RdfTerm::XSD_DOUBLE)) {
+            // A JSON number with no fractional part is xsd:integer only when its
+            // magnitude is below 1e21; at or above that it serialises as an
+            // xsd:double in canonical form, e.g. 1.0e21 → "1.0E21" (#trt01).
+            $isIntegerValued = is_finite((float) $value)
+                && floor((float) $value) === (float) $value
+                && abs((float) $value) < 1.0e21;
+            if (! $isIntegerValued || $datatype === RdfTerm::XSD_DOUBLE) {
+                return RdfTerm::literal($this->canonicalDouble((float) $value), $datatype ?? RdfTerm::XSD_DOUBLE);
+            }
+
+            return RdfTerm::literal($this->canonicalInteger((float) $value), $datatype ?? RdfTerm::XSD_INTEGER);
+        }
+
+        if (is_int($value)) {
+            return RdfTerm::literal((string) $value, $datatype ?? RdfTerm::XSD_INTEGER);
+        }
+
         // jsonld.js parity: with @direction present but no rdfDirection mode
         // selected, the base direction cannot be represented in RDF and is
-        // silently lost from the literal.
+        // silently lost from the literal. (Only string values reach here —
+        // jsonld.js emits this event from its @language / plain-string
+        // branches only.)
         if ($direction !== null && $this->rdfDirection === null) {
             $this->safeModeDrop(
                 'rdfDirection not set',
@@ -363,6 +398,21 @@ final class ToRdf
         // rdf:value / rdf:language / rdf:direction). Only applies to plain
         // strings (no explicit datatype).
         if ($direction !== null && $this->rdfDirection !== null && $datatype === null) {
+            // Expansion rejects anything but "ltr"/"rtl" unconditionally, so
+            // through the public pipeline this guard is unreachable — it
+            // protects direct ToRdf callers handing in hand-built expanded
+            // input, where a malformed direction interpolated into the i18n
+            // datatype IRI (or a compound-literal rdf:direction) would emit
+            // syntactically invalid N-Quads. The statement is dropped.
+            if ($direction !== 'ltr' && $direction !== 'rtl') {
+                $this->safeModeDrop(
+                    'invalid @direction value',
+                    "direction '{$direction}' is not \"ltr\"/\"rtl\"; the whole statement is dropped",
+                    ['value' => $value, 'direction' => $direction],
+                );
+
+                return null;
+            }
             if (! is_scalar($value)) {
                 $this->safeModeDrop(
                     'invalid @value serialization',
@@ -370,9 +420,7 @@ final class ToRdf
                     ['value' => $value],
                 );
             }
-            // §7.3 canonicalizes booleans/numbers BEFORE direction handling; a
-            // raw (string) cast would corrupt them (false → "", 0.5 → "0.5").
-            $stringValue = is_scalar($value) ? $this->canonicalLexicalForm($value) : '';
+            $stringValue = is_string($value) ? $value : '';
 
             if ($this->rdfDirection === 'i18n-datatype') {
                 return RdfTerm::literal($stringValue, self::I18N_BASE.strtolower($language ?? '').'_'.$direction);
@@ -390,34 +438,6 @@ final class ToRdf
             }
         }
 
-        // @json literal: serialised with the JSON Canonicalization Scheme and
-        // typed as rdf:JSON.
-        if ($datatype === Keyword::Json->value) {
-            return RdfTerm::literal($this->canonicalJson($value), RdfTerm::RDF_JSON);
-        }
-
-        if (is_bool($value)) {
-            return RdfTerm::literal($value ? 'true' : 'false', $datatype ?? RdfTerm::XSD_BOOLEAN);
-        }
-
-        if (is_float($value) || (is_int($value) && $datatype === RdfTerm::XSD_DOUBLE)) {
-            // A JSON number with no fractional part is xsd:integer only when its
-            // magnitude is below 1e21; at or above that it serialises as an
-            // xsd:double in canonical form, e.g. 1.0e21 → "1.0E21" (#trt01).
-            $isIntegerValued = is_finite((float) $value)
-                && floor((float) $value) === (float) $value
-                && abs((float) $value) < 1.0e21;
-            if (! $isIntegerValued || $datatype === RdfTerm::XSD_DOUBLE) {
-                return RdfTerm::literal($this->canonicalDouble((float) $value), $datatype ?? RdfTerm::XSD_DOUBLE);
-            }
-
-            return RdfTerm::literal($this->canonicalInteger((float) $value), $datatype ?? RdfTerm::XSD_INTEGER);
-        }
-
-        if (is_int($value)) {
-            return RdfTerm::literal((string) $value, $datatype ?? RdfTerm::XSD_INTEGER);
-        }
-
         // String value.
         if (! is_scalar($value)) {
             $this->safeModeDrop(
@@ -429,28 +449,6 @@ final class ToRdf
         $stringValue = is_scalar($value) ? (string) $value : '';
 
         return RdfTerm::literal($stringValue, $datatype, $language);
-    }
-
-    /**
-     * Canonical lexical form of a scalar @value (§7.3 steps 8-10), shared with
-     * the direction-tagged branch: booleans → "true"/"false", integer-valued
-     * numbers below 1e21 → canonical integer, other floats → canonical double.
-     */
-    private function canonicalLexicalForm(bool|int|float|string $value): string
-    {
-        if (is_bool($value)) {
-            return $value ? 'true' : 'false';
-        }
-        if (is_float($value)) {
-            $isIntegerValued = is_finite($value) && floor($value) === $value && abs($value) < 1.0e21;
-
-            return $isIntegerValued ? $this->canonicalInteger($value) : $this->canonicalDouble($value);
-        }
-        if (is_int($value)) {
-            return (string) $value;
-        }
-
-        return $value;
     }
 
     /**

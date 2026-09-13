@@ -148,6 +148,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the quad silently. Default-mode `expand()`, `flatten()`, and `toRdf()`
   output changes for the affected shapes; real graph-container content
   (actual node objects) is byte-identical before and after.
+- **Non-map values of `[@graph, @index]` / `[@graph, @id]` terms are never
+  graph-wrapped** (§5.5 step 13.11 applies only when the container "includes
+  neither `@id` nor `@index`"; jsonld.js guards its wrap identically —
+  probed). Previously such values were routed through the plain-`@graph`
+  wrap, where the wrap-time filter above silently dropped e.g.
+  `"input": "x"` in default mode (losing a real statement jsonld.js keeps)
+  and threw a false-positive `object with only @value` in safe mode. Now a
+  scalar or array value of a graph-map term expands exactly like a
+  container-less term — `toRdf` emits the plain default-graph triple.
+  Free-floating *object* members of such values still drop (the
+  recursion-time judgement keys on the container merely including `@graph`),
+  with the property kept as an empty list — jsonld.js byte parity across the
+  probed matrix.
+- **`@included` values expand under the containing node's active property**
+  (§5.5 step 13.4.7; jsonld.js passes its active property through). This
+  restores the `Invalid @included value` error for an `@id`-only reference —
+  a bare reference is not a node object, so it is now also rejected under a
+  *nested* `@included` in both modes — and restores the free-floating drops
+  for top-level `@included` values, where safe mode now reports the drop's
+  own event (`free-floating scalar`, `object with only @id`, …) before
+  validation, exactly like jsonld.js safe mode. An ARRAY value filters
+  dropped members in default mode (all-dropped → the key is omitted),
+  mirroring jsonld.js's null filtering.
+- **A value object's `@direction` is validated unconditionally at
+  expansion**: anything but exactly `"ltr"`/`"rtl"` (non-strings included)
+  throws in BOTH modes, matching jsonld.js's default-mode
+  `invalid base direction` error. Previously a non-string was silently
+  dropped (safe: event) and an invalid *string* flowed through to the
+  serializer, where `rdfDirection: i18n-datatype` interpolated it into a
+  syntactically invalid datatype IRI (`…i18n#_a b`) with no safe-mode event
+  — a safe-mode blind spot in the corruption class this branch closes.
+  Frame expansion still keeps non-string wildcard patterns (`{}`/`[]`); a
+  string in a frame is validated. The serializer additionally guards
+  hand-built expanded input: a malformed `@direction` reaching `ToRdf`
+  directly now drops the statement (safe: `invalid @direction value`)
+  instead of corrupting the N-Quads.
+- **Booleans and numbers carrying `@direction` serialise on their `xsd`
+  branches** (jsonld.js `_objectToRDF` branch order, probed): they never
+  take the i18n datatype and never fire `rdfDirection not set`, in any mode
+  — `{"@value": false, "@direction": "rtl"}` with
+  `rdfDirection: i18n-datatype` is `"false"^^xsd:boolean`, not
+  `"false"^^i18n#_rtl`. Amends the earlier hardening entry's
+  canonical-lexical-form fix: the raw-cast corruption is now structurally
+  impossible because such values exit before the direction branch.
+- **`@nest` values merge into the parent node per §5.5 step 14** (jsonld.js
+  recurses nests with no free-floating judgement of the entry): an
+  `@id`-only nest now merges its `@id` into the parent — previously the
+  reference was dropped as free-floating, silently losing the parent's
+  subject IRI in default mode (pre-existing) and throwing a false
+  `object with only @id` in safe mode. A keyword present on both the parent
+  and its nest is now the spec's `colliding keywords` error (presence-based,
+  jsonld.js parity — identical values still collide), except `@type` and
+  `@included`, which merge; an empty nest object is accepted silently. The
+  parent's reverse relations are attached BEFORE the deferred-nest pass
+  (jsonld.js populates them eagerly), so the collision rule covers `@reverse`
+  too — previously a nest's `@reverse` statements were silently clobbered by
+  the parent's (no event, both modes), and a nest-only `@reverse` map was
+  list-wrapped into a malformed shape whose reverse triples never reached the
+  RDF output; both now match jsonld.js byte-for-byte. One
+  cosmetic divergence remains, verified harmless in the side-by-side: the
+  expanded-JSON *key order* of nest-merged keys (we keep the node's canonical
+  sorted order; jsonld.js appends merged keys after the parent's own) —
+  `toRdf` N-Quads, which signing pipelines consume, are byte-identical.
+- **A non-final scoped-context layer's explicit `@direction` no longer
+  survives the layer boundary** (property-scoped, type-scoped, and embedded
+  node contexts): jsonld.js clones the active context per array layer and
+  the clone omits `@direction` (the same upstream deviation as scope-entry
+  inheritance, digitalbazaar/jsonld.js#586), so only the FINAL layer's
+  `@direction` reaches the scope's values, while `@language` survives
+  layers. Byte parity for signing pipelines; revisit with the scope-entry
+  rule if upstream fixes the clone. Document-level context arrays keep the
+  spec behaviour (`@direction` survives), unchanged — the documented
+  doc-level parity deviation stands.
 - **`@null` is no longer treated as a JSON-LD keyword** (it is a framing
   *output* sentinel, not a §1.7 syntax token): `{"@id": "@null"}` no longer
   passes as a keyword alias, and a `@null` term definition fails closed in

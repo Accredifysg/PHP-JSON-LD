@@ -326,9 +326,17 @@ class Expansion
      *    objects from a single input.
      *
      * @param  array<array-key, mixed>  $obj
+     * @param  bool  $insideNest  True when $obj is the value of an @nest entry
+     *                            being merged into its parent node: the §5.5
+     *                            step 18 free-floating drops do NOT apply
+     *                            (jsonld.js recurses nests through
+     *                            _expandObject, which never runs its
+     *                            end-of-expand drop), so e.g. an @id-only nest
+     *                            merges its @id into the parent instead of
+     *                            being dropped as a free-floating reference.
      * @return array<mixed>|null
      */
-    private function expandObject(array $obj, ?string $activeProperty): ?array
+    private function expandObject(array $obj, ?string $activeProperty, bool $insideNest = false): ?array
     {
         // A frame wildcard ({}) is carried verbatim so the matcher can tell it
         // from an empty list (match none); see {@see self::FRAME_WILDCARD}.
@@ -704,6 +712,18 @@ class Expansion
                 $this->mergeProperty($result, $expandedKey, $list);
             }
 
+            // Attach accumulated reverse relations (§5.5 step 13.7.4 /
+            // 13.4.6) BEFORE the deferred-nest second pass — jsonld.js
+            // populates expandedParent's @reverse eagerly during key
+            // processing, which is what makes its presence-based
+            // colliding-keywords check sound for @reverse: a nest
+            // contributing @reverse to a parent that already has reverse
+            // relations must collide, not silently clobber either side.
+            if ($reverseMap !== []) {
+                ksort($reverseMap);
+                $result[Keyword::Reverse->value] = $reverseMap;
+            }
+
             // Second pass: merge @nest values now that every base property is in
             // $result, so a property contributed by both reads [base, nested]
             // rather than [nested, base] (§5.5 step 13.4.4 / #tn003). A nest
@@ -716,7 +736,7 @@ class Expansion
                 }
 
                 try {
-                    $this->mergeNestedObject($deferredNest, $result);
+                    $this->mergeNestedObject($deferredNest, $result, $activeProperty);
                 } finally {
                     $this->termDefinitions = $beforeNest;
                 }
@@ -726,12 +746,6 @@ class Expansion
             if ($enteredFreshPropertyScope !== null) {
                 $this->freshPropertyScope = $enteredFreshPropertyScope;
             }
-        }
-
-        // Attach accumulated reverse relations (§5.5 step 13.7.4 / 13.4.6).
-        if ($reverseMap !== []) {
-            ksort($reverseMap);
-            $result[Keyword::Reverse->value] = $reverseMap;
         }
 
         // @set unwrap (§5.5 step 13.4.5): the @set wrapper is dropped and its
@@ -759,6 +773,7 @@ class Expansion
             if (
                 $valueObject !== null
                 && ! $this->frameExpansion
+                && ! $insideNest
                 && $this->dropsFreeFloating($activeProperty)
             ) {
                 $this->safeModeDrop(
@@ -815,6 +830,7 @@ class Expansion
             // expansion keeps list patterns.
             if (
                 ! $this->frameExpansion
+                && ! $insideNest
                 && $this->dropsFreeFloating($activeProperty)
             ) {
                 $this->safeModeDrop(
@@ -839,6 +855,7 @@ class Expansion
         // references.
         if (
             ! $this->frameExpansion
+            && ! $insideNest
             && $this->dropsFreeFloating($activeProperty)
             && count($result) === 1
             && isset($result[Keyword::Id->value])
@@ -858,7 +875,7 @@ class Expansion
         // node whose only term was decoupled by a scoped @context:null
         // reset). Under frame expansion an empty map is a wildcard and is
         // always kept.
-        if (! $this->frameExpansion && $result === [] && $this->dropsFreeFloating($activeProperty)) {
+        if (! $this->frameExpansion && ! $insideNest && $result === [] && $this->dropsFreeFloating($activeProperty)) {
             $this->safeModeDrop(
                 'empty object',
                 'an empty object in graph position carries no statement and is dropped',
@@ -998,17 +1015,33 @@ class Expansion
                 return $value;
 
             case Keyword::Direction->value:
-                if ($this->frameExpansion) {
-                    return $value; // a frame may use {} / a list as a @direction pattern
-                }
+                // §5.5 value expansion: anything but exactly "ltr"/"rtl" is an
+                // unconditional 'invalid base direction' error in BOTH modes —
+                // jsonld.js throws it in default mode too, so a malformed
+                // direction can never reach the RDF serializer. Frame
+                // expansion exempts only NON-string patterns ({} / [] /
+                // wildcards); a string in a frame is still validated.
                 if (! is_string($value)) {
-                    $this->safeModeDrop(
-                        'invalid @direction value',
-                        '@direction must be a string ("ltr"/"rtl"); a non-string value is dropped',
-                        ['direction' => $value],
-                    );
+                    if ($this->frameExpansion) {
+                        // A frame may use {} / a list as a @direction pattern,
+                        // but jsonld.js still validates any STRING members of
+                        // an array pattern — mirror that.
+                        if (is_array($value) && array_is_list($value)) {
+                            foreach ($value as $member) {
+                                if (is_string($member) && $member !== 'ltr' && $member !== 'rtl') {
+                                    throw new JsonLdException("Invalid @direction value: {$member}; @direction must be \"ltr\" or \"rtl\"");
+                                }
+                            }
+                        }
 
-                    return null;
+                        return $value;
+                    }
+                    $repr = is_scalar($value) ? (string) $value : gettype($value);
+
+                    throw new JsonLdException("Invalid @direction value: {$repr}; @direction must be \"ltr\" or \"rtl\"");
+                }
+                if ($value !== 'ltr' && $value !== 'rtl') {
+                    throw new JsonLdException("Invalid @direction value: {$value}; @direction must be \"ltr\" or \"rtl\"");
                 }
 
                 return $value;
@@ -1038,20 +1071,28 @@ class Expansion
                 return $expandedGraph === null ? [] : [$expandedGraph];
 
             case Keyword::Included->value:
-                // §5.5 step 13.4.14: @included contents are expanded as node
-                // objects. The result must be a (non-empty) array of node
-                // objects — a scalar, a value object, or a list object is an
-                // "invalid @included value". Expanded under '@included' (not
-                // null) so the free-floating drops don't fire first: a stray
-                // scalar must surface as this unconditional spec error, not as
-                // a safe-mode DataLossException claiming recoverable loss.
-                $expandedIncluded = $this->expandElement($value, Keyword::Included->value);
+                // §5.5 step 13.4.7: @included contents are expanded with the
+                // CONTAINING node's active property passed through — null at
+                // the document top level, the referencing property for a
+                // nested node (jsonld.js does exactly this) — so the standard
+                // free-floating drops apply to top-level @included values
+                // BEFORE validation. In safe mode a dropped value therefore
+                // throws the drop's own event ('free-floating scalar',
+                // 'object with only @id', …), matching jsonld.js safe mode;
+                // in default mode the null result fails validation below.
+                $expandedIncluded = $this->expandElement($value, $activeProperty);
                 if ($expandedIncluded === null) {
                     throw new JsonLdException('Invalid @included value');
                 }
                 $includedList = array_is_list($expandedIncluded) ? $expandedIncluded : [$expandedIncluded];
                 if ($includedList === []) {
-                    throw new JsonLdException('Invalid @included value');
+                    // An empty LIST result (an array value whose members were
+                    // all dropped, or a value expanding through @set to
+                    // nothing) keeps the key as an empty list — jsonld.js's
+                    // null filtering plus vacuous validation. A SINGLE dropped
+                    // value comes back null and errors above instead (safe
+                    // mode already threw at the drop).
+                    return [];
                 }
                 foreach ($includedList as $includedItem) {
                     if (
@@ -1059,6 +1100,10 @@ class Expansion
                         || array_is_list($includedItem)
                         || array_key_exists(Keyword::Value->value, $includedItem)
                         || array_key_exists(Keyword::List->value, $includedItem)
+                        // A bare node REFERENCE is not a node object here
+                        // (jsonld.js _isSubject): @id-only entries are
+                        // invalid wherever the @included appears.
+                        || (count($includedItem) === 1 && array_key_exists(Keyword::Id->value, $includedItem))
                     ) {
                         throw new JsonLdException('Invalid @included value');
                     }
@@ -1271,19 +1316,22 @@ class Expansion
         // Plain value. String values pick up @language / @direction: the
         // term definition's mapping wins (including an explicit null, which
         // suppresses the default), otherwise the active context's defaults
-        // apply. Non-string values never carry language/direction.
-        $result = [Keyword::Value->value => $value];
-        if (is_string($value)) {
-            $language = $this->effectiveLanguageOrDirection($termDef, Keyword::Language->value, $this->termDefinitions->getDefaultLanguage());
-            $direction = $this->effectiveLanguageOrDirection($termDef, Keyword::Direction->value, $this->termDefinitions->getDefaultDirection());
-            if (is_string($language) && $language !== '') {
-                $result[Keyword::Language->value] = $language;
-            }
-            if (is_string($direction) && $direction !== '') {
-                $result[Keyword::Direction->value] = $direction;
-            }
-            ksort($result);
+        // apply. Non-string values never carry language/direction. Key
+        // insertion order (@language, @direction, @value) mirrors jsonld.js's
+        // value-expansion injection order for byte-identical expanded JSON.
+        if (! is_string($value)) {
+            return [Keyword::Value->value => $value];
         }
+        $result = [];
+        $language = $this->effectiveLanguageOrDirection($termDef, Keyword::Language->value, $this->termDefinitions->getDefaultLanguage());
+        $direction = $this->effectiveLanguageOrDirection($termDef, Keyword::Direction->value, $this->termDefinitions->getDefaultDirection());
+        if (is_string($language) && $language !== '') {
+            $result[Keyword::Language->value] = $language;
+        }
+        if (is_string($direction) && $direction !== '') {
+            $result[Keyword::Direction->value] = $direction;
+        }
+        $result[Keyword::Value->value] = $value;
 
         return $result;
     }
@@ -1906,6 +1954,17 @@ class Expansion
         $active->setDefaultLanguage($base->getDefaultLanguage());
 
         foreach ($layers as $layer) {
+            // jsonld.js clones the active context before EVERY array layer,
+            // and its clone omits @direction (the same upstream deviation as
+            // the scope-entry copy above, jsonld.js#586) — so an explicit
+            // @direction set by a non-final layer does not survive into the
+            // next layer; only the FINAL layer's @direction (or a non-array
+            // scoped context's) reaches the scope's values. The default
+            // @language, which the clone copies, survives layers. Byte parity
+            // with the reference implementation wins for signing pipelines;
+            // revisit together with the scope-entry rule when upstream fixes
+            // the clone.
+            $active->setDefaultDirection(null);
             if ($layer === null) {
                 if (! $overrideProtected && $active->hasAnyProtected()) {
                     throw new JsonLdException('Invalid context nullification: a null context cannot clear protected terms');
@@ -2131,6 +2190,9 @@ class Expansion
             // layer. A remote / @import-bearing layer is resolved first.
             $layers = is_array($typeContext) && array_is_list($typeContext) ? $typeContext : [$typeContext];
             foreach ($layers as $layer) {
+                // Per-layer @direction reset — same jsonld.js clone-parity
+                // rule as the property-scoped loop in applyScopedContext.
+                $scoped->setDefaultDirection(null);
                 if ($layer === null) {
                     // A null layer resets the context. Since override-protected
                     // is false, nulling a context that still has protected terms
@@ -2385,7 +2447,18 @@ class Expansion
         // a graph object, per element. An all-dropped / empty result comes
         // back as [] — null from expandGraphContainer would read as "not a
         // container value" here; the key loop turns the [] into omission.
-        if ($wrapGraph) {
+        // §5.5 step 13.11 applies only when the container "includes neither
+        // @id nor @index" (jsonld.js guards its wrap identically): a NON-map
+        // value of a [@graph, @index] / [@graph, @id] term is never
+        // graph-wrapped — it falls through and expands exactly like a
+        // container-less term (the map branches above handle map values).
+        // The free-floating drops still apply to its object members via
+        // {@see dropsFreeFloating} (the container includes @graph).
+        if (
+            $wrapGraph
+            && ! $this->hasContainer($termDef, Keyword::Index->value)
+            && ! $this->hasContainer($termDef, Keyword::Id->value)
+        ) {
             return $this->expandGraphContainer($key, $value) ?? [];
         }
 
@@ -2804,11 +2877,19 @@ class Expansion
 
     /**
      * §5.5 step 13.4.4 — @nest. The nested object's keys are treated as if
-     * they were direct properties of the parent.
+     * they were direct properties of the parent: jsonld.js recurses each nest
+     * entry through _expandObject against the SAME expanded parent, so nested
+     * keys merge in with no free-floating judgement of the entry itself, a
+     * keyword already present on the parent is a 'colliding keywords' error
+     * (except @type and @included, which merge), and duplicate properties
+     * append after the parent's own values.
      *
      * @param  array<string, mixed>  $result  modified in place
+     * @param  string|null  $activeProperty  the PARENT node's active property,
+     *                                       passed through to the recursion
+     *                                       (jsonld.js does the same).
      */
-    private function mergeNestedObject(mixed $value, array &$result): void
+    private function mergeNestedObject(mixed $value, array &$result, ?string $activeProperty): void
     {
         // §5.5 step 13.4.4: the value of an @nest key MUST be a node object or
         // an array of node objects — a scalar is an "invalid @nest value".
@@ -2817,7 +2898,7 @@ class Expansion
         foreach ($items as $nested) {
             // Flatten a nested array one level (an array of arrays of nests).
             if (is_array($nested) && array_is_list($nested)) {
-                $this->mergeNestedObject($nested, $result);
+                $this->mergeNestedObject($nested, $result, $activeProperty);
 
                 continue;
             }
@@ -2834,8 +2915,11 @@ class Expansion
             }
 
             // Recursively expand the nested object as if it were the parent,
-            // then merge its keys into $result.
-            $expandedNested = $this->expandObject($nested, null);
+            // then merge its keys into $result. $insideNest suppresses the
+            // step-18 free-floating drops: an @id-only nest merges its @id
+            // into the parent (spec step 14 repeats only the key-processing
+            // steps; jsonld.js parity, probed).
+            $expandedNested = $this->expandObject($nested, $activeProperty, insideNest: true);
             if (! is_array($expandedNested) || array_is_list($expandedNested)) {
                 if (is_array($expandedNested) && $expandedNested !== []) {
                     // e.g. a @set inside @nest unwraps to a list, which cannot
@@ -2854,10 +2938,27 @@ class Expansion
                 if (! is_string($nestedKey)) {
                     continue;
                 }
+                // §5.5 / jsonld.js: a keyword the parent already carries is a
+                // colliding-keywords error — @type and @included alone merge
+                // (they may be contributed by more than one property). The
+                // check is presence-based: a nest @id equal to the parent's
+                // @id still collides (jsonld.js parity, probed).
+                if (
+                    str_starts_with($nestedKey, '@')
+                    && $nestedKey !== Keyword::Type->value
+                    && $nestedKey !== Keyword::Included->value
+                    && array_key_exists($nestedKey, $result)
+                ) {
+                    throw new JsonLdException("Colliding keywords: {$nestedKey} appears on both the node and its @nest value");
+                }
                 // §5.5: scalar keywords (@id / @index) are merged verbatim — a
                 // nested `@id` (e.g. via an `id` alias inside an @nest block) must
-                // stay a scalar, not be wrapped into an array (#tin06).
-                if ($nestedKey === Keyword::Id->value || $nestedKey === Keyword::Index->value) {
+                // stay a scalar, not be wrapped into an array (#tin06). @reverse
+                // is a MAP and must also merge verbatim — list-wrapping it would
+                // hand NodeMap an integer "predicate". (The parent's own reverse
+                // relations were attached before this pass, so a duplicate
+                // already collided above.)
+                if ($nestedKey === Keyword::Id->value || $nestedKey === Keyword::Index->value || $nestedKey === Keyword::Reverse->value) {
                     $result[$nestedKey] = $nestedValue;
 
                     continue;

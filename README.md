@@ -125,7 +125,9 @@ and serialization), `relative subject reference`,
 Drop sites specific to this implementation carry their own codes:
 `context load failed` (a scoped context needs a `DocumentLoader` none is
 wired), `invalid scoped term definition`,
-`invalid @direction value`, `invalid @id value` (non-string `@id` relabelled
+`invalid @direction value` (a malformed `@direction` in hand-built expanded
+input handed directly to the serializer — the public pipeline rejects it at
+expansion as an unconditional error), `invalid @id value` (non-string `@id` relabelled
 as a blank node), `invalid @value serialization` (non-scalar `@value` coerced
 to `""`), `invalid @json serialization` (NaN/Infinity in a `@json` literal),
 `invalid map key` (PHP decodes numeric-string JSON keys to integers, which

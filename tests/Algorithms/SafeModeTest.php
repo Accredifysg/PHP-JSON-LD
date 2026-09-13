@@ -380,20 +380,38 @@ describe('expansion: free-floating and value-object drops', function () {
         expect($safe)->toContain('"null"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON>');
     });
 
-    it('throws for a non-string @direction, which is dropped from the value object', function () {
-        $doc = [
+    it('rejects any value-object @direction but "ltr"/"rtl" as an unconditional error in BOTH modes (jsonld.js parity)', function () {
+        // §5.5 value expansion / jsonld.js 'invalid base direction': a hard
+        // error in DEFAULT mode too — never a silent drop, never a safe-mode
+        // event — so a malformed direction can never reach the serializer.
+        foreach ([5, null, 'a b', 'LTR', ''] as $direction) {
+            $doc = [
+                '@context' => ['label' => 'http://example.com/label'],
+                '@id' => 'http://example.com/x',
+                'label' => ['@value' => 'x', '@direction' => $direction],
+            ];
+
+            foreach ([null, safeOptions()] as $options) {
+                try {
+                    safeModeProcessor()->expand($doc, $options);
+                    throw new AssertionFailedError('Expected a JsonLdException for the invalid @direction');
+                } catch (JsonLdException $e) {
+                    expect($e)->not->toBeInstanceOf(DataLossException::class);
+                    expect($e->getMessage())->toContain('Invalid @direction value');
+                }
+            }
+        }
+
+        // Valid controls keep expanding in both modes.
+        $valid = [
             '@context' => ['label' => 'http://example.com/label'],
             '@id' => 'http://example.com/x',
-            'label' => ['@value' => 'x', '@direction' => 5],
+            'label' => ['@value' => 'x', '@direction' => 'rtl'],
         ];
-
-        $expanded = safeModeProcessor()->expand($doc)->toArray();
-        expect(safeModeDig($expanded, 0, 'http://example.com/label', 0))->not->toHaveKey('@direction');
-
-        safeModeExpectDrop(
-            fn () => safeModeProcessor()->expand($doc, safeOptions()),
-            'invalid @direction value',
-        );
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($valid, $options)->toArray();
+            expect(safeModeDig($expanded, 0, 'http://example.com/label', 0, '@direction'))->toBe('rtl');
+        }
     });
 });
 
@@ -835,20 +853,44 @@ describe('caching must not swallow safe-mode errors (jsonld.js replay lesson)', 
 });
 
 describe('toRdf: direction-tagged literal integrity', function () {
-    it('canonicalizes boolean and numeric @value under @direction instead of corrupting them with a raw string cast', function () {
+    it('serialises boolean and numeric @value on their xsd branches, ignoring @direction entirely (jsonld.js branch order)', function () {
+        // jsonld.js parity (probed, 9.0.0): number/boolean branches run before
+        // all @direction handling, so such values NEVER take the i18n datatype
+        // and never fire a direction event — in any mode, with or without
+        // rdfDirection. (This also makes the old raw-string-cast corruption
+        // — false → "" — structurally impossible.)
         $expanded = fn (mixed $value) => [[
             '@id' => 'http://example.com/s',
             'http://example.com/p' => [['@value' => $value, '@direction' => 'rtl']],
         ]];
-        $toRdf = new ToRdf(rdfDirection: 'i18n-datatype', safe: true);
 
-        // false must not become "" (and true not "1"): canonical xsd forms.
-        expect((new RdfDataset($toRdf->toRdf($expanded(false))))->toNQuads())
-            ->toContain('"false"^^<https://www.w3.org/ns/i18n#_rtl>');
-        expect((new RdfDataset($toRdf->toRdf($expanded(true))))->toNQuads())
-            ->toContain('"true"^^<https://www.w3.org/ns/i18n#_rtl>');
-        expect((new RdfDataset($toRdf->toRdf($expanded(0.5))))->toNQuads())
-            ->toContain('"5.0E-1"^^<https://www.w3.org/ns/i18n#_rtl>');
+        foreach ([null, 'i18n-datatype'] as $mode) {
+            $toRdf = new ToRdf(rdfDirection: $mode, safe: true);
+
+            expect((new RdfDataset($toRdf->toRdf($expanded(false))))->toNQuads())
+                ->toContain('"false"^^<http://www.w3.org/2001/XMLSchema#boolean>');
+            expect((new RdfDataset($toRdf->toRdf($expanded(true))))->toNQuads())
+                ->toContain('"true"^^<http://www.w3.org/2001/XMLSchema#boolean>');
+            expect((new RdfDataset($toRdf->toRdf($expanded(0.5))))->toNQuads())
+                ->toContain('"5.0E-1"^^<http://www.w3.org/2001/XMLSchema#double>');
+        }
+    });
+
+    it('drops the statement for a malformed @direction handed directly to the serializer instead of corrupting the i18n IRI', function () {
+        // Unreachable through the public pipeline (expansion now rejects any
+        // @direction but ltr/rtl unconditionally); guards hand-built input.
+        $expanded = [[
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => [['@value' => 'v', '@direction' => 'a b']],
+        ]];
+
+        $default = new RdfDataset((new ToRdf(safe: false, rdfDirection: 'i18n-datatype'))->toRdf($expanded));
+        expect($default->toNQuads())->not->toContain('a b');
+
+        safeModeExpectDrop(
+            fn () => (new ToRdf(rdfDirection: 'i18n-datatype', safe: true))->toRdf($expanded),
+            'invalid @direction value',
+        );
     });
 
     it('throws for a malformed BCP47 tag under @direction instead of emitting an unparseable i18n IRI', function () {
@@ -909,18 +951,30 @@ describe('toRdf: node-map identifier edge cases', function () {
 
 describe('flatten() and fromRdf() carry safe mode through every stage', function () {
     it('flatten() fails closed on a node-map drop, exactly like toRdf() on the same document', function () {
+        // The fixture must survive EXPANSION untouched in safe mode so the
+        // throw can only come from the node-map stage — otherwise this test
+        // goes dead the moment expansion learns the drop (which happened to
+        // the original value-object-under-@graph fixture when the step-18
+        // extension landed). A raw scalar member of a [@graph, @index] map is
+        // exactly that shape: expansion keeps it as a graph-wrapped value
+        // object (pinned by the graph-map asymmetry test), and only NodeMap
+        // discards it.
         $doc = [
-            '@context' => [],
-            '@id' => 'http://example.com/g',
-            '@graph' => [['@value' => 'orphan']],
-            'http://example.com/p' => 'v',
+            '@context' => ['input' => ['@id' => 'http://example.com/input', '@container' => ['@graph', '@index']]],
+            '@id' => 'http://example.com/s',
+            'input' => ['i1' => 'orphan'],
         ];
+
+        // Sanity: safe EXPANSION accepts the document — the drop below cannot
+        // originate there.
+        expect(safeModeProcessor()->expand($doc, safeOptions())->toArray())->not->toBe([]);
 
         // Default: the unattachable value object silently vanishes.
         $flattened = safeModeProcessor()->flatten($doc)->toArray();
         expect(json_encode($flattened))->not->toContain('orphan');
 
-        // Safe: the SAME drop that toRdf reports must throw on flatten too.
+        // Safe: the SAME drop that toRdf reports must throw on flatten too —
+        // this is the Flattening→NodeMap threading the hardening pass fixed.
         safeModeExpectDrop(
             fn () => safeModeProcessor()->flatten($doc, null, safeOptions()),
             'object with only @value',
@@ -1301,6 +1355,65 @@ describe('expansion: free-floating values under @graph containers (§5.5 step 18
         );
     });
 
+    it('never graph-wraps NON-map values of [@graph, @index] / [@graph, @id] terms (§5.5 step 13.11: "neither @id nor @index")', function () use ($ctxIndex, $ctxId) {
+        // jsonld.js parity (probed 9.0.0): the map branches require a map, and
+        // the plain wrap is guarded on the container including neither @id nor
+        // @index — so a scalar or array value expands exactly like a
+        // container-less term, and its quads land in the DEFAULT graph.
+        foreach ([$ctxIndex, $ctxId] as $ctx) {
+            foreach (['x', ['x']] as $scalarish) {
+                $doc = ['@context' => $ctx, '@id' => 'http://example.com/s', 'input' => $scalarish];
+                foreach ([null, safeOptions()] as $options) {
+                    $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+                    expect(safeModeDig($expanded, 0, 'http://example.com/input'))->toBe([['@value' => 'x']]);
+                }
+                expect(safeModeProcessor()->toRdf($doc)->toNQuads())
+                    ->toBe("<http://example.com/s> <http://example.com/input> \"x\" .\n");
+            }
+
+            // A node in a list value is kept unwrapped; its statement is a
+            // plain default-graph triple, not a named-graph quad.
+            $nodeDoc = [
+                '@context' => $ctx,
+                '@id' => 'http://example.com/s',
+                'input' => [['@id' => 'http://example.com/n', 'http://example.com/p' => 'v']],
+            ];
+            foreach ([null, safeOptions()] as $options) {
+                $expanded = safeModeProcessor()->expand($nodeDoc, $options)->toArray();
+                expect(safeModeDig($expanded, 0, 'http://example.com/input', 0))->not->toHaveKey('@graph')
+                    ->and(safeModeDig($expanded, 0, 'http://example.com/input', 0, '@id'))->toBe('http://example.com/n');
+            }
+            expect(safeModeProcessor()->toRdf($nodeDoc)->toNQuads())
+                ->toBe("<http://example.com/n> <http://example.com/p> \"v\" .\n<http://example.com/s> <http://example.com/input> <http://example.com/n> .\n");
+        }
+    });
+
+    it('still drops free-floating OBJECT members of non-map graph-map values, keeping the property as an empty list', function () use ($ctxIndex) {
+        // The recursion-time drop keys on the container INCLUDING @graph (not
+        // on the wrap), so an explicit value object in a list value drops
+        // while the raw scalar above survives — jsonld.js byte parity.
+        $doc = ['@context' => $ctxIndex, '@id' => 'http://example.com/s', 'input' => [['@value' => 'x']]];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/input'))->toBe([])
+            ->and(safeModeProcessor()->toRdf($doc)->toNQuads())->toBe('');
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @value',
+        );
+    });
+
+    it('keeps an empty-list value of a graph map as an empty property list', function () use ($ctxIndex, $ctxId) {
+        foreach ([$ctxIndex, $ctxId] as $ctx) {
+            $doc = ['@context' => $ctx, '@id' => 'http://example.com/s', 'input' => []];
+            foreach ([null, safeOptions()] as $options) {
+                $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+                expect(safeModeDig($expanded, 0, 'http://example.com/input'))->toBe([]);
+            }
+        }
+    });
+
     it('omits the property for an empty plain-container value but keeps an empty graph map', function () use ($ctxPlain, $ctxIndex) {
         // Plain container + empty value: key omitted, parent drops — jsonld.js
         // parity for its raw-[] flavour. (PHP cannot distinguish a raw {} from
@@ -1571,6 +1684,53 @@ describe('scoped contexts: default @language/@direction (inherit, set, reset)', 
         expect(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
     });
 
+    it('drops a non-final scoped layer\'s explicit @direction at the layer boundary — only the last layer\'s survives (jsonld.js clone parity)', function () {
+        // jsonld.js clones the active context per array layer and its clone
+        // omits @direction (jsonld.js#586), so @direction survives a scoped
+        // context array only when the FINAL layer sets it. @language, which
+        // the clone copies, survives earlier layers. Pinned for byte parity;
+        // revisit with the scope-entry inheritance rule if upstream fixes it.
+        $dig = fn (array $doc) => safeModeDig(
+            safeModeProcessor()->expand($doc)->toArray(),
+            0, 'http://example.com/thing', 0, 'http://example.com/label', 0,
+        );
+        $scoped = fn (array $layers) => [
+            '@context' => ['thing' => ['@id' => 'http://example.com/thing', '@context' => $layers]],
+            'thing' => ['http://example.com/label' => 'hello'],
+        ];
+
+        // Direction in a NON-final layer: dropped (even by an empty layer).
+        expect($dig($scoped([['@direction' => 'rtl'], ['other' => 'http://example.com/other']])))->toBe(['@value' => 'hello']);
+        $bothThenEmpty = $dig($scoped([['@language' => 'en', '@direction' => 'rtl'], []]));
+        expect($bothThenEmpty)->not->toHaveKey('@direction')
+            ->and(safeModeDig($bothThenEmpty, '@language'))->toBe('en');
+
+        // Direction in the FINAL layer: survives.
+        $dirLast = $dig($scoped([['other' => 'http://example.com/other'], ['@direction' => 'rtl']]));
+        expect(safeModeDig($dirLast, '@direction'))->toBe('rtl')
+            ->and(safeModeDig($dirLast, '@value'))->toBe('hello');
+
+        // Type-scoped multi-layer behaves identically.
+        $typeDoc = [
+            '@context' => ['T' => ['@id' => 'http://example.com/T', '@context' => [['@direction' => 'rtl'], ['other' => 'http://example.com/other']]]],
+            '@type' => 'T',
+            'http://example.com/label' => 'hello',
+        ];
+        $typeExpanded = safeModeProcessor()->expand($typeDoc)->toArray();
+        expect(safeModeDig($typeExpanded, 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
+
+        // Embedded inline node contexts too.
+        $embedded = [
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => [
+                '@context' => [['@direction' => 'rtl'], ['x' => 'http://example.com/x']],
+                'http://example.com/label' => 'hello',
+            ],
+        ];
+        $embeddedExpanded = safeModeProcessor()->expand($embedded)->toArray();
+        expect(safeModeDig($embeddedExpanded, 0, 'http://example.com/p', 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
+    });
+
     it('does NOT inherit the default @direction into a scope — jsonld.js parity over spec purity', function () {
         // jsonld.js's _cloneActiveContext copies @base/@vocab/@language but
         // omits @direction (an upstream deviation from §4.1 context copying,
@@ -1671,9 +1831,183 @@ describe('scoped contexts: default @language/@direction (inherit, set, reset)', 
     });
 });
 
-describe('@included and @null: spec errors are not mislabelled as data loss', function () {
-    it('reports a stray @included value as the Invalid @included value spec error in BOTH modes', function () {
-        $doc = ['@context' => [], '@id' => 'http://example.com/s', '@included' => 'stray'];
+describe('@nest merges into the parent node (§5.5 step 14, jsonld.js parity)', function () {
+    it('merges an @id-only nest into the parent instead of dropping it as free-floating', function () {
+        // jsonld.js recurses nests through _expandObject with no
+        // end-of-expand drop, so the @id becomes the parent's subject.
+        $doc = ['@context' => ['p' => 'http://example.com/p'], '@nest' => ['@id' => 'http://example.com/x'], 'p' => 'v'];
+
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+            expect(safeModeDig($expanded, 0, '@id'))->toBe('http://example.com/x');
+        }
+        expect(safeModeProcessor()->toRdf($doc)->toNQuads())
+            ->toBe("<http://example.com/x> <http://example.com/p> \"v\" .\n");
+    });
+
+    it('merges @id plus properties out of a nest, appending nested keys after the parent\'s own', function () {
+        $doc = [
+            '@context' => ['p' => 'http://example.com/p', 'q' => 'http://example.com/q'],
+            '@nest' => ['@id' => 'http://example.com/x', 'q' => 'w'],
+            'p' => 'v',
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@id'))->toBe('http://example.com/x')
+            ->and(safeModeDig($expanded, 0, 'http://example.com/q', 0, '@value'))->toBe('w');
+        expect(safeModeProcessor()->toRdf($doc)->toNQuads())
+            ->toBe("<http://example.com/x> <http://example.com/p> \"v\" .\n<http://example.com/x> <http://example.com/q> \"w\" .\n");
+    });
+
+    it('throws colliding keywords when the parent and its nest both carry @id — even with the same value', function () {
+        // jsonld.js parity (probed): the check is presence-based; identical
+        // values still collide. Both modes, plain syntax error.
+        foreach (['http://example.com/x', 'http://example.com/s'] as $nestId) {
+            $doc = [
+                '@context' => ['p' => 'http://example.com/p'],
+                '@id' => 'http://example.com/s',
+                '@nest' => ['@id' => $nestId],
+                'p' => 'v',
+            ];
+
+            foreach ([null, safeOptions()] as $options) {
+                try {
+                    safeModeProcessor()->expand($doc, $options);
+                    throw new AssertionFailedError('Expected a colliding-keywords JsonLdException');
+                } catch (JsonLdException $e) {
+                    expect($e)->not->toBeInstanceOf(DataLossException::class);
+                    expect($e->getMessage())->toContain('Colliding keywords');
+                }
+            }
+        }
+    });
+
+    it('merges nest @type into the parent\'s @type instead of colliding', function () {
+        $doc = [
+            '@context' => ['p' => 'http://example.com/p'],
+            '@type' => 'http://example.com/T1',
+            '@nest' => ['@type' => 'http://example.com/T2'],
+            'p' => 'v',
+        ];
+
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+            expect(safeModeDig($expanded, 0, '@type'))->toBe(['http://example.com/T1', 'http://example.com/T2']);
+        }
+    });
+
+    it('accepts an empty nest object silently in both modes', function () {
+        $doc = ['@context' => ['p' => 'http://example.com/p'], '@nest' => [], 'p' => 'v'];
+
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+            expect(safeModeDig($expanded, 0, 'http://example.com/p', 0, '@value'))->toBe('v')
+                ->and($expanded[0] ?? [])->not->toHaveKey('@nest');
+        }
+    });
+
+    it('merges a nest\'s @reverse map verbatim when the parent has none, and collides when it does', function () {
+        // jsonld.js populates the parent's @reverse eagerly before nests run,
+        // so its presence-based collision check covers @reverse; the reverse
+        // relations are attached before the deferred-nest pass here for the
+        // same reason. Verified byte-for-byte against jsonld.js 9.0.0.
+        $nestOnly = [
+            '@context' => [],
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => 'v',
+            '@nest' => ['@reverse' => ['http://example.com/q' => ['@id' => 'http://example.com/r']]],
+        ];
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($nestOnly, $options)->toArray();
+            expect(safeModeDig($expanded, 0, '@reverse', 'http://example.com/q', 0, '@id'))->toBe('http://example.com/r');
+        }
+        expect(safeModeProcessor()->toRdf($nestOnly)->toNQuads())
+            ->toBe("<http://example.com/r> <http://example.com/q> <http://example.com/s> .\n<http://example.com/s> <http://example.com/p> \"v\" .\n");
+
+        // Parent reverse relations (via the @reverse keyword OR a reverse
+        // term) + nest @reverse: colliding keywords, both modes — previously
+        // the nest's reverse statements were silently clobbered.
+        $collisions = [
+            [
+                '@context' => [],
+                '@id' => 'http://example.com/s',
+                '@reverse' => ['http://example.com/p' => ['@id' => 'http://example.com/o']],
+                '@nest' => ['@reverse' => ['http://example.com/q' => ['@id' => 'http://example.com/r']]],
+            ],
+            [
+                '@context' => ['children' => ['@reverse' => 'http://example.com/parent']],
+                '@id' => 'http://example.com/s',
+                'children' => ['@id' => 'http://example.com/c'],
+                '@nest' => ['@reverse' => ['http://example.com/q' => ['@id' => 'http://example.com/r']]],
+            ],
+        ];
+        foreach ($collisions as $doc) {
+            foreach ([null, safeOptions()] as $options) {
+                try {
+                    safeModeProcessor()->expand($doc, $options);
+                    throw new AssertionFailedError('Expected a colliding-keywords JsonLdException');
+                } catch (JsonLdException $e) {
+                    expect($e)->not->toBeInstanceOf(DataLossException::class);
+                    expect($e->getMessage())->toContain('Colliding keywords');
+                }
+            }
+        }
+    });
+
+    it('processes nest arrays in order, a later entry\'s @id retro-assigning the subject', function () {
+        $doc = [
+            '@context' => ['p' => 'http://example.com/p', 'q' => 'http://example.com/q'],
+            '@nest' => [['q' => 'w'], ['@id' => 'http://example.com/x']],
+            'p' => 'v',
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@id'))->toBe('http://example.com/x');
+        expect(safeModeProcessor()->toRdf($doc)->toNQuads())
+            ->toBe("<http://example.com/x> <http://example.com/p> \"v\" .\n<http://example.com/x> <http://example.com/q> \"w\" .\n");
+    });
+});
+
+describe('@included expands under the containing node\'s active property (§5.5 step 13.4.7, jsonld.js parity)', function () {
+    it('reports a stray top-level @included value as the spec error in default mode and the free-floating drop in safe mode', function () {
+        // jsonld.js (probed, 9.0.0): the value expands with the CONTAINING
+        // node's active property (null at the top level), so the standard
+        // free-floating drops run first. Safe mode throws the drop's own
+        // event; default mode fails the node-object validation afterwards.
+        foreach ([
+            ['stray', 'free-floating scalar'],
+            [['@value' => 'x'], 'object with only @value'],
+            [['@id' => 'http://example.com/inc'], 'object with only @id'],
+        ] as [$included, $eventCode]) {
+            $doc = ['@context' => [], '@id' => 'http://example.com/s', '@included' => $included];
+
+            try {
+                safeModeProcessor()->expand($doc);
+                throw new AssertionFailedError('Expected a JsonLdException for the invalid @included value');
+            } catch (JsonLdException $e) {
+                expect($e)->not->toBeInstanceOf(DataLossException::class);
+                expect($e->getMessage())->toContain('Invalid @included value');
+            }
+
+            safeModeExpectDrop(
+                fn () => safeModeProcessor()->expand($doc, safeOptions()),
+                $eventCode,
+            );
+        }
+    });
+
+    it('rejects an @id-only node REFERENCE under a nested @included in BOTH modes — a bare reference is not a node object', function () {
+        // Nested under a real property no free-floating drop applies, so the
+        // reference survives expansion and fails validation instead —
+        // jsonld.js parity: same 'invalid @included value' error either mode.
+        $doc = [
+            '@context' => [],
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => [
+                '@id' => 'http://example.com/mid',
+                '@included' => ['@id' => 'http://example.com/inc'],
+            ],
+        ];
 
         foreach ([null, safeOptions()] as $options) {
             try {
@@ -1684,6 +2018,41 @@ describe('@included and @null: spec errors are not mislabelled as data loss', fu
                 expect($e->getMessage())->toContain('Invalid @included value');
             }
         }
+    });
+
+    it('filters dropped members out of an ARRAY @included value in default mode, keeping the valid nodes', function () {
+        // jsonld.js null-filter asymmetry: in an array, each member expands
+        // independently and dropped members are silently filtered; the
+        // remaining nodes validate. Safe mode still throws on the drop.
+        $doc = [
+            '@context' => [],
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => 'v',
+            '@included' => [
+                ['@id' => 'http://example.com/a', 'http://example.com/q' => 'w'],
+                ['@id' => 'http://example.com/b'],
+            ],
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, '@included'))->toHaveCount(1)
+            ->and(safeModeDig($expanded, 0, '@included', 0, '@id'))->toBe('http://example.com/a');
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @id',
+        );
+
+        // All members dropped: the key is kept with an empty list, not an
+        // error (jsonld.js parity, probed side-by-side).
+        $allDropped = [
+            '@context' => [],
+            '@id' => 'http://example.com/s',
+            'http://example.com/p' => 'v',
+            '@included' => [['@id' => 'http://example.com/b']],
+        ];
+        $expandedAllDropped = safeModeProcessor()->expand($allDropped)->toArray();
+        expect(safeModeDig($expandedAllDropped, 0, '@included'))->toBe([]);
     });
 
     it('keeps valid @included node objects in safe mode', function () {

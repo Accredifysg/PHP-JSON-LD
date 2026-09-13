@@ -134,8 +134,10 @@ describe('Expansion::expand', function () {
         $first = $expander->expand(['name' => 'Alice'])[0] ?? null;
         expect($first)->toBeArray();
         /** @var array<string, mixed> $first */
+        // Key insertion order (@language, @direction, @value) mirrors
+        // jsonld.js's value-expansion injection order, byte-for-byte.
         expect($first['https://schema.org/name'])
-            ->toBe([['@direction' => 'rtl', '@language' => 'en', '@value' => 'Alice']]);
+            ->toBe([['@language' => 'en', '@direction' => 'rtl', '@value' => 'Alice']]);
     });
 
     it('lets a term @language (incl. null) override the default', function () {
