@@ -35,7 +35,7 @@ final class Flattening
      *                      the flatten() path while throwing on toRdf()/frame().
      */
     public function __construct(
-        private readonly bool $safe = false,
+        private readonly bool $safe,
     ) {}
 
     /**

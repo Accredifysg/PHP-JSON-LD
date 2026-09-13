@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Accredify\JsonLd\Context;
 
+use Accredify\JsonLd\Algorithms\Compaction;
 use Accredify\JsonLd\Algorithms\Expansion;
 use Accredify\JsonLd\Enums\ContainerType;
 use Accredify\JsonLd\Enums\Keyword;
@@ -71,15 +72,6 @@ class TermDefinitions
     private string $processingMode = 'json-ld-1.1';
 
     /**
-     * Safe mode ({@see JsonLdOptions::$safe}): when true,
-     * term-definition steps that silently discard data (a keyword-shaped
-     * `@id`/`@reverse`, a keyword-shaped term name) throw
-     * {@see DataLossException} instead. Set by ContextProcessor BEFORE
-     * context processing runs, since the drops happen at definition time.
-     */
-    private bool $safe = false;
-
-    /**
      * The context to roll back to when this context is non-propagating
      * (@propagate: false, e.g. a type-scoped context): on descending into a
      * new node object the active context reverts to this snapshot. Null for a
@@ -88,10 +80,24 @@ class TermDefinitions
     private ?TermDefinitions $previousContext = null;
 
     /**
+     * Both parameters are REQUIRED by design: every construction site must
+     * state whether safe mode is on, so a copy that forgets to thread the
+     * flag is a hard error instead of a silent safe-mode gap (the failure
+     * shape that produced the Flattening→NodeMap and fromRdf() holes).
+     *
      * @param  array<string, TermDefinition|string>  $termDefinitions
+     * @param  bool  $safe  Safe mode ({@see JsonLdOptions::$safe}): when
+     *                      true, term-definition steps that silently discard
+     *                      data (a keyword-shaped `@id`/`@reverse`, a
+     *                      keyword-shaped term name) throw
+     *                      {@see DataLossException} instead. Fixed at
+     *                      construction — the drops happen at definition
+     *                      time; use {@see withSafe} for a copy with a
+     *                      different setting.
      */
     public function __construct(
-        public array $termDefinitions = []
+        public array $termDefinitions,
+        private bool $safe,
     ) {}
 
     public function getPreviousContext(): ?TermDefinitions
@@ -120,14 +126,27 @@ class TermDefinitions
         return $this->processingMode === 'json-ld-1.0';
     }
 
-    public function setSafe(bool $safe): void
-    {
-        $this->safe = $safe;
-    }
-
     public function isSafe(): bool
     {
         return $this->safe;
+    }
+
+    /**
+     * A copy of this context with safe mode set as given (the original is
+     * untouched). The controlled replacement for the removed setSafe():
+     * mutation stays impossible, but a boundary that OWNS the safe decision —
+     * {@see Compaction} for a hand-built
+     * context — can still impose it.
+     */
+    public function withSafe(bool $safe): self
+    {
+        if ($safe === $this->safe) {
+            return $this;
+        }
+        $copy = clone $this;
+        $copy->safe = $safe;
+
+        return $copy;
     }
 
     /**

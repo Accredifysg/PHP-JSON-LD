@@ -619,7 +619,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
     it('throws for a relative subject', function () {
         $expanded = [['@id' => 'relative-subject', 'http://example.com/p' => [['@value' => 'v']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -630,7 +630,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
     it('throws for a relative predicate', function () {
         $expanded = [['@id' => 'http://example.com/s', 'rel-pred' => [['@value' => 'v']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -641,7 +641,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
     it('throws for a relative object reference', function () {
         $expanded = [['@id' => 'http://example.com/s', 'http://example.com/p' => [['@id' => 'rel-obj']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -667,7 +667,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
     it('throws for a blank-node predicate unless produceGeneralizedRdf is set', function () {
         $expanded = [['@id' => 'http://example.com/s', '_:p' => [['@value' => 'v']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -699,7 +699,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
         $expanded = [['@id' => 'http://example.com/s', 'http://example.com/p' => [['@value' => ['not' => 'scalar']]]]];
 
         // Default: not even a drop — corruption. The literal becomes "".
-        $default = new RdfDataset((new ToRdf)->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false))->toRdf($expanded));
         expect($default->toNQuads())->toContain('""');
 
         safeModeExpectDrop(
@@ -713,7 +713,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
 
         // Default: the collection scaffolding is emitted but the member is
         // silently missing.
-        $default = new RdfDataset((new ToRdf)->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false))->toRdf($expanded));
         expect($default->toNQuads())->toContain('rdf-syntax-ns#rest');
         expect($default->toNQuads())->not->toContain('rdf-syntax-ns#first');
 
@@ -727,7 +727,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
         $expanded = [['@id' => 'http://example.com/s', 'http://example.com/p' => [['@value' => 'x', '@language' => 'ar', '@direction' => 'rtl']]]];
 
         // Default: the literal is emitted without its base direction.
-        $default = new RdfDataset((new ToRdf)->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false))->toRdf($expanded));
         expect($default->toNQuads())->toContain('"x"@ar');
 
         safeModeExpectDrop(
@@ -745,7 +745,7 @@ describe('toRdf: relative-IRI matrix and malformed literals', function () {
         $expanded = [['@id' => 12345, 'http://example.com/p' => [['@value' => 'v']]]];
 
         // Default: identity silently replaced with a fresh blank node.
-        $default = new RdfDataset((new ToRdf)->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false))->toRdf($expanded));
         expect($default->toNQuads())->toContain('_:b0');
 
         safeModeExpectDrop(
@@ -859,7 +859,7 @@ describe('toRdf: direction-tagged literal integrity', function () {
 
         // Default: the statement is dropped (as without @direction), never an
         // IRIREF containing a raw space.
-        $default = new RdfDataset((new ToRdf(rdfDirection: 'i18n-datatype'))->toRdf($expanded));
+        $default = new RdfDataset((new ToRdf(safe: false, rdfDirection: 'i18n-datatype'))->toRdf($expanded));
         expect($default->toNQuads())->not->toContain('en gb');
 
         safeModeExpectDrop(
@@ -869,7 +869,7 @@ describe('toRdf: direction-tagged literal integrity', function () {
     });
 
     it('rejects an unrecognised rdfDirection value up front instead of silently dropping directions', function () {
-        expect(fn () => new ToRdf(rdfDirection: 'bogus'))
+        expect(fn () => new ToRdf(safe: false, rdfDirection: 'bogus'))
             ->toThrow(JsonLdException::class, 'Invalid rdfDirection value');
 
         $doc = ['@context' => [], '@id' => 'http://example.com/s', 'http://example.com/p' => ['@value' => 'x', '@direction' => 'rtl']];
@@ -883,7 +883,7 @@ describe('toRdf: node-map identifier edge cases', function () {
         $expanded = [['@id' => '123', 'http://example.com/p' => [['@value' => 'v']]]];
 
         // Default: dropped like any other relative subject — no crash.
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -898,7 +898,7 @@ describe('toRdf: node-map identifier edge cases', function () {
     it('throws for a keyword-shaped non-keyword property in the node map', function () {
         $expanded = [['@id' => 'http://example.com/s', '@bogusProp' => [['@value' => 'v']]]];
 
-        expect((new ToRdf)->toRdf($expanded))->toBe([]);
+        expect((new ToRdf(safe: false))->toRdf($expanded))->toBe([]);
 
         safeModeExpectDrop(
             fn () => (new ToRdf(safe: true))->toRdf($expanded),
@@ -1132,12 +1132,206 @@ describe('expansion: §5.5 step 18 under @graph', function () {
     it('keeps free-floating value patterns when expanding a frame', function () {
         // A frame legitimately places {@value: ...} match patterns where a
         // document cannot place data; frame expansion must not drop them.
-        $contextProcessor = new ContextProcessor(['@context' => []], new StubDocumentLoader);
-        $expansion = new Expansion($contextProcessor->getTermDefinitions(), documentLoader: null, frameExpansion: true);
+        $contextProcessor = new ContextProcessor(['@context' => []], new StubDocumentLoader, safe: false);
+        $expansion = new Expansion($contextProcessor->getTermDefinitions(), safe: false, documentLoader: null, frameExpansion: true);
 
         $frame = ['@id' => 'http://example.com/g', '@graph' => [['@value' => []]]];
 
         expect(safeModeDig($expansion->expand($frame), 0, '@graph', 0))->toBe(['@value' => []]);
+    });
+});
+
+describe('expansion: free-floating values under @graph containers (§5.5 step 18 extended, jsonld.js parity)', function () {
+    // jsonld.js drops free-floating shapes under @container:@graph terms —
+    // beyond the literal spec (step 18 names only active property null /
+    // @graph), but semantically sound: a graph wrapper whose members carry no
+    // statement would otherwise emit a dangling graph-name quad fabricated
+    // from noise. This is byte-relevant for toRdf, unlike the named-graph
+    // drops, where NodeMap already converged the output.
+    $ctxPlain = ['input' => ['@id' => 'http://example.com/input', '@container' => '@graph']];
+    $ctxIndex = ['input' => ['@id' => 'http://example.com/input', '@container' => ['@graph', '@index']]];
+    $ctxId = ['input' => ['@id' => 'http://example.com/input', '@container' => ['@graph', '@id']]];
+
+    it('drops a scalar or value object under a plain @graph container, cascading to the parent', function () use ($ctxPlain) {
+        foreach (['x', ['@value' => 'x']] as $orphan) {
+            $doc = ['@context' => $ctxPlain, '@id' => 'http://example.com/s', 'input' => $orphan];
+
+            // The property is omitted, the parent becomes @id-only and drops
+            // too: the whole document expands to nothing (jsonld.js parity).
+            expect(safeModeProcessor()->expand($doc)->toArray())->toBe([])
+                ->and(safeModeProcessor()->toRdf($doc)->toNQuads())->toBe('');
+
+            safeModeExpectDrop(
+                fn () => safeModeProcessor()->expand($doc, safeOptions()),
+                'object with only @value',
+            );
+        }
+    });
+
+    it('drops an @id-only reference and a @list object under a plain @graph container', function () use ($ctxPlain) {
+        foreach ([
+            [['@id' => 'http://example.com/n'], 'object with only @id'],
+            [['@list' => ['x']], 'object with only @list'],
+        ] as [$orphan, $eventCode]) {
+            $doc = ['@context' => $ctxPlain, '@id' => 'http://example.com/s', 'input' => $orphan];
+
+            expect(safeModeProcessor()->expand($doc)->toArray())->toBe([]);
+
+            safeModeExpectDrop(
+                fn () => safeModeProcessor()->expand($doc, safeOptions()),
+                $eventCode,
+            );
+        }
+    });
+
+    it('no longer emits a dangling empty-graph quad for mixed values — only real members survive', function () use ($ctxPlain) {
+        $doc = [
+            '@context' => $ctxPlain,
+            '@id' => 'http://example.com/s',
+            'input' => [['@value' => 'x'], ['http://example.com/q' => 'v']],
+        ];
+
+        // Default: the orphan is filtered, the node is wrapped — and the RDF
+        // output carries exactly the two real quads, byte-identical to
+        // jsonld.js (previously an extra `<s> <input> _:bN .` appeared).
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/input'))->toHaveCount(1);
+
+        $nquads = safeModeProcessor()->toRdf($doc)->toNQuads();
+        expect(substr_count($nquads, "\n"))->toBe(2)
+            ->and($nquads)->toContain('"v"');
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @value',
+        );
+    });
+
+    it('keeps real nodes under @graph containers untouched, in both modes', function () use ($ctxPlain) {
+        $doc = ['@context' => $ctxPlain, '@id' => 'http://example.com/s', 'input' => ['http://example.com/q' => 'v']];
+
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+            expect(safeModeDig($expanded, 0, 'http://example.com/input', 0, '@graph', 0, 'http://example.com/q', 0, '@value'))->toBe('v');
+        }
+    });
+
+    it('drops the JSON literal of a term combining @type: @json with a @graph container', function () {
+        // A JSON literal is a value object; the graph-container wrap filters
+        // it like any other free-floating member, so such a term loses every
+        // value (jsonld.js parity — its wrap filter does the same).
+        $doc = [
+            '@context' => ['input' => ['@id' => 'http://example.com/input', '@container' => '@graph', '@type' => '@json']],
+            '@id' => 'http://example.com/s',
+            'input' => ['any' => 'json'],
+        ];
+
+        expect(safeModeProcessor()->expand($doc)->toArray())->toBe([]);
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @value',
+        );
+    });
+
+    it('drops free-floating OBJECT members of [@graph, @index] and [@graph, @id] maps, keeping the property as an empty list', function () use ($ctxIndex, $ctxId) {
+        foreach ([
+            [$ctxIndex, ['i1' => ['@value' => 'x']], 'object with only @value'],
+            [$ctxIndex, ['i2' => ['@id' => 'http://example.com/n']], 'object with only @id'],
+            [$ctxId, ['http://example.com/g' => ['@value' => 'x']], 'object with only @value'],
+            [$ctxId, ['http://example.com/g' => ['@id' => 'http://example.com/n']], 'object with only @id'],
+        ] as [$ctx, $map, $eventCode]) {
+            $doc = ['@context' => $ctx, '@id' => 'http://example.com/s', 'input' => $map];
+
+            // jsonld.js parity: unlike the plain container, the map form keeps
+            // the property with an empty list when every member drops.
+            $expanded = safeModeProcessor()->expand($doc)->toArray();
+            expect(safeModeDig($expanded, 0, 'http://example.com/input'))->toBe([])
+                ->and(safeModeProcessor()->toRdf($doc)->toNQuads())->toBe('');
+
+            safeModeExpectDrop(
+                fn () => safeModeProcessor()->expand($doc, safeOptions()),
+                $eventCode,
+            );
+        }
+    });
+
+    it('keeps raw SCALAR members of graph maps as wrapped value objects — the jsonld.js asymmetry, byte-for-byte', function () use ($ctxIndex, $ctxId) {
+        // jsonld.js's member-level drop only sees objects; scalars are built
+        // into value objects by VALUE expansion afterwards and survive to be
+        // wrapped, so its toRdf emits a graph-name quad naming an empty graph.
+        // Byte parity means emitting the same quad in default mode.
+        $indexDoc = ['@context' => $ctxIndex, '@id' => 'http://example.com/s', 'input' => ['i1' => 'x']];
+        $expanded = safeModeProcessor()->expand($indexDoc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/input', 0, '@graph', 0, '@value'))->toBe('x')
+            ->and(safeModeDig($expanded, 0, 'http://example.com/input', 0, '@index'))->toBe('i1');
+        expect(safeModeProcessor()->toRdf($indexDoc)->toNQuads())
+            ->toBe("<http://example.com/s> <http://example.com/input> _:b0 .\n");
+
+        $idDoc = ['@context' => $ctxId, '@id' => 'http://example.com/s', 'input' => ['http://example.com/g1' => 'x']];
+        expect(safeModeProcessor()->toRdf($idDoc)->toNQuads())
+            ->toBe("<http://example.com/s> <http://example.com/input> <http://example.com/g1> .\n");
+
+        // Safe expansion accepts them (jsonld.js parity) …
+        expect(safeModeProcessor()->expand($indexDoc, safeOptions())->toArray())->not->toBe([]);
+
+        // … but safe toRdf still fails closed on the value the node map then
+        // silently discards — DELIBERATELY stricter than jsonld.js, whose
+        // safe mode emits the dangling quad without any event.
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->toRdf($indexDoc, safeOptions()),
+            'object with only @value',
+        );
+    });
+
+    it('keeps the scalar and drops the object in a mixed graph-map entry', function () use ($ctxIndex) {
+        $doc = [
+            '@context' => $ctxIndex,
+            '@id' => 'http://example.com/s',
+            'input' => ['i6' => ['x', ['@id' => 'http://example.com/n']]],
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/input'))->toHaveCount(1)
+            ->and(safeModeDig($expanded, 0, 'http://example.com/input', 0, '@graph', 0, '@value'))->toBe('x');
+
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($doc, safeOptions()),
+            'object with only @id',
+        );
+    });
+
+    it('omits the property for an empty plain-container value but keeps an empty graph map', function () use ($ctxPlain, $ctxIndex) {
+        // Plain container + empty value: key omitted, parent drops — jsonld.js
+        // parity for its raw-[] flavour. (PHP cannot distinguish a raw {} from
+        // [], where jsonld.js would say 'empty object'; both fail closed.)
+        $plain = ['@context' => $ctxPlain, '@id' => 'http://example.com/s', 'input' => []];
+        expect(safeModeProcessor()->expand($plain)->toArray())->toBe([]);
+        safeModeExpectDrop(
+            fn () => safeModeProcessor()->expand($plain, safeOptions()),
+            'object with only @id',
+        );
+
+        // Map container + empty value: property kept as an empty list.
+        $map = ['@context' => $ctxIndex, '@id' => 'http://example.com/s', 'input' => []];
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($map, $options)->toArray();
+            expect(safeModeDig($expanded, 0, 'http://example.com/input'))->toBe([]);
+        }
+    });
+
+    it('keeps free-floating patterns under @graph containers when expanding a frame', function () {
+        $contextProcessor = new ContextProcessor(
+            ['@context' => ['input' => ['@id' => 'http://example.com/input', '@container' => '@graph']]],
+            new StubDocumentLoader,
+            safe: false,
+        );
+        $expansion = new Expansion($contextProcessor->getTermDefinitions(), safe: false, documentLoader: null, frameExpansion: true);
+
+        $frame = ['@id' => 'http://example.com/s', 'input' => ['@value' => []]];
+
+        // The wrap still happens; the free-floating filter does not.
+        expect(safeModeDig($expansion->expand($frame), 0, 'http://example.com/input', 0, '@graph', 0))->toBe(['@value' => []]);
     });
 });
 

@@ -49,7 +49,7 @@ final class NodeMap
      */
     public function __construct(
         private readonly BlankNodeIssuer $issuer,
-        private readonly bool $safe = false,
+        private readonly bool $safe,
     ) {}
 
     /**
