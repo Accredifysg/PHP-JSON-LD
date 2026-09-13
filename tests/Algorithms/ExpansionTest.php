@@ -372,7 +372,10 @@ describe('scoped context propagation', function () {
             ],
             '@id' => 'https://example.org/thing',
             '@type' => 'Thing',
-            'proof' => ['@id' => 'https://example.org/proof-node'],
+            // The proof node needs a real property: an @id-only member of a
+            // @graph container is free-floating and dropped (jsonld.js
+            // parity), which would erase the very term this test asserts on.
+            'proof' => ['@id' => 'https://example.org/proof-node', 'sec:created' => 'now'],
         ]);
 
         $json = json_encode($expanded, JSON_UNESCAPED_SLASHES);
