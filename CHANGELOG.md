@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scalars/value objects/`@list`/`@id`-only nodes, `@value: null`,
   identity loss on `@id` (keyword-shaped or relative), `@type` values that
   fail to expand, reserved (`@`-shaped) term/`@id`/`@reverse` definitions,
-  relative `@vocab`, unresolvable or partially-ignored scoped contexts,
+  relative `@vocab`, unresolvable scoped contexts,
   container-map keys PHP decodes to integers, and — in RDF deserialization —
   relative subject/predicate/object/graph IRIs, blank-node predicates
   (unless `produceGeneralizedRdf`), malformed BCP47 language tags,
@@ -100,7 +100,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   graph node retained); `toRdf`, `flatten`, and framing output are
   byte-identical because NodeMap already discarded the orphans. Frame
   expansion still keeps `@value`/`@list` match patterns.
-- **`@null` is no longer treated as a JSON-LD keyword** (it is a framing
+- **Scoped contexts now inherit the parent's default `@language`, and scoped
+  `@language`/`@direction` entries are applied** instead of ignored. Activating
+  any scoped context (property-scoped, type-scoped, embedded node `@context`,
+  or a remote one) previously shed the outer context's default language, so
+  plain strings in scope expanded untagged — `"hello"` where jsonld.js (and
+  the spec's context copying) produce `"hello"@en` — yielding different
+  N-Quads and different canonical hashes. Scoped `@language: "fr"` /
+  `@direction: "ltr"` overrides and their `null` resets now behave exactly
+  like the document-level entries (same validation: a malformed value is an
+  unconditional error at both levels, where it was previously ignored in
+  default mode), including in remote scoped contexts, where an explicit
+  `@language: null` reset is now distinguished from the entry being absent.
+  **Default-mode `expand()`/`toRdf()` output changes — signature-relevant —
+  for documents that combine a default `@language` with scoped contexts**
+  (published VC context stacks set no default language; both corpus replays
+  found no affected documents). Deliberate deviation from the spec, matching
+  jsonld.js: the default `@direction` is NOT inherited into scopes (jsonld.js'
+  active-context clone omits `@direction` — reported upstream as
+  [digitalbazaar/jsonld.js#586](https://github.com/digitalbazaar/jsonld.js/issues/586)),
+  because byte-parity with the reference implementation is what signing
+  pipelines verify against; scoped explicit `@direction` set/reset works. The fork-specific
+  `unsupported scoped context entry` safe-mode event code is retired — the
+  behaviour it flagged is now implemented.
   *output* sentinel, not a §1.7 syntax token): `{"@id": "@null"}` no longer
   passes as a keyword alias, and a `@null` term definition fails closed in
   safe mode as `reserved term`, matching jsonld.js.

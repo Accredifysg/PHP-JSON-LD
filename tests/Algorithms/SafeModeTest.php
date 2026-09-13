@@ -593,24 +593,9 @@ describe('expansion: scoped-context machinery', function () {
         );
     });
 
-    it('throws when a scoped context sets @language, which this processor ignores', function () {
-        $doc = [
-            '@context' => [
-                'thing' => ['@id' => 'http://example.com/thing', '@context' => ['@language' => 'fr']],
-            ],
-            '@id' => 'http://example.com/x',
-            'thing' => ['http://example.com/label' => 'bonjour'],
-        ];
-
-        // Default: the override is ignored and values keep the parent
-        // language — a silent canonicalization divergence.
-        expect(safeModeProcessor()->expand($doc)->toArray())->not->toBe([]);
-
-        safeModeExpectDrop(
-            fn () => safeModeProcessor()->expand($doc, safeOptions()),
-            'unsupported scoped context entry',
-        );
-    });
+    // Scoped @language/@direction entries are real behaviour now — see the
+    // 'scoped contexts: default @language/@direction' describe. The
+    // 'unsupported scoped context entry' event code is gone with them.
 
     it('throws when a scoped context carries a malformed term definition', function () {
         $doc = [
@@ -1317,6 +1302,178 @@ describe('scoped contexts: parity with the document-level write path', function 
             fn () => safeModeProcessor()->expand($doc, safeOptions()),
             'reserved @id value',
         );
+    });
+});
+
+describe('scoped contexts: default @language/@direction (inherit, set, reset)', function () {
+    // jsonld.js (the byte-parity reference for signing pipelines) carries the
+    // default @language into every scoped-context activation via its
+    // active-context clone, so plain strings in scope keep their tag; scoped
+    // @language/@direction entries set or (null) reset the default exactly
+    // like the document-level entries. Previously any scoped activation
+    // silently shed the parent's default — "hello" instead of "hello"@en —
+    // different N-Quads, different canonical hashes.
+
+    it('inherits the default @language into a property-scoped context — value tagged, toRdf byte parity', function () {
+        $doc = [
+            '@context' => ['@language' => 'en', 'thing' => ['@id' => 'http://example.com/thing', '@context' => ['other' => 'http://example.com/other']]],
+            '@id' => 'http://example.com/x',
+            'thing' => ['http://example.com/label' => 'hello'],
+        ];
+
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+            expect(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0, '@language'))->toBe('en');
+
+            expect(safeModeProcessor()->toRdf($doc, $options)->toNQuads())->toContain('"hello"@en');
+        }
+    });
+
+    it('inherits the default @language into type-scoped and embedded node contexts', function () {
+        $typeScoped = [
+            '@context' => ['@language' => 'en', 'Thing' => ['@id' => 'http://example.com/Thing', '@context' => ['other' => 'http://example.com/other']]],
+            '@id' => 'http://example.com/x', '@type' => 'Thing', 'http://example.com/label' => 'hello',
+        ];
+        $expanded = safeModeProcessor()->expand($typeScoped)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/label', 0, '@language'))->toBe('en');
+
+        $embedded = [
+            '@context' => ['@language' => 'en', 'nested' => 'http://example.com/nested'],
+            '@id' => 'http://example.com/x',
+            'nested' => ['@context' => ['other' => 'http://example.com/other'], 'http://example.com/label' => 'hello'],
+        ];
+        $expanded = safeModeProcessor()->expand($embedded)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/nested', 0, 'http://example.com/label', 0, '@language'))->toBe('en');
+    });
+
+    it('applies a scoped @language override inside the scope only, without a safe-mode throw', function () {
+        $doc = [
+            '@context' => ['@language' => 'en', 'thing' => ['@id' => 'http://example.com/thing', '@context' => ['@language' => 'fr']]],
+            '@id' => 'http://example.com/x',
+            'http://example.com/out' => 'outside',
+            'thing' => ['http://example.com/label' => 'inside'],
+        ];
+
+        foreach ([null, safeOptions()] as $options) {
+            $expanded = safeModeProcessor()->expand($doc, $options)->toArray();
+            expect(safeModeDig($expanded, 0, 'http://example.com/out', 0, '@language'))->toBe('en')
+                ->and(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0, '@language'))->toBe('fr');
+        }
+    });
+
+    it('applies a scoped @direction set and null reset', function () {
+        $set = [
+            '@context' => ['@direction' => 'rtl', 'thing' => ['@id' => 'http://example.com/thing', '@context' => ['@direction' => 'ltr']]],
+            '@id' => 'http://example.com/x', 'thing' => ['http://example.com/label' => 'hello'],
+        ];
+        $expanded = safeModeProcessor()->expand($set)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0, '@direction'))->toBe('ltr');
+
+        $reset = [
+            '@context' => ['@direction' => 'rtl', 'thing' => ['@id' => 'http://example.com/thing', '@context' => ['@direction' => null]]],
+            '@id' => 'http://example.com/x', 'thing' => ['http://example.com/label' => 'hello'],
+        ];
+        $expanded = safeModeProcessor()->expand($reset)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
+    });
+
+    it('does NOT inherit the default @direction into a scope — jsonld.js parity over spec purity', function () {
+        // jsonld.js's _cloneActiveContext copies @base/@vocab/@language but
+        // omits @direction (an upstream deviation from §4.1 context copying,
+        // reported as https://github.com/digitalbazaar/jsonld.js/issues/586);
+        // matching the reference implementation's N-Quads wins for signing
+        // pipelines. Revisit when upstream fixes the clone.
+        $doc = [
+            '@context' => ['@direction' => 'rtl', 'thing' => ['@id' => 'http://example.com/thing', '@context' => ['other' => 'http://example.com/other']]],
+            '@id' => 'http://example.com/x',
+            'http://example.com/out' => 'outside',
+            'thing' => ['http://example.com/label' => 'hello'],
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/out', 0, '@direction'))->toBe('rtl')
+            ->and(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
+    });
+
+    it('keeps the innermost override through chained scopes', function () {
+        $doc = [
+            '@context' => ['@language' => 'en',
+                'a' => ['@id' => 'http://example.com/a', '@context' => ['@language' => 'fr', 'b' => ['@id' => 'http://example.com/b', '@context' => ['other' => 'http://example.com/other']]]]],
+            '@id' => 'http://example.com/x',
+            'a' => ['b' => ['http://example.com/label' => 'hello']],
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/a', 0, 'http://example.com/b', 0, 'http://example.com/label', 0, '@language'))->toBe('fr');
+    });
+
+    it('clears inherited defaults on a scoped @context: null reset', function () {
+        $doc = [
+            '@context' => ['@language' => 'en', 'thing' => ['@id' => 'http://example.com/thing', '@context' => null]],
+            '@id' => 'http://example.com/x',
+            'http://example.com/out' => 'outside',
+            'thing' => ['http://example.com/label' => 'inside'],
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/out', 0, '@language'))->toBe('en')
+            ->and(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0))->toBe(['@value' => 'inside']);
+    });
+
+    it('lets a term-level @language mapping win over the inherited default', function () {
+        $doc = [
+            '@context' => ['@language' => 'en',
+                'thing' => ['@id' => 'http://example.com/thing', '@context' => ['label' => ['@id' => 'http://example.com/label', '@language' => 'de']]]],
+            '@id' => 'http://example.com/x',
+            'thing' => ['label' => 'hallo'],
+        ];
+
+        $expanded = safeModeProcessor()->expand($doc)->toArray();
+        expect(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0, '@language'))->toBe('de');
+    });
+
+    it('applies a remote scoped context @language: set, explicit null reset, and absent (inherit)', function () {
+        $loader = new StubDocumentLoader;
+        $loader->add('http://example.com/remote-fr', ['@context' => ['@language' => 'fr', 'other' => 'http://example.com/other']]);
+        $loader->add('http://example.com/remote-null', ['@context' => ['@language' => null, 'other' => 'http://example.com/other']]);
+        $loader->add('http://example.com/remote-absent', ['@context' => ['other' => 'http://example.com/other']]);
+        $processor = new JsonLdProcessor($loader);
+
+        $docFor = fn (string $remote) => [
+            '@context' => ['@language' => 'en', 'thing' => ['@id' => 'http://example.com/thing', '@context' => $remote]],
+            '@id' => 'http://example.com/x',
+            'thing' => ['http://example.com/label' => 'inside'],
+        ];
+        $langOf = fn (array $expanded) => safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0, '@language');
+
+        foreach ([null, safeOptions()] as $options) {
+            expect($langOf($processor->expand($docFor('http://example.com/remote-fr'), $options)->toArray()))->toBe('fr')
+                ->and($langOf($processor->expand($docFor('http://example.com/remote-null'), $options)->toArray()))->toBeNull()
+                ->and($langOf($processor->expand($docFor('http://example.com/remote-absent'), $options)->toArray()))->toBe('en');
+        }
+    });
+
+    it('rejects an invalid scoped @language or @direction in BOTH modes, like the document level', function () {
+        $badLanguage = [
+            '@context' => ['thing' => ['@id' => 'http://example.com/thing', '@context' => ['@language' => 123]]],
+            '@id' => 'http://example.com/x', 'thing' => ['http://example.com/label' => 'v'],
+        ];
+        $badDirection = [
+            '@context' => ['thing' => ['@id' => 'http://example.com/thing', '@context' => ['@direction' => 'foo']]],
+            '@id' => 'http://example.com/x', 'thing' => ['http://example.com/label' => 'v'],
+        ];
+
+        foreach ([null, safeOptions()] as $options) {
+            foreach ([[$badLanguage, 'Invalid @language value'], [$badDirection, 'Invalid @direction value']] as [$doc, $message]) {
+                try {
+                    safeModeProcessor()->expand($doc, $options);
+                    throw new AssertionFailedError("Expected a JsonLdException containing '{$message}'");
+                } catch (JsonLdException $e) {
+                    expect($e)->not->toBeInstanceOf(DataLossException::class);
+                    expect($e->getMessage())->toContain($message);
+                }
+            }
+        }
     });
 });
 

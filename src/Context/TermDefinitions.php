@@ -56,6 +56,17 @@ class TermDefinitions
     /** Default `@direction` ("ltr"/"rtl") applied to plain string values, or null. */
     private ?string $defaultDirection = null;
 
+    /**
+     * Whether {@see setDefaultLanguage} / {@see setDefaultDirection} were ever
+     * called on this instance. Distinguishes an explicit `@language: null` /
+     * `@direction: null` reset from the entry being absent — a resolved remote
+     * scoped context must propagate the former into the activating scope and
+     * leave inherited defaults alone for the latter.
+     */
+    private bool $defaultLanguageSet = false;
+
+    private bool $defaultDirectionSet = false;
+
     /** Effective processing mode ("json-ld-1.0" or "json-ld-1.1"). */
     private string $processingMode = 'json-ld-1.1';
 
@@ -138,6 +149,7 @@ class TermDefinitions
     public function setDefaultLanguage(?string $language): void
     {
         $this->defaultLanguage = $language;
+        $this->defaultLanguageSet = true;
     }
 
     public function getDefaultLanguage(): ?string
@@ -145,14 +157,25 @@ class TermDefinitions
         return $this->defaultLanguage;
     }
 
+    public function wasDefaultLanguageSet(): bool
+    {
+        return $this->defaultLanguageSet;
+    }
+
     public function setDefaultDirection(?string $direction): void
     {
         $this->defaultDirection = $direction;
+        $this->defaultDirectionSet = true;
     }
 
     public function getDefaultDirection(): ?string
     {
         return $this->defaultDirection;
+    }
+
+    public function wasDefaultDirectionSet(): bool
+    {
+        return $this->defaultDirectionSet;
     }
 
     /**
