@@ -36,6 +36,14 @@ namespace Accredify\JsonLd;
  *    {@see $explicit}, {@see $requireAll}, {@see $omitDefault},
  *    {@see $omitGraph} — the API-level defaults a frame's own keywords may
  *    override.
+ *  - {@see $safe} — fail closed on silently dropped data: when true, any
+ *    algorithm step that would drop data (an undefined term, a relative IRI
+ *    with no RDF representation, a malformed value whose statement is
+ *    skipped) throws {@see Exceptions\DataLossException} instead. Mirrors
+ *    the JSON-LD API `safe` option implemented by jsonld.js and satisfies
+ *    W3C VC-DATA-INTEGRITY 1.0 §2.4.3 "Securing Data Losslessly"
+ *    (DATA_LOSS_DETECTION_ERROR). Defaults to false (lossy, spec-default
+ *    behaviour); canonicalization/signing pipelines should pass true.
  *
  * Immutable: use {@see with()} to derive a copy with one field changed.
  */
@@ -58,6 +66,7 @@ final class JsonLdOptions
         public readonly bool $requireAll = false,
         public readonly bool $omitDefault = false,
         public readonly ?bool $omitGraph = null,
+        public readonly bool $safe = false,
     ) {}
 
     /**
@@ -79,6 +88,7 @@ final class JsonLdOptions
         ?bool $requireAll = null,
         ?bool $omitDefault = null,
         ?bool $omitGraph = null,
+        ?bool $safe = null,
     ): self {
         return new self(
             $base ?? $this->base,
@@ -94,6 +104,7 @@ final class JsonLdOptions
             $requireAll ?? $this->requireAll,
             $omitDefault ?? $this->omitDefault,
             $omitGraph ?? $this->omitGraph,
+            $safe ?? $this->safe,
         );
     }
 }

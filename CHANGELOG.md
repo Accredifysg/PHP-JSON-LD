@@ -7,8 +7,224 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Safe mode — fail closed on silently dropped data** (`JsonLdOptions`
+  `safe: true`, default `false`; additive and fully backwards-compatible).
+  Implements W3C VC-DATA-INTEGRITY 1.0 §2.4.3 "Securing Data Losslessly"
+  (`DATA_LOSS_DETECTION_ERROR`) for canonicalization/signing pipelines: any
+  algorithm step that would silently drop data now throws the new
+  `Accredify\JsonLd\Exceptions\DataLossException`, carrying a
+  jsonld.js-compatible `$eventCode` (e.g. `invalid property`,
+  `relative subject reference`, `reserved @id value`) and the dropped datum
+  in `$details`. Covered drop families: undefined / null-mapped /
+  keyword-shaped terms (the §2.4.3 clause itself), free-floating
+  scalars/value objects/`@list`/`@id`-only nodes, `@value: null`,
+  identity loss on `@id` (keyword-shaped or relative), `@type` values that
+  fail to expand, reserved (`@`-shaped) term/`@id`/`@reverse` definitions,
+  relative `@vocab`, unresolvable scoped contexts,
+  container-map keys PHP decodes to integers, and — in RDF deserialization —
+  relative subject/predicate/object/graph IRIs, blank-node predicates
+  (unless `produceGeneralizedRdf`), malformed BCP47 language tags,
+  non-scalar `@value` coercion, `@direction` with no `rdfDirection` mode,
+  and NaN/Infinity in `@json` literals. Threaded through `expand`,
+  `compact`, `flatten`, `toRdf`, `fromRdf`, and `frame` — including each
+  algorithm's internal stages (`flatten`'s node-map generation, scoped-context
+  overlays on both the expansion and compaction paths) and frame expansion,
+  where legitimate match patterns (`{"@language": …}`, wildcard `@value` /
+  `@direction`, `@value: null`) are exempt (`flatten`/`toRdf` now share
+  `expand`'s pipeline internally; behaviour unchanged). Closes the family
+  of canonicalization holes where silently dropped data leaves signable
+  statements unprotected — proof options that canonicalize to the empty
+  dataset, undefined subject claims that sign and verify while remaining
+  editable, and undefined `proofPurpose` values that can be relabelled —
+  at the layer the spec assigns them to. Default-mode output is
+  byte-identical: W3C conformance (1,287/1,302) and characterization
+  snapshots are unchanged.
+
 ### Fixed
 
+- **Safe-mode hardening pass** (review follow-up on the safe-mode feature
+  above; all covered by regression tests in `SafeModeTest`):
+  - `flatten()` threads `safe` into its node-map stage and `fromRdf()` now
+    honours the option at all (malformed BCP47 tags in RDF input fail closed,
+    mirroring jsonld.js's safe `fromRDF`) — previously both were silent gaps
+    in the five-entry-point threading.
+  - Direction-tagged literals (`rdfDirection` set): boolean/numeric `@value`
+    is serialised in canonical XSD lexical form instead of being corrupted by
+    a raw string cast (`false` → `""`, `0.5` → `"0.5"`), and a malformed
+    BCP47 tag now drops the statement (safe: throws) instead of being
+    interpolated into an unparseable i18n datatype IRI.
+  - An unrecognised `rdfDirection` value (a typo) is rejected up front with
+    `JsonLdException` instead of silently disabling direction serialization.
+  - Safe expansion fails closed on drops it previously let through to later
+    stages or external consumers: relative `@type` values (previously an
+    unreachable check), relative `@id`-container map keys, malformed BCP47
+    `@language` values and language-map keys (jsonld.js safe-expansion
+    parity), and a scoped relative `@vocab` (root-cause
+    `relative @vocab reference` instead of a misleading per-term
+    `invalid property`; a compact scoped `@vocab` is now also resolved like
+    the document-level one).
+  - Safe mode no longer rejects valid inputs: `frame()` with standard match
+    patterns (bare `@language`, wildcard `@value`/`@direction` — previously
+    `DataLossException` made safe framing unusable) and the standard scoped
+    `'@language': null` reset idiom now pass.
+  - Inline scoped contexts run the same definition-time reserved-term /
+    `@id` / `@reverse` safe checks as document-level and remote ones (the
+    safe flag and processing mode now survive scoped-context copies and
+    `@context: null` resets).
+  - A stray `@included` value raises the spec's `Invalid @included value`
+    error in both modes instead of a safe-mode `DataLossException` claiming
+    recoverable loss (retrying with `safe: false` could never help).
+- **`toRdf()` no longer crashes with a `TypeError` on an all-numeric `@id`**
+  (e.g. `"123"`, which PHP decodes to an int array key): it is treated as the
+  relative reference it is — dropped by default, `relative subject reference`
+  in safe mode.
+- **`@id`-only node objects directly inside `@graph` are dropped at
+  expansion** per §5.5 step 18 (active property `null` *or* `@graph`),
+  matching jsonld.js — previously they survived expansion only to silently
+  vanish at `toRdf`/`flatten`, invisible even to safe mode.
+- **Value objects and `@list` objects directly inside `@graph` are dropped at
+  expansion** — the remaining two free-floating shapes of §5.5 step 18,
+  completing the fix above. Previously `{"@value": …}` / `{"@list": […]}`
+  directly under a *named* graph's `@graph` survived `expand()` (the existing
+  filter only ran at the document's top level), so a safe expand-only
+  pipeline handed the orphan to an external canonicalizer that then silently
+  lost it: `toRdf`/`flatten`/`frame` caught the drop in NodeMap, but
+  `expand(safe: true)` did not throw. Now expansion drops them (default) or
+  throws `object with only @value` / `object with only @list` (safe) in
+  graph position, after value/list validation, exactly like jsonld.js — a
+  free-floating list's members are judged first, so a scalar member still
+  surfaces as `free-floating scalar`. Default-mode `expand()` output changes
+  only for such documents (jsonld.js parity, e.g. `@graph: []` with the
+  graph node retained); `toRdf`, `flatten`, and framing output are
+  byte-identical because NodeMap already discarded the orphans. Frame
+  expansion still keeps `@value`/`@list` match patterns.
+- **Scoped contexts now inherit the parent's default `@language`, and scoped
+  `@language`/`@direction` entries are applied** instead of ignored. Activating
+  any scoped context (property-scoped, type-scoped, embedded node `@context`,
+  or a remote one) previously shed the outer context's default language, so
+  plain strings in scope expanded untagged — `"hello"` where jsonld.js (and
+  the spec's context copying) produce `"hello"@en` — yielding different
+  N-Quads and different canonical hashes. Scoped `@language: "fr"` /
+  `@direction: "ltr"` overrides and their `null` resets now behave exactly
+  like the document-level entries (same validation: a malformed value is an
+  unconditional error at both levels, where it was previously ignored in
+  default mode), including in remote scoped contexts, where an explicit
+  `@language: null` reset is now distinguished from the entry being absent.
+  **Default-mode `expand()`/`toRdf()` output changes — signature-relevant —
+  for documents that combine a default `@language` with scoped contexts**
+  (published VC context stacks set no default language; both corpus replays
+  found no affected documents). Deliberate deviation from the spec, matching
+  jsonld.js: the default `@direction` is NOT inherited into scopes (jsonld.js'
+  active-context clone omits `@direction` — reported upstream as
+  [digitalbazaar/jsonld.js#586](https://github.com/digitalbazaar/jsonld.js/issues/586)),
+  because byte-parity with the reference implementation is what signing
+  pipelines verify against; scoped explicit `@direction` set/reset works. The fork-specific
+  `unsupported scoped context entry` safe-mode event code is retired — the
+  behaviour it flagged is now implemented.
+- **Free-floating values under `@container: @graph` terms are dropped at
+  expansion**, matching jsonld.js (which extends §5.5 step 18 to
+  graph-container terms — beyond the literal spec, but semantically sound: a
+  graph whose members carry no statement otherwise fabricates a dangling
+  graph-name quad). Previously a scalar, value object, `@id`-only reference,
+  `@list` object, or empty map as the direct value of a plain `@graph`
+  container was wrapped anyway, and **`toRdf` emitted an
+  `<s> <p> _:emptyGraph .` quad where jsonld.js emits nothing — a
+  default-mode N-Quads divergence** (the `@container: @graph`
+  `verifiableCredential` pattern makes this VC-presentation-adjacent, though
+  only malformed members are affected). Now: under a plain `@graph` (or
+  `[@graph, @set]`) container every free-floating member is dropped (safe
+  mode: the matching `object with only @value`/`@id`/`@list`/`empty object`
+  codes) and the property is omitted when nothing survives; free-floating
+  *object* members of `[@graph, @index]` / `[@graph, @id]` maps are dropped
+  with the property kept as an empty list; and a `@type: @json` +
+  `@graph`-container term drops its JSON literal (jsonld.js's wrap filter
+  does the same — such a term always loses its data). Deliberate jsonld.js
+  byte-parity quirk, pinned by test: raw **scalar** members of the map forms
+  still become wrapped value objects and emit the dangling graph-name quad,
+  exactly as jsonld.js does — but safe `toRdf` here still fails closed on
+  the value the node map then discards, where jsonld.js's safe mode emits
+  the quad silently. Default-mode `expand()`, `flatten()`, and `toRdf()`
+  output changes for the affected shapes; real graph-container content
+  (actual node objects) is byte-identical before and after.
+- **Non-map values of `[@graph, @index]` / `[@graph, @id]` terms are never
+  graph-wrapped** (§5.5 step 13.11 applies only when the container "includes
+  neither `@id` nor `@index`"; jsonld.js guards its wrap identically —
+  probed). Previously such values were routed through the plain-`@graph`
+  wrap, where the wrap-time filter above silently dropped e.g.
+  `"input": "x"` in default mode (losing a real statement jsonld.js keeps)
+  and threw a false-positive `object with only @value` in safe mode. Now a
+  scalar or array value of a graph-map term expands exactly like a
+  container-less term — `toRdf` emits the plain default-graph triple.
+  Free-floating *object* members of such values still drop (the
+  recursion-time judgement keys on the container merely including `@graph`),
+  with the property kept as an empty list — jsonld.js byte parity across the
+  probed matrix.
+- **`@included` values expand under the containing node's active property**
+  (§5.5 step 13.4.7; jsonld.js passes its active property through). This
+  restores the `Invalid @included value` error for an `@id`-only reference —
+  a bare reference is not a node object, so it is now also rejected under a
+  *nested* `@included` in both modes — and restores the free-floating drops
+  for top-level `@included` values, where safe mode now reports the drop's
+  own event (`free-floating scalar`, `object with only @id`, …) before
+  validation, exactly like jsonld.js safe mode. An ARRAY value filters
+  dropped members in default mode (all-dropped → the key is omitted),
+  mirroring jsonld.js's null filtering.
+- **A value object's `@direction` is validated unconditionally at
+  expansion**: anything but exactly `"ltr"`/`"rtl"` (non-strings included)
+  throws in BOTH modes, matching jsonld.js's default-mode
+  `invalid base direction` error. Previously a non-string was silently
+  dropped (safe: event) and an invalid *string* flowed through to the
+  serializer, where `rdfDirection: i18n-datatype` interpolated it into a
+  syntactically invalid datatype IRI (`…i18n#_a b`) with no safe-mode event
+  — a safe-mode blind spot in the corruption class this branch closes.
+  Frame expansion still keeps non-string wildcard patterns (`{}`/`[]`); a
+  string in a frame is validated. The serializer additionally guards
+  hand-built expanded input: a malformed `@direction` reaching `ToRdf`
+  directly now drops the statement (safe: `invalid @direction value`)
+  instead of corrupting the N-Quads.
+- **Booleans and numbers carrying `@direction` serialise on their `xsd`
+  branches** (jsonld.js `_objectToRDF` branch order, probed): they never
+  take the i18n datatype and never fire `rdfDirection not set`, in any mode
+  — `{"@value": false, "@direction": "rtl"}` with
+  `rdfDirection: i18n-datatype` is `"false"^^xsd:boolean`, not
+  `"false"^^i18n#_rtl`. Amends the earlier hardening entry's
+  canonical-lexical-form fix: the raw-cast corruption is now structurally
+  impossible because such values exit before the direction branch.
+- **`@nest` values merge into the parent node per §5.5 step 14** (jsonld.js
+  recurses nests with no free-floating judgement of the entry): an
+  `@id`-only nest now merges its `@id` into the parent — previously the
+  reference was dropped as free-floating, silently losing the parent's
+  subject IRI in default mode (pre-existing) and throwing a false
+  `object with only @id` in safe mode. A keyword present on both the parent
+  and its nest is now the spec's `colliding keywords` error (presence-based,
+  jsonld.js parity — identical values still collide), except `@type` and
+  `@included`, which merge; an empty nest object is accepted silently. The
+  parent's reverse relations are attached BEFORE the deferred-nest pass
+  (jsonld.js populates them eagerly), so the collision rule covers `@reverse`
+  too — previously a nest's `@reverse` statements were silently clobbered by
+  the parent's (no event, both modes), and a nest-only `@reverse` map was
+  list-wrapped into a malformed shape whose reverse triples never reached the
+  RDF output; both now match jsonld.js byte-for-byte. One
+  cosmetic divergence remains, verified harmless in the side-by-side: the
+  expanded-JSON *key order* of nest-merged keys (we keep the node's canonical
+  sorted order; jsonld.js appends merged keys after the parent's own) —
+  `toRdf` N-Quads, which signing pipelines consume, are byte-identical.
+- **A non-final scoped-context layer's explicit `@direction` no longer
+  survives the layer boundary** (property-scoped, type-scoped, and embedded
+  node contexts): jsonld.js clones the active context per array layer and
+  the clone omits `@direction` (the same upstream deviation as scope-entry
+  inheritance, digitalbazaar/jsonld.js#586), so only the FINAL layer's
+  `@direction` reaches the scope's values, while `@language` survives
+  layers. Byte parity for signing pipelines; revisit with the scope-entry
+  rule if upstream fixes the clone. Document-level context arrays keep the
+  spec behaviour (`@direction` survives), unchanged — the documented
+  doc-level parity deviation stands.
+- **`@null` is no longer treated as a JSON-LD keyword** (it is a framing
+  *output* sentinel, not a §1.7 syntax token): `{"@id": "@null"}` no longer
+  passes as a keyword alias, and a `@null` term definition fails closed in
+  safe mode as `reserved term`, matching jsonld.js.
 - **Protected-term redefinition now compares expanded IRIs, not raw `@id`
   spellings** (JSON-LD 1.1 API §4.2.2 step 5 judges "identical" over the
   *created* term definitions, i.e. after IRI expansion). Previously
@@ -38,6 +254,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Safe-mode threading is now structural** (internal refactor, zero
+  behaviour change — the full W3C, interop, and characterization suites are
+  byte-identical): the `safe` flag is a REQUIRED constructor parameter on
+  every internal pipeline class (`Expansion`, `Compaction`, `Flattening`,
+  `NodeMap`, `ToRdf`, `FromRdf`, `ContextProcessor`, `TermDefinitions` —
+  where it replaces the removed `setSafe()` mutator; `withSafe()` provides
+  an immutable copy). A construction site that forgets to thread the flag is
+  now a hard error instead of a silent safe-mode gap — the failure shape
+  behind the `Flattening`→`NodeMap` and `fromRdf()` holes closed earlier in
+  this release. `Compaction`, whose safe behaviour previously rode along
+  implicitly inside the `TermDefinitions` instance, takes an explicit
+  authoritative flag and stamps it onto its context, so a hand-built context
+  can no longer silently run compaction with safe off. A reflection guard
+  test keeps the defaulted-flag pattern from returning. **BC note:** these
+  are signature changes to internal (though public) classes — `safe` also
+  moved ahead of the optional parameters — landing in the same release as
+  the safe-mode feature itself; the public `JsonLdProcessor` / `JsonLdOptions`
+  API is unchanged.
 - README rewritten around the released feature set: conformance matrix
   refreshed against the current W3C suite (1,287/1,302), interoperability and
   implementation-report sections added, development-phase scaffolding removed.

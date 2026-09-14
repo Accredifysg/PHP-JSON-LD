@@ -70,12 +70,13 @@ final class JsonLdProcessor implements Processor
         }
         $documentForContext['@context'] = $this->withExpandContext($documentForContext['@context'], $options);
 
-        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode);
+        $safe = $options !== null && $options->safe;
+        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $safe, $options?->base, $options?->processingMode);
 
         $documentWithoutContext = $document;
         unset($documentWithoutContext['@context']);
 
-        return (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader, $frameExpansion))
+        return (new Expansion($contextProcessor->getTermDefinitions(), $safe, $this->documentLoader, $frameExpansion))
             ->expand($documentWithoutContext);
     }
 
@@ -128,8 +129,9 @@ final class JsonLdProcessor implements Processor
             $contextDocument = ['@context' => $context];
         }
 
-        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, $options?->base, $options?->processingMode);
-        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $options !== null ? $options->compactArrays : true);
+        $safe = $options !== null && $options->safe;
+        $contextProcessor = new ContextProcessor($contextDocument, $this->documentLoader, $safe, $options?->base, $options?->processingMode);
+        $compaction = new Compaction($contextProcessor->getTermDefinitions(), $safe, $options !== null ? $options->compactArrays : true);
 
         $compacted = $compaction->compact($expandedInput);
 
@@ -147,22 +149,12 @@ final class JsonLdProcessor implements Processor
     public function flatten(array $document, array|string|null $context = null, ?JsonLdOptions $options = null): FlattenedDocument
     {
         // Expand first. A missing @context is tolerated (the document expands
-        // against an empty active context), mirroring toRdf().
-        $documentForContext = $document;
-        if (! isset($documentForContext['@context'])) {
-            $documentForContext['@context'] = [];
-        }
-        $documentForContext['@context'] = $this->withExpandContext($documentForContext['@context'], $options);
+        // against an empty active context), mirroring toRdf(). Sharing
+        // runExpansion() keeps option threading (safe mode included) in one
+        // place.
+        $expanded = $this->runExpansion($document, $options, frameExpansion: false);
 
-        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode);
-
-        $documentWithoutContext = $document;
-        unset($documentWithoutContext['@context']);
-
-        $expanded = (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader))
-            ->expand($documentWithoutContext);
-
-        $flattened = (new Flattening)->flatten($expanded);
+        $flattened = (new Flattening($options !== null && $options->safe))->flatten($expanded);
 
         // §4.6 step 7: with no context, return the expanded-flattened form.
         if ($context === null || $context === [] || $context === '') {
@@ -180,24 +172,16 @@ final class JsonLdProcessor implements Processor
     public function toRdf(array $document, ?JsonLdOptions $options = null): RdfDataset
     {
         // A missing @context is tolerated for toRdf: documents that address
-        // their predicates with full IRIs need no context. Inject an empty
-        // one so ContextProcessor (which requires the key) expands against an
-        // empty active context rather than throwing.
-        $documentForContext = $document;
-        if (! isset($documentForContext['@context'])) {
-            $documentForContext['@context'] = [];
-        }
-        $documentForContext['@context'] = $this->withExpandContext($documentForContext['@context'], $options);
+        // their predicates with full IRIs need no context (runExpansion
+        // injects an empty context so ContextProcessor expands against an
+        // empty active context rather than throwing).
+        $expanded = $this->runExpansion($document, $options, frameExpansion: false);
 
-        $contextProcessor = new ContextProcessor($documentForContext, $this->documentLoader, $options?->base, $options?->processingMode);
-
-        $documentWithoutContext = $document;
-        unset($documentWithoutContext['@context']);
-
-        $expanded = (new Expansion($contextProcessor->getTermDefinitions(), $this->documentLoader))
-            ->expand($documentWithoutContext);
-
-        return new RdfDataset((new ToRdf($options?->rdfDirection, $options !== null ? $options->produceGeneralizedRdf : false))->toRdf($expanded));
+        return new RdfDataset((new ToRdf(
+            $options !== null && $options->safe,
+            $options?->rdfDirection,
+            $options !== null && $options->produceGeneralizedRdf,
+        ))->toRdf($expanded));
     }
 
     public function fromRdf(RdfDataset|string $input, ?JsonLdOptions $options = null): FromRdfDocument
@@ -207,6 +191,7 @@ final class JsonLdProcessor implements Processor
         $quads = is_string($input) ? (new NQuadsParser)->parse($input) : $input->getQuads();
 
         $result = (new FromRdf(
+            $options !== null && $options->safe,
             $options !== null && $options->useNativeTypes,
             $options !== null && $options->useRdfType,
             $options?->rdfDirection,
@@ -220,7 +205,7 @@ final class JsonLdProcessor implements Processor
         // Expand the input and build the full node map (every graph, so named
         // graphs / @graph framing have their subjects available).
         $expandedInput = $this->expand($document, $options)->toArray();
-        $graphMap = (new NodeMap(new BlankNodeIssuer))->generate($expandedInput);
+        $graphMap = (new NodeMap(new BlankNodeIssuer, $options !== null && $options->safe))->generate($expandedInput);
 
         // Expand the frame against its own @context, in frame-expansion mode
         // (wildcards, @id/@type patterns, and frame keywords are preserved).
@@ -229,7 +214,7 @@ final class JsonLdProcessor implements Processor
         // Resolve the frame's @context once — used both to decide merged-vs-default
         // framing (below) and to compact the framed output.
         $frameContext = array_key_exists(Keyword::Context->value, $frame) ? $frame[Keyword::Context->value] : [];
-        $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options?->base, $options?->processingMode);
+        $contextProcessor = new ContextProcessor([Keyword::Context->value => $frameContext], $this->documentLoader, $options !== null && $options->safe, $options?->base, $options?->processingMode);
         $frameDefs = $contextProcessor->getTermDefinitions();
 
         // Frame the merged graph unless a RAW top-level frame key expands to
@@ -268,7 +253,7 @@ final class JsonLdProcessor implements Processor
 
         // Compact each framed node against the frame's @context.
         $compactArrays = $options === null || $options->compactArrays;
-        $compaction = new Compaction($frameDefs, $compactArrays, framing: true);
+        $compaction = new Compaction($frameDefs, $options !== null && $options->safe, $compactArrays, framing: true);
 
         $graph = [];
         foreach ($framed as $node) {

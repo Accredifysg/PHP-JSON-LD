@@ -6,9 +6,11 @@ namespace Accredify\JsonLd\Context;
 
 use Accredify\JsonLd\Contracts\DocumentLoader;
 use Accredify\JsonLd\Enums\Keyword;
+use Accredify\JsonLd\Exceptions\DataLossException;
 use Accredify\JsonLd\Exceptions\DocumentLoaderException;
 use Accredify\JsonLd\Exceptions\JsonLdException;
 use Accredify\JsonLd\Internal\IriResolver;
+use Accredify\JsonLd\JsonLdOptions;
 use Accredify\JsonLd\Loaders\HttpDocumentLoader;
 
 /**
@@ -56,10 +58,20 @@ class ContextProcessor
      * @param  string|null  $processingMode  The JSON-LD processing mode
      *                                       ("json-ld-1.0" / "json-ld-1.1").
      *                                       Null defaults to "json-ld-1.1".
+     * @param  bool  $safe  Safe mode ({@see JsonLdOptions::$safe}):
+     *                      context-processing steps that silently discard data
+     *                      (keyword-shaped term names / @id / @reverse, a
+     *                      relative @vocab) throw {@see DataLossException}
+     *                      instead. REQUIRED (and a ctor param, not a setter):
+     *                      context processing runs inside this constructor,
+     *                      and every construction site must state its safe
+     *                      mode so a missed site is a hard error rather than
+     *                      a silent gap.
      */
     public function __construct(
         private readonly array $jsonLd,
         private readonly DocumentLoader $documentLoader,
+        private readonly bool $safe,
         ?string $baseIri = null,
         ?string $processingMode = null,
     ) {
@@ -69,7 +81,7 @@ class ContextProcessor
 
         $this->processingMode = $processingMode ?? 'json-ld-1.1';
 
-        $this->termDefinitions = new TermDefinitions;
+        $this->termDefinitions = new TermDefinitions([], $safe);
         $this->termDefinitions->setProcessingMode($this->processingMode);
 
         // The initial base is the document location (or a caller-supplied
@@ -409,7 +421,24 @@ class ContextProcessor
                 if ($vocabValue === null) {
                     $this->termDefinitions->setVocab(null);
                 } elseif (is_string($vocabValue)) {
-                    $this->termDefinitions->pushVocab($this->resolveVocab($vocabValue));
+                    $resolved = $this->resolveVocab($vocabValue);
+                    // An @vocab that stays relative after resolution (no base
+                    // to resolve against) makes EVERY @vocab-mapped term expand
+                    // to a relative IRI, which carries no RDF statement — the
+                    // whole vocabulary's data is dropped downstream. Fail
+                    // closed here, at the root cause.
+                    if (
+                        $this->safe
+                        && ! str_starts_with($resolved, '_:')
+                        && preg_match('/^[A-Za-z][A-Za-z0-9+\-.]*:/', $resolved) !== 1
+                    ) {
+                        throw new DataLossException(
+                            'relative @vocab reference',
+                            "@vocab '{$vocabValue}' does not resolve to an absolute IRI",
+                            ['vocab' => $vocabValue, 'resolved' => $resolved],
+                        );
+                    }
+                    $this->termDefinitions->pushVocab($resolved);
                 }
             }
 
