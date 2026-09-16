@@ -5,18 +5,9 @@ on:
     branches: [main]
 
 jobs:
-  actionlint:
-    name: Lint GitHub Actions workflows
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - name: Download actionlint
-        id: get_actionlint
-        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-        shell: bash
-      - name: Check workflow files
-        run: ${{ steps.get_actionlint.outputs.executable }} -color
-        shell: bash
+  lint-actions:
+    name: Lint GitHub Actions Workflows
+    uses: Accredifysg/Accredify-Github-Workflows/.github/workflows/lint-actions.yml@236229089b518f5ccc8ad5f0251ea187879cc10f # v2.1.7
 
   ci:
     name: Continuous Integration
