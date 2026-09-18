@@ -906,3 +906,81 @@ describe('type-scoped contexts introduced by embedded node contexts', function (
         expect($inner)->toBe(['@id' => 'http://ex/inner', '@type' => ['Thing']]);
     });
 });
+
+describe('explicit xsd:string type coercion', function () {
+    // Value expansion adds the term's type mapping to the value object
+    // unconditionally (unless it is @id, @vocab or @none) — the spec has no
+    // xsd:string carve-out, and jsonld.js, PyLD, Ruby json-ld and Titanium
+    // all keep it. The RDF layer is unaffected either way (an xsd:string
+    // literal IS a plain literal in N-Quads), but expanded documents are
+    // exchanged too: framing value patterns and cross-implementation
+    // comparisons observe the member. Pre-fix we collapsed it away.
+
+    it('keeps an explicit xsd:string type mapping in the expanded value object', function () {
+        $expanded = (new JsonLdProcessor(new StubDocumentLoader))->expand([
+            '@context' => [
+                'issued' => [
+                    '@id' => 'http://ex/issued',
+                    '@type' => 'http://www.w3.org/2001/XMLSchema#string',
+                ],
+            ],
+            'issued' => 'hello',
+        ])->toArray();
+
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first['http://ex/issued'] ?? null)->toBe([[
+            '@type' => 'http://www.w3.org/2001/XMLSchema#string',
+            '@value' => 'hello',
+        ]]);
+    });
+
+    it('keeps xsd:string when the type mapping is spelled as a compact IRI', function () {
+        $expanded = (new JsonLdProcessor(new StubDocumentLoader))->expand([
+            '@context' => [
+                'xsd' => 'http://www.w3.org/2001/XMLSchema#',
+                'issued' => ['@id' => 'http://ex/issued', '@type' => 'xsd:string'],
+            ],
+            'issued' => 'hello',
+        ])->toArray();
+
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first['http://ex/issued'] ?? null)->toBe([[
+            '@type' => 'http://www.w3.org/2001/XMLSchema#string',
+            '@value' => 'hello',
+        ]]);
+    });
+
+    it('does not apply the default language to an xsd:string-typed value', function () {
+        // A type mapping wins over the default language: the typed value
+        // object carries @type only, while a sibling untyped term still
+        // picks up the default @language.
+        $expanded = (new JsonLdProcessor(new StubDocumentLoader))->expand([
+            '@context' => [
+                '@language' => 'en',
+                'issued' => [
+                    '@id' => 'http://ex/issued',
+                    '@type' => 'http://www.w3.org/2001/XMLSchema#string',
+                ],
+                'label' => 'http://ex/label',
+            ],
+            'issued' => 'hello',
+            'label' => 'plain',
+        ])->toArray();
+
+        $first = $expanded[0] ?? null;
+        expect($first)->toBeArray();
+        /** @var array<string, mixed> $first */
+        expect($first['http://ex/issued'] ?? null)->toBe([[
+            '@type' => 'http://www.w3.org/2001/XMLSchema#string',
+            '@value' => 'hello',
+        ]]);
+        expect($first['http://ex/label'] ?? null)->toBe([[
+            '@language' => 'en',
+            '@value' => 'plain',
+        ]]);
+    });
+});

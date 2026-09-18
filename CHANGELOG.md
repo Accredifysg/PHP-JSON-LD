@@ -243,6 +243,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regression tests plus a jsonld.js-pinned interop golden
   (`vc1-ed25519-2020-protected-proof`, over the published contexts) are
   added.
+- **Expansion keeps an explicit `xsd:string` type mapping on value objects.**
+  A term defined with `"@type": "xsd:string"` (compact or absolute spelling)
+  now expands to `{"@value": …, "@type": "…XMLSchema#string"}` as the Value
+  Expansion algorithm specifies — the spec has no xsd:string carve-out, and
+  jsonld.js, PyLD, Ruby json-ld and Titanium all emit the member. Previously
+  the `@type` was collapsed away ("xsd:string is the default"), a quirk
+  carried over from the pre-extraction VC expander. **RDF output, canonical
+  hashes and signatures are unaffected** — an `xsd:string` literal is exactly
+  a plain literal in N-Quads, and all interop goldens are byte-identical —
+  and value compaction folds the member back into the term, so authored
+  documents round-trip unchanged; only consumers of expanded JSON observe the
+  new member (e.g. framing value patterns matching on `@type: xsd:string` now
+  work). The W3C suite cannot catch this: its only xsd:string-typed term
+  definitions (`#tc002`/`#tc007`) are decoys immediately shadowed by scoped
+  `@type: @id` redefinitions, so the coercion never reaches a compared
+  output. Regression tests cover both spellings, default-language
+  suppression on typed values, and the compaction round-trip.
 
 ### Added
 
