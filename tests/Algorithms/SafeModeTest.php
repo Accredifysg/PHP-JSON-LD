@@ -1684,12 +1684,14 @@ describe('scoped contexts: default @language/@direction (inherit, set, reset)', 
         expect(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
     });
 
-    it('drops a non-final scoped layer\'s explicit @direction at the layer boundary — only the last layer\'s survives (jsonld.js clone parity)', function () {
-        // jsonld.js clones the active context per array layer and its clone
-        // omits @direction (jsonld.js#586), so @direction survives a scoped
-        // context array only when the FINAL layer sets it. @language, which
-        // the clone copies, survives earlier layers. Pinned for byte parity;
-        // revisit with the scope-entry inheritance rule if upstream fixes it.
+    it('keeps a non-final scoped layer\'s explicit @direction across later layers, like @language', function () {
+        // Context processing starts each layer from a copy of the result so
+        // far and modifies the base direction only when the layer has an
+        // @direction entry (§4.1 step 5.8), so an explicit @direction set by
+        // an earlier layer survives later layers exactly like @language.
+        // jsonld.js's per-layer clone drops it (jsonld.js#586; the PyLD twin
+        // pyld#337 is fixed by pyld#338) — we follow the spec, with Ruby
+        // json-ld and Titanium. W3C fixture: proposed #tdi13.
         $dig = fn (array $doc) => safeModeDig(
             safeModeProcessor()->expand($doc)->toArray(),
             0, 'http://example.com/thing', 0, 'http://example.com/label', 0,
@@ -1699,10 +1701,12 @@ describe('scoped contexts: default @language/@direction (inherit, set, reset)', 
             'thing' => ['http://example.com/label' => 'hello'],
         ];
 
-        // Direction in a NON-final layer: dropped (even by an empty layer).
-        expect($dig($scoped([['@direction' => 'rtl'], ['other' => 'http://example.com/other']])))->toBe(['@value' => 'hello']);
+        // Direction in a NON-final layer: survives (even through an empty layer).
+        $dirFirst = $dig($scoped([['@direction' => 'rtl'], ['other' => 'http://example.com/other']]));
+        expect(safeModeDig($dirFirst, '@direction'))->toBe('rtl')
+            ->and(safeModeDig($dirFirst, '@value'))->toBe('hello');
         $bothThenEmpty = $dig($scoped([['@language' => 'en', '@direction' => 'rtl'], []]));
-        expect($bothThenEmpty)->not->toHaveKey('@direction')
+        expect(safeModeDig($bothThenEmpty, '@direction'))->toBe('rtl')
             ->and(safeModeDig($bothThenEmpty, '@language'))->toBe('en');
 
         // Direction in the FINAL layer: survives.
@@ -1717,7 +1721,7 @@ describe('scoped contexts: default @language/@direction (inherit, set, reset)', 
             'http://example.com/label' => 'hello',
         ];
         $typeExpanded = safeModeProcessor()->expand($typeDoc)->toArray();
-        expect(safeModeDig($typeExpanded, 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
+        expect(safeModeDig($typeExpanded, 0, 'http://example.com/label', 0, '@direction'))->toBe('rtl');
 
         // Embedded inline node contexts too.
         $embedded = [
@@ -1728,15 +1732,17 @@ describe('scoped contexts: default @language/@direction (inherit, set, reset)', 
             ],
         ];
         $embeddedExpanded = safeModeProcessor()->expand($embedded)->toArray();
-        expect(safeModeDig($embeddedExpanded, 0, 'http://example.com/p', 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
+        expect(safeModeDig($embeddedExpanded, 0, 'http://example.com/p', 0, 'http://example.com/label', 0, '@direction'))->toBe('rtl');
     });
 
-    it('does NOT inherit the default @direction into a scope — jsonld.js parity over spec purity', function () {
-        // jsonld.js's _cloneActiveContext copies @base/@vocab/@language but
-        // omits @direction (an upstream deviation from §4.1 context copying,
-        // reported as https://github.com/digitalbazaar/jsonld.js/issues/586);
-        // matching the reference implementation's N-Quads wins for signing
-        // pipelines. Revisit when upstream fixes the clone.
+    it('inherits the default @direction into a scope, like the default @language (§4.1 context copying)', function () {
+        // Context processing starts from a copy of the active context, which
+        // includes the default base direction; a scoped context with no
+        // @direction entry leaves it in place. jsonld.js's clone drops it
+        // (jsonld.js#586; the PyLD twin pyld#337 is fixed by pyld#338) — we
+        // follow the spec, with Ruby json-ld and Titanium. Default-mode
+        // N-Quads are identical either way (@direction only reaches RDF under
+        // the opt-in rdfDirection modes). W3C fixture: proposed #tdi13.
         $doc = [
             '@context' => ['@direction' => 'rtl', 'thing' => ['@id' => 'http://example.com/thing', '@context' => ['other' => 'http://example.com/other']]],
             '@id' => 'http://example.com/x',
@@ -1746,7 +1752,7 @@ describe('scoped contexts: default @language/@direction (inherit, set, reset)', 
 
         $expanded = safeModeProcessor()->expand($doc)->toArray();
         expect(safeModeDig($expanded, 0, 'http://example.com/out', 0, '@direction'))->toBe('rtl')
-            ->and(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0))->toBe(['@value' => 'hello']);
+            ->and(safeModeDig($expanded, 0, 'http://example.com/thing', 0, 'http://example.com/label', 0, '@direction'))->toBe('rtl');
     });
 
     it('keeps the innermost override through chained scopes', function () {
