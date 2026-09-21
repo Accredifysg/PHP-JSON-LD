@@ -520,3 +520,27 @@ describe('JsonLdProcessor::compact', function () {
         ]);
     });
 });
+
+describe('xsd:string value round-trip', function () {
+    it('compacts an xsd:string-typed value object back to a bare string', function () {
+        // Expansion now preserves an explicit xsd:string type mapping in the
+        // value object; value compaction must fold it back into the term so
+        // expand → compact round-trips to the authored document.
+        $context = [
+            'issued' => [
+                '@id' => 'http://ex/issued',
+                '@type' => 'http://www.w3.org/2001/XMLSchema#string',
+            ],
+        ];
+        $expanded = [[
+            'http://ex/issued' => [[
+                '@type' => 'http://www.w3.org/2001/XMLSchema#string',
+                '@value' => 'hello',
+            ]],
+        ]];
+
+        $result = compactWith($expanded, $context);
+
+        expect($result['issued'] ?? null)->toBe('hello');
+    });
+});

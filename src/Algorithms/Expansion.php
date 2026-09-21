@@ -1299,13 +1299,6 @@ class Expansion
             && $typeMapping !== Keyword::None->value
         ) {
             $expandedType = $this->expandIri($typeMapping, vocab: true);
-            // xsd:string is the default — omit @type to avoid noise.
-            if (
-                $expandedType === 'http://www.w3.org/2001/XMLSchema#string'
-                || $expandedType === 'https://www.w3.org/2001/XMLSchema#string'
-            ) {
-                return [Keyword::Value->value => $value];
-            }
 
             return [
                 Keyword::Type->value => $expandedType ?? $typeMapping,
