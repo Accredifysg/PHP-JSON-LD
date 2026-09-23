@@ -1932,32 +1932,22 @@ class Expansion
         if ($parentBase !== null) {
             $active->setBase($parentBase);
         }
-        // The parent's default @language is inherited (spec §4.1: context
-        // processing starts from a copy of the active context), so plain
-        // strings in the scope keep their language tag — jsonld.js parity;
-        // its N-Quads (and so VC signatures) depend on it. The default
-        // @direction is deliberately NOT inherited: jsonld.js's active-context
-        // clone (_cloneActiveContext) carries @base/@vocab/@language but omits
-        // @direction — an upstream deviation from the spec, reported as
-        // https://github.com/digitalbazaar/jsonld.js/issues/586 — and matching
-        // the reference implementation's bytes wins for signing pipelines;
-        // revisit when that issue is fixed. A scoped context's own explicit
-        // @language/@direction entries are applied by overlayContextOnto
-        // either way.
+        // The parent's default @language AND default @direction are inherited
+        // (spec §4.1: context processing starts from a copy of the active
+        // context, and step 5.8 modifies the base direction only when the
+        // layer has an @direction entry), so plain strings in the scope keep
+        // both. jsonld.js's active-context clone drops @direction
+        // (https://github.com/digitalbazaar/jsonld.js/issues/586; the PyLD
+        // twin, pyld#337, is fixed by pyld#338) — we follow the spec, with
+        // Ruby json-ld and Titanium. Default-mode N-Quads are identical
+        // either way: @direction only reaches RDF under the opt-in,
+        // non-normative rdfDirection modes. A scoped context's own explicit
+        // @language/@direction entries (including null resets) are applied by
+        // overlayContextOnto either way.
         $active->setDefaultLanguage($base->getDefaultLanguage());
+        $active->setDefaultDirection($base->getDefaultDirection());
 
         foreach ($layers as $layer) {
-            // jsonld.js clones the active context before EVERY array layer,
-            // and its clone omits @direction (the same upstream deviation as
-            // the scope-entry copy above, jsonld.js#586) — so an explicit
-            // @direction set by a non-final layer does not survive into the
-            // next layer; only the FINAL layer's @direction (or a non-array
-            // scoped context's) reaches the scope's values. The default
-            // @language, which the clone copies, survives layers. Byte parity
-            // with the reference implementation wins for signing pipelines;
-            // revisit together with the scope-entry rule when upstream fixes
-            // the clone.
-            $active->setDefaultDirection(null);
             if ($layer === null) {
                 if (! $overrideProtected && $active->hasAnyProtected()) {
                     throw new JsonLdException('Invalid context nullification: a null context cannot clear protected terms');
@@ -2168,10 +2158,11 @@ class Expansion
                 if ($vocab !== null) {
                     $scoped->setVocab($vocab);
                 }
-                // Inherit the default @language, NOT @direction — same
-                // jsonld.js-parity rule as the property-scoped copy in
+                // Inherit the default @language and @direction — same
+                // spec §4.1 copy rule as the property-scoped copy in
                 // {@see applyScopedContext}.
                 $scoped->setDefaultLanguage($this->termDefinitions->getDefaultLanguage());
+                $scoped->setDefaultDirection($this->termDefinitions->getDefaultDirection());
                 if (! $this->contextPropagateTrue($typeContext)) {
                     $scoped->setPreviousContext($this->termDefinitions);
                 }
@@ -2183,9 +2174,6 @@ class Expansion
             // layer. A remote / @import-bearing layer is resolved first.
             $layers = is_array($typeContext) && array_is_list($typeContext) ? $typeContext : [$typeContext];
             foreach ($layers as $layer) {
-                // Per-layer @direction reset — same jsonld.js clone-parity
-                // rule as the property-scoped loop in applyScopedContext.
-                $scoped->setDefaultDirection(null);
                 if ($layer === null) {
                     // A null layer resets the context. Since override-protected
                     // is false, nulling a context that still has protected terms

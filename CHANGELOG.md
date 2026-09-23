@@ -115,12 +115,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Default-mode `expand()`/`toRdf()` output changes — signature-relevant —
   for documents that combine a default `@language` with scoped contexts**
   (published VC context stacks set no default language; both corpus replays
-  found no affected documents). Deliberate deviation from the spec, matching
-  jsonld.js: the default `@direction` is NOT inherited into scopes (jsonld.js'
-  active-context clone omits `@direction` — reported upstream as
-  [digitalbazaar/jsonld.js#586](https://github.com/digitalbazaar/jsonld.js/issues/586)),
-  because byte-parity with the reference implementation is what signing
-  pipelines verify against; scoped explicit `@direction` set/reset works. The fork-specific
+  found no affected documents). (This initially shipped with a deliberate jsonld.js-parity
+  deviation — the default `@direction` was NOT inherited into scopes —
+  removed by the default-`@direction` inheritance fix below.) The fork-specific
   `unsupported scoped context entry` safe-mode event code is retired — the
   behaviour it flagged is now implemented.
 - **Free-floating values under `@container: @graph` terms are dropped at
@@ -260,6 +257,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@type: @id` redefinitions, so the coercion never reaches a compared
   output. Regression tests cover both spellings, default-language
   suppression on typed values, and the compaction round-trip.
+- **Scoped contexts now inherit the default `@direction`, completing §4.1
+  context copying** (removes the deliberate jsonld.js-parity deviation noted
+  in the scoped-`@language` bullet above). Context processing starts each
+  layer from a copy of the active context and modifies the default base
+  direction only when the layer has an `@direction` entry, so a default
+  `@direction` now survives into property-scoped, type-scoped, embedded-node
+  and remote scoped contexts — and an explicit `@direction` set by a
+  non-final array layer survives later layers — exactly like the default
+  `@language`. jsonld.js drops it (its active-context clone omits
+  `@direction` —
+  [digitalbazaar/jsonld.js#586](https://github.com/digitalbazaar/jsonld.js/issues/586),
+  still open). PyLD shared the omission
+  ([digitalbazaar/pyld#337](https://github.com/digitalbazaar/pyld/issues/337))
+  until its fix
+  ([digitalbazaar/pyld#338](https://github.com/digitalbazaar/pyld/pull/338))
+  was merged; Ruby json-ld and Titanium JSON-LD inherit per spec, making
+  spec behaviour the majority behaviour, which this change follows.
+  **Default-mode N-Quads, canonical hashes and
+  signatures are unaffected**: `@direction` reaches RDF only under the
+  opt-in, non-normative `rdfDirection` modes, and expanded JSON changes only
+  for documents that set a default `@direction` (published VC context stacks
+  set none). Under `rdfDirection: i18n-datatype` an in-scope literal now
+  gets the i18n datatype instead of silently degrading to a plain
+  language-tagged literal. W3C fixture for the gap: proposed `#tdi13`
+  (pending test contribution).
 
 ### Added
 
