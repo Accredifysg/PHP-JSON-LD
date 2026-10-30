@@ -1,0 +1,98 @@
+name: Conformance Report
+
+# Publishes the EARL report to json-ld.w3c.conformance.accredify.dev.
+#
+# On a release, because the report asserts a version and a report whose version
+# no longer exists is worse than none. Weekly as well, because both test
+# manifests are submodules pointing at repositories we do not control: a test
+# added upstream can turn a complete report into one that under-claims
+# coverage without anything here changing.
+#
+# The report itself is the artefact. w3c/json-ld-api takes it by pull request;
+# this site is where it can be linked from while that is in review, and where
+# the conformance index reads its numbers.
+
+on:
+  release:
+    types: [released]
+  schedule:
+    - cron: "30 4 * * 1" # Mon 04:30 UTC, behind the rdf-canon run
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    name: Build and publish the EARL report
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # fetch-depth 0 for git describe, and the submodule because the W3C
+      # manifest is what the generator validates against.
+      - name: Checkout (with W3C submodule)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      # The suite must pass for the report to mean anything, but a failing
+      # test is not a reason to publish nothing: the report records failures
+      # as earl:failed, and an honest report of a partial pass is exactly what
+      # the EARL format is for. So the run is allowed to fail and the report
+      # is generated either way.
+      - name: Run the W3C JSON-LD suite
+        run: vendor/bin/pest --testsuite=W3C --log-junit w3c-junit.xml
+        continue-on-error: true
+
+      - name: Resolve the version
+        id: version
+        run: echo "value=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate the EARL report
+        run: |
+          php scripts/generate-earl-report.php \
+            w3c-junit.xml "${{ steps.version.outputs.value }}" \
+            > php-json-ld-earl.ttl
+
+      - name: Build the site
+        run: scripts/build-report-site.sh php-json-ld-earl.ttl "${{ steps.version.outputs.value }}"
+
+      - name: Keep the report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: earl-report
+          path: php-json-ld-earl.ttl
+          if-no-files-found: error
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
