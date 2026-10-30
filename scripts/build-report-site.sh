@@ -18,6 +18,7 @@
 # submodule and a full test run, which is the workflow's job.
 set -euo pipefail
 
+here=$(cd "$(dirname "$0")" && pwd)
 out=site
 report="${1:?usage: build-report-site.sh <report.ttl> <version>}"
 version="${2:?usage: build-report-site.sh <report.ttl> <version>}"
@@ -50,6 +51,117 @@ total=$((passed + failed))
 generated=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 shown=$(date -u '+%Y-%m-%d %H:%M UTC')
 
+esc() { printf '%s' "${1:-}" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+# Which tests failed, read back out of the report for the same reason the
+# counts are: the report is the artefact, so it is the only thing worth
+# describing. One assertion block per test, outcome before subject before test.
+failing=$(awk '
+  /earl:outcome[[:space:]]+earl:failed/ { pending = 1 }
+  pending && match($0, /earl:test[[:space:]]+<[^>]+>/) {
+    uri = substr($0, RSTART, RLENGTH)
+    sub(/^earl:test[[:space:]]+</, "", uri)
+    sub(/>$/, "", uri)
+    print uri
+    pending = 0
+  }
+' "$out/$basename")
+
+# Why each one fails is maintained in exactly one place - the harness's
+# expected-failure allowlist - and read from there rather than copied, so the
+# page cannot drift from what CI actually gates on. Entries are one per line,
+# '#id' => 'reason', which is what the field split below assumes.
+#
+# Hard-failing on a missing allowlist is deliberate: it ships beside this
+# script, so losing it means the checkout is wrong, not that every blocker
+# regressed at once - and publishing 13 false regressions is worse than
+# publishing nothing.
+blockers_src="$here/../tests/W3c/KnownBlockers.php"
+[ -f "$blockers_src" ] || {
+  echo "no expected-failure list at $blockers_src - refusing to publish" >&2
+  exit 1
+}
+
+blockers=$(awk -F"'" -v q="'" '
+  /public const [A-Z_]+ = \[/ {
+    name = $0
+    sub(/^.*public const /, "", name)
+    sub(/[^A-Z_].*$/, "", name)
+    manifest = ""
+    if (name == "EXPAND")   manifest = "expand"
+    if (name == "COMPACT")  manifest = "compact"
+    if (name == "FLATTEN")  manifest = "flatten"
+    if (name == "TO_RDF")   manifest = "toRdf"
+    if (name == "FROM_RDF") manifest = "fromRdf"
+    if (name == "FRAME")    manifest = "frame"
+    next
+  }
+  /^[[:space:]]*\];/ { manifest = "" }
+  manifest != "" && NF >= 5 && $2 ~ /^#/ {
+    reason = $4
+    for (i = 5; i < NF; i++) reason = reason q $i
+    print manifest "\t" $2 "\t" reason
+  }
+' "$blockers_src")
+
+[ -n "$blockers" ] || { echo "expected-failure list parsed empty - refusing to publish" >&2; exit 1; }
+
+reason_for() {
+  printf '%s\n' "$blockers" |
+    awk -F'\t' -v m="$1" -v i="$2" '$1 == m && $2 == i { print $3; exit }'
+}
+
+# Grouped by manifest, in the order the report walks them.
+rows=""
+unexpected=0
+for manifest in expand compact flatten toRdf fromRdf frame; do
+  case $manifest in
+    expand)  heading="Expansion" ;;
+    compact) heading="Compaction" ;;
+    flatten) heading="Flattening" ;;
+    toRdf)   heading="Serialize to RDF" ;;
+    fromRdf) heading="RDF to JSON-LD" ;;
+    frame)   heading="Framing" ;;
+  esac
+
+  group=""
+  for uri in $failing; do
+    name=${uri##*/tests/}            # expand-manifest#t0122
+    [ "${name%%-manifest#*}" = "$manifest" ] || continue
+    id="#${name#*#}"
+
+    why=$(reason_for "$manifest" "$id")
+    case $why in
+      'negative: '*)                 kind="negative test"; why=${why#negative: } ;;
+      'positive (non-normative): '*) kind="non-normative"; why=${why#positive (non-normative): } ;;
+      'positive (json-ld-1.0): '*)   kind="JSON-LD 1.0";   why=${why#positive (json-ld-1.0): } ;;
+      'positive: '*)                 kind="positive";      why=${why#positive: } ;;
+      '')
+        # Not on the allowlist, so CI failed on it too. Say so here rather
+        # than listing it beside the ones we have accepted.
+        kind="unexpected"
+        why="Not on the expected-failure list - this is a regression, not an accepted limit."
+        unexpected=$((unexpected + 1))
+        ;;
+      *) kind="" ;;
+    esac
+
+    kind_class="kind"
+    [ "$kind" = "unexpected" ] && kind_class="kind kind-bad"
+
+    badge="<span class=\"$kind_class\">$(esc "$kind")</span>"
+    group="$group
+      <tr>
+        <td><a href=\"$(esc "$uri")\"><code>$(esc "$id")</code></a></td>
+        <td>$badge</td>
+        <td>$(esc "$why")</td>
+      </tr>"
+  done
+
+  [ -n "$group" ] && rows="$rows
+      <tr class=\"group\"><th colspan=\"3\">$heading</th></tr>$group"
+done
+
 cat > "$out/index.json" <<JSON
 {
   "format": "earl-summary",
@@ -64,10 +176,28 @@ cat > "$out/index.json" <<JSON
 }
 JSON
 
-if [ "$failed" -gt 0 ]; then
-  banner="<p class=\"banner bad\">$failed of $total assertions failing.</p>"
-else
+if [ "$failed" -eq 0 ]; then
   banner="<p class=\"banner good\">All $total assertions passing.</p>"
+elif [ "$unexpected" -gt 0 ]; then
+  banner="<p class=\"banner bad\">$failed of $total assertions failing, $unexpected of them unexpected.</p>"
+else
+  banner="<p class=\"banner bad\">$failed of $total assertions failing, all of them expected and listed below.</p>"
+fi
+
+if [ -n "$rows" ]; then
+  table="<h2>What is failing</h2>
+  <p>Every failure below, and why. The reasons come from the harness's
+     expected-failure list, which gates CI in both directions: an unlisted
+     failure fails the build, and so does a listed one that starts passing.</p>
+  <div class=\"scroll\">
+    <table>
+      <thead><tr><th>Test</th><th>Kind</th><th>Why it fails</th></tr></thead>
+      <tbody>$rows
+      </tbody>
+    </table>
+  </div>"
+else
+  table=""
 fi
 
 cat > "$out/index.html" <<HTML
@@ -91,6 +221,7 @@ cat > "$out/index.html" <<HTML
          font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
   main { max-width:760px; margin:0 auto; }
   h1 { font-size:1.9rem; letter-spacing:-0.02em; margin:0 0 8px; }
+  h2 { font-size:1.15rem; letter-spacing:-0.01em; margin:36px 0 8px; }
   .sub { color:var(--muted); margin:0 0 24px; }
   .banner { padding:12px 16px; border-radius:6px; font-weight:600; margin:0 0 24px; }
   .good { background:var(--good-bg); color:var(--good); }
@@ -100,6 +231,20 @@ cat > "$out/index.html" <<HTML
   dt { color:var(--muted); font-size:.85rem; }
   dd { margin:0; font-variant-numeric:tabular-nums; }
   p { max-width:68ch; }
+  .scroll { overflow-x:auto; background:var(--card); border:1px solid var(--rule);
+            border-radius:8px; margin:16px 0 28px; }
+  table { border-collapse:collapse; width:100%; font-size:.92rem; }
+  th, td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--rule);
+           vertical-align:top; }
+  thead th { color:var(--muted); font-size:.78rem; text-transform:uppercase;
+             letter-spacing:.04em; font-weight:600; white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+  tr.group th { background:var(--bg); font-size:.85rem; letter-spacing:.01em;
+                text-transform:none; color:var(--fg); }
+  td code { font-size:.9em; white-space:nowrap; }
+  .kind { display:inline-block; white-space:nowrap; font-size:.78rem; padding:2px 8px;
+          border:1px solid var(--rule); border-radius:999px; color:var(--muted); }
+  .kind-bad { color:var(--bad); border-color:var(--bad); font-weight:600; }
   footer { margin-top:32px; color:var(--muted); font-size:.88rem;
            border-top:1px solid var(--rule); padding-top:18px; }
   a { color:var(--accent); }
@@ -126,6 +271,7 @@ cat > "$out/index.html" <<HTML
      has to reflect conformance, not suite greenness — a skipped test is a
      test that does not pass, and presenting it as anything else would
      over-claim.</p>
+  $table
   <footer>
     <p><strong>This is our own run, not the record.</strong> The published record
        lives at <a href="https://w3c.github.io/json-ld-api/reports/">w3c.github.io/json-ld-api/reports</a>
