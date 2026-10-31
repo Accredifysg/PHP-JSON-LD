@@ -1,6 +1,6 @@
 name: Conformance Report
 
-# Publishes the EARL report to json-ld.w3c.conformance.accredify.dev.
+# Publishes the EARL report to json-ld.w3c.reports.conformance.accredify.dev.
 #
 # On a release, because the report asserts a version and a report whose version
 # no longer exists is worse than none. Weekly as well, because both test
