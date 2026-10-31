@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Assembles the EARL conformance report into a static site for GitHub Pages,
-# published at json-ld.w3c.conformance.accredify.dev.
+# published at json-ld.w3c.reports.conformance.accredify.dev.
 #
 # Three files, each for a different reader:
 #
@@ -36,7 +36,7 @@ basename=$(basename "$report")
 # that comes from the repository setting. It is kept because it documents
 # which name the site expects, and because a mismatch between the two is worth
 # being able to see in a diff.
-echo "json-ld.w3c.conformance.accredify.dev" > "$out/CNAME"
+echo "json-ld.w3c.reports.conformance.accredify.dev" > "$out/CNAME"
 
 # Counted from the report rather than from the test run, deliberately. The
 # report is what gets submitted, so what it asserts is the only number worth
