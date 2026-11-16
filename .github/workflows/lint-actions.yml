@@ -48,6 +48,11 @@ env:
       ref-version-mismatch: { disable: true }
       secrets-inherit: { disable: true }
       secrets-outside-env: { disable: true }
+      # New in zizmor 1.30.x. Its fix (uses: $/...) is not valid syntax for reusable
+      # *workflow* calls per GitHub's docs/actionlint (only "owner/repo/path@ref" or
+      # "./path" are supported there) — only composite *actions* support "$/".
+      # Disable until GitHub Actions/actionlint support the self-repository form.
+      self-repository: { disable: true }
       self-hosted-runner: { disable: true }
       stale-action-refs: { disable: true }
       superfluous-actions: { disable: true }
